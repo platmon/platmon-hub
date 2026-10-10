@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 
 from .store import HistoryStore, SchemaError
+from .schema import VERSION
+from .projector import ContinuityRecord
 
 LOG = logging.getLogger(__name__)
 
@@ -29,6 +31,7 @@ class HistoryWriter:
         self._stop = threading.Event()
         self._thread = None
         self._accepting = True
+        self._losses = {}
         self._stats = dict(enabled=True, state='starting', schema_version=None, submitted=0,
                            persisted=0, duplicates=0, dropped_regression=0, dropped_queue_full=0,
                            dropped_storage_error=0, dropped_invalid=0, dropped_closed=0,
@@ -58,9 +61,17 @@ class HistoryWriter:
                 self.queue.put_nowait(record)
             except queue.Full:
                 self._stats['dropped_queue_full'] += 1
+                self._remember_loss(record)
                 return False
             self._stats['submitted'] += 1
             return True
+
+    def _remember_loss(self, record):
+        # Caller holds _lock. One earliest loss per node/scope, capped independently.
+        key = (record.node_id, getattr(record, 'group_name', getattr(record, 'scope', 'core')))
+        if key not in self._losses and len(self._losses) < 1024:
+            self._losses[key] = ContinuityRecord(key[0], key[1], record.instance_id,
+                                                 record.received_at_ms, 'storage_loss')
 
     def snapshot(self):
         with self._lock:
@@ -98,7 +109,7 @@ class HistoryWriter:
                     candidate = self.store_factory(self.path)
                     try:
                         store = candidate.open()
-                        self._update(state='healthy', schema_version=1)
+                        self._update(state='healthy', schema_version=VERSION)
                     except Exception as exc:
                         candidate.close()
                         self._error(exc)
@@ -122,7 +133,13 @@ class HistoryWriter:
                         try:
                             expired = [] if self.snapshot()['clock_discontinuity'] else [r for r in batch if r.received_at_ms < wall * 1000 - self.retention_ms]
                             active = [r for r in batch if r not in expired]
-                            counts = store.insert_batch(active)
+                            with self._lock:
+                                losses = dict(self._losses)
+                            counts = store.insert_batch(list(losses.values()) + active)
+                            with self._lock:
+                                for key, value in losses.items():
+                                    if self._losses.get(key) is value:
+                                        del self._losses[key]
                             self._count(**counts, dropped_expired=len(expired))
                             self._update(state='healthy', last_commit_ms=int(self.wall() * 1000), last_error=None)
                             batch.clear()
@@ -130,6 +147,9 @@ class HistoryWriter:
                             self._error(exc)
                     if batch and (self.clock() - retry_start >= self.retry_seconds or self._stop.is_set()):
                         self._count(dropped_storage_error=len(batch))
+                        with self._lock:
+                            for record in batch:
+                                self._remember_loss(record)
                         batch.clear()
                     self._update(in_flight=len(batch))
                 if store is not None and not batch and now >= next_retention and not self.snapshot()['clock_discontinuity']:
@@ -143,7 +163,7 @@ class HistoryWriter:
                         self._update(last_checkpoint_ms=int(wall * 1000),
                                      checkpoint_duration_ms=(self.clock() - checkpoint_start) * 1000,
                                      wal_bytes=wal_path.stat().st_size if wal_path.exists() else 0)
-                        next_retention = now + (0.1 if deleted == 1000 else 3600)
+                        next_retention = now + (0.1 if deleted >= 1000 else 3600)
                     except Exception as exc:
                         self._error(exc)
                         next_retention = now + 3600

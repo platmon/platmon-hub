@@ -45,3 +45,85 @@ class CoreRecord:
 class Acceptance:
     disposition: str
     record: object = None
+
+
+@dataclass(frozen=True)
+class ObservationRecord:
+    node_id: str
+    instance_id: str
+    group_name: str
+    observation_id: int
+    received_at_ms: int
+    data_age_ms: float
+    stale_after_ms: float
+    state: str
+    data_json: str
+
+    def valid(self):
+        base = CoreRecord(self.node_id, self.instance_id, self.observation_id,
+                          self.received_at_ms, self.data_age_ms, self.stale_after_ms,
+                          'ready', None, None, None, None, None)
+        return (base.valid() and self.group_name in ('storage', 'wifi', 'probe') and
+                self.state in ('ok', 'partial', 'error', 'unavailable') and
+                len(self.data_json.encode('utf-8')) <= 16384)
+
+    def values(self):
+        return astuple(self)
+
+
+@dataclass(frozen=True)
+class ContinuityRecord:
+    node_id: str
+    scope: str
+    instance_id: object
+    received_at_ms: int
+    reason: object
+    silence_ms: float = 15000
+
+    def valid(self):
+        try:
+            return (str(uuid.UUID(self.node_id)) == self.node_id and
+                    self.scope in ('core', 'storage', 'wifi', 'probe') and
+                    (self.instance_id is None or 1 <= len(self.instance_id.encode('utf-8')) <= 128) and
+                    type(self.received_at_ms) is int and 0 <= self.received_at_ms < 2**63 and
+                    self.reason in (None, 'transport', 'offline', 'stale', 'starting', 'error',
+                                    'incompatible', 'absent', 'unavailable', 'partial', 'storage_loss',
+                                    'unobserved', 'disabled') and math.isfinite(self.silence_ms) and self.silence_ms > 0)
+        except (ValueError, TypeError, AttributeError):
+            return False
+
+
+def project_observation(node_id, instance_id, name, group, received_at_ms):
+    """Persist selected, unit-preserving scalar fields; never copy an envelope."""
+    import json
+    spec = {
+        'storage': ('filesystems', ('device', 'major', 'minor', 'total_bytes', 'used_bytes', 'available_bytes')),
+        'wifi': ('interfaces', ('name', 'ifindex', 'connected', 'connection_state', 'signal_dbm', 'signal_raw', 'link_quality', 'noise_dbm')),
+        'probe': ('targets', ('address', 'port', 'connect_ms', 'reason', 'attempts', 'failures', 'failure_ratio')),
+    }
+    publication = group.get('observation')
+    if name not in spec or publication is None or group['state'] in ('starting', 'stale') or publication.get('stale') is True:
+        return None
+    rows_name, fields = spec[name]
+    data = group.get('data')
+    rows = data.get(rows_name) if isinstance(data, dict) else None
+    projected = None
+    if isinstance(rows, list):
+        projected = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            item = {}
+            for key in fields:
+                value = row.get(key)
+                if key == 'connected':
+                    value = value if type(value) is bool else None
+                elif key in ('device', 'name', 'address', 'connection_state', 'reason'):
+                    value = value if isinstance(value, str) else None
+                else:
+                    value = value if type(value) in (int, float) and math.isfinite(value) else None
+                item[key] = value
+            projected.append(item)
+    payload = json.dumps({rows_name: projected}, allow_nan=False, separators=(',', ':'))
+    return ObservationRecord(node_id, instance_id, name, publication['id'], received_at_ms,
+                             publication['data_age_ms'], group['stale_after_ms'], group['state'], payload)

@@ -117,7 +117,7 @@ class WriterTests(unittest.TestCase):
         self.assertTrue(writer.close()['flushed'])
         self.assertFalse(writer.submit(record(3)))
         state = writer.snapshot()
-        self.assertEqual(state['persisted'], 1)
+        self.assertEqual(state['persisted'], 2)  # Sample plus recovered storage-loss evidence.
         self.assertEqual(state['dropped_queue_full'], 1)
         self.assertEqual(state['dropped_invalid'], 1)
         self.assertEqual(state['dropped_closed'], 1)
@@ -136,10 +136,10 @@ class WriterTests(unittest.TestCase):
         fleet = Fleet([Node(NODE_ID, 'test', 'http://192.0.2.1:9797')], client=client, history=writer)
         try:
             fleet.core_once(NODE_ID)
-            wait_for(lambda: writer.snapshot()['dropped_storage_error'] == 1)
+            wait_for(lambda: writer.snapshot()['dropped_storage_error'] >= 1)
             fleet.core_once(NODE_ID)
             self.assertEqual(fleet.get_node(NODE_ID)['headline'], 'live')
-            self.assertEqual(writer.snapshot()['submitted'], 1)
+            self.assertEqual(writer.snapshot()['submitted'], 3)
         finally:
             fleet.close()
 

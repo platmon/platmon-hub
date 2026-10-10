@@ -156,7 +156,7 @@ class NodeState:
         with self._lock:
             if self._instance_id is None:
                 self._optional_error = "no_agent_instance"
-                return
+                return False
             protocol.observations(document, self._instance_id)
             if self._last_observations is not None:
                 old = self._last_observations["groups"]
@@ -167,11 +167,12 @@ class NodeState:
                             current["id"] < previous["id"]):
                         self._optional_error = "out_of_order_observation"
                         self._last_obs_poll_utc = self._today()
-                        return
+                        return False
             self._last_observations = document
             self._last_obs_tick = self.clock()
             self._last_obs_poll_utc = self._today()
             self._optional_error = None
+            return True
 
     def fail_observations(self, failure):
         with self._lock:
