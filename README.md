@@ -1,5 +1,10 @@
 # platmon-hub
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="hub/web/assets/brand/platmon-logo-dark.svg">
+  <img src="hub/web/assets/brand/platmon-logo-light.svg" alt="platmon — approved C / Terminal P brand" width="300">
+</picture>
+
 Centralized, read-only fleet monitoring for Linux devices running [platmon](https://github.com/platmon/platmon).
 
 > **Project status:** Fleet Dashboard preview implemented; no release package, production authentication, or long-term metrics database yet. Windows two-device fault isolation and a 30-minute two-node soak manually validated; large-fleet capacity and production security remain unverified.
@@ -19,6 +24,7 @@ The example contains **no active targets**. See [backend setup, API and security
 
 ## Documents
 
+- [Brand identity and asset provenance](docs/branding.md) — canonical platmon SVGs, dark/light variants, favicon and local static routes.
 - [Default ports and collision diagnostics](docs/ports.md) — fixed Hub TCP 9787, Agent TCP 9797, bind failures, Windows/Linux checks.
 - [Windows CI and 30-minute soak validation](docs/windows-soak.md) — cross-platform CI, Windows process CPU/RSS, poll duration and fleet status sampling.
 - [Backend foundation operations](backend.md) — registry, runtime defaults, HTTP routes and known limitations.

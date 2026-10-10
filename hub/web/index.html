@@ -6,13 +6,17 @@
   <meta name="color-scheme" content="light dark">
   <meta name="description" content="Read-only fleet overview for platmon devices">
   <title>platmon hub — fleet monitoring</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/assets/styles.css">
   <script src="/assets/app.js" defer></script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true">p_</span>
+      <picture class="brand-mark" aria-hidden="true">
+        <source srcset="/assets/brand/platmon-icon-dark.svg" media="(prefers-color-scheme: dark)">
+        <img src="/assets/brand/platmon-icon-light.svg" alt="" width="38" height="38">
+      </picture>
       <span class="brand-label">platmon <strong>hub</strong></span>
       <span class="product-tag">Fleet monitoring</span>
     </div>
