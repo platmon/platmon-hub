@@ -1,21 +1,57 @@
 """Run the bounded read-only fleet service (trusted management network only)."""
 
 import argparse
+import errno
 import logging
 from .http import HubServer
 from .registry import load_registry
 from .runtime import Fleet
 
 
+def tcp_port(value):
+    """Require a fixed, explicit TCP port; 0 would request an ephemeral port."""
+    try:
+        port = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("port must be an integer (1-65535)") from exc
+    if not 1 <= port <= 65535:
+        raise argparse.ArgumentTypeError("port must be in the range 1-65535 (0 is not allowed)")
+    return port
+
+
+def bind_hub(bind, port, fleet):
+    """Fail closed and explain local bind conflicts; never select another port."""
+    try:
+        return HubServer((bind, port), fleet)
+    except OSError as exc:
+        if exc.errno in (errno.EADDRINUSE, 10048):
+            reason = "address/port is already in use"
+        elif exc.errno in (errno.EACCES, errno.EPERM, 10013):
+            reason = "permission denied or port reserved by the OS"
+        else:
+            raise
+        raise SystemExit(
+            f"platmon-hub: cannot listen on {bind}:{port}: {reason}. "
+            "Check the local listener and OS port reservations; "
+            "stop the conflicting service or set an explicit --port. "
+            "No automatic port fallback is attempted."
+        ) from None
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="platmon-hub read-only backend")
     parser.add_argument("--nodes", required=True, help="path to explicitly managed node registry JSON")
     parser.add_argument("--bind", default="127.0.0.1", help="Hub bind address; loopback by default")
-    parser.add_argument("--port", type=int, default=9787)
+    parser.add_argument("--port", type=tcp_port, default=9787, help="Hub TCP listen port (default: 9787)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO)
     fleet = Fleet(load_registry(args.nodes))
-    server = HubServer((args.bind, args.port), fleet)
+    try:
+        server = bind_hub(args.bind, args.port, fleet)
+    except BaseException:
+        # A failed bind must not strand an unstarted thread pool.
+        fleet.close()
+        raise
     try:
         fleet.start()
         print(f"platmon-hub serving on {server.server_address[0]}:{server.server_address[1]}", flush=True)

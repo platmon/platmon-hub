@@ -38,6 +38,7 @@ class Fleet:
 
     def core_once(self, node_id):
         state = self.nodes[node_id]
+        started = self.clock()
         try:
             raw = self.client.get(state.node.endpoint, "/api/status", self.deadlines[0])
             status = protocol.status(raw)
@@ -54,11 +55,14 @@ class Fleet:
         except Exception:
             LOG.exception("unexpected core poll error node_id=%s", node_id)
             state.fail_core(protocol.ProtocolFailure("unexpected core poll error"))
+        finally:
+            state.record_poll_duration("core", max(0.0, (self.clock() - started) * 1000))
 
     def observations_once(self, node_id):
         state = self.nodes[node_id]
-        if state.snapshot()["instance_id"] is None:
+        if state.snapshot(include_details=False)["instance_id"] is None:
             return
+        started = self.clock()
         try:
             raw = self.client.get(state.node.endpoint, "/api/observations", self.deadlines[2])
             state.accept_observations(raw)
@@ -67,6 +71,8 @@ class Fleet:
         except Exception:
             LOG.exception("unexpected observations poll error node_id=%s", node_id)
             state.fail_observations(protocol.ProtocolFailure("unexpected optional poll error"))
+        finally:
+            state.record_poll_duration("observations", max(0.0, (self.clock() - started) * 1000))
 
     def _schedule(self):
         """One active request chain per node, globally bounded and fair."""

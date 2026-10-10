@@ -72,6 +72,10 @@ class NodeState:
         self._last_success_utc = None
         self._last_core_poll_utc = None
         self._last_obs_poll_utc = None
+        self._last_core_duration_ms = None
+        self._last_optional_duration_ms = None
+        self._last_core_completed_utc = None
+        self._last_optional_completed_utc = None
 
     def _today(self):
         return datetime.now(timezone.utc).isoformat()
@@ -165,6 +169,18 @@ class NodeState:
             self._optional_error = failure.category
             self._last_obs_poll_utc = self._today()
 
+    def record_poll_duration(self, kind, duration_ms):
+        """Record completed request-chain duration on the Hub's elapsed clock."""
+        if kind not in ("core", "observations") or not _finite(duration_ms) or duration_ms < 0:
+            raise ValueError("invalid poll timing")
+        with self._lock:
+            if kind == "core":
+                self._last_core_duration_ms = round(duration_ms, 3)
+                self._last_core_completed_utc = self._today()
+            else:
+                self._last_optional_duration_ms = round(duration_ms, 3)
+                self._last_optional_completed_utc = self._today()
+
     def snapshot(self, *, include_details=True):
         """Return an isolated JSON-compatible view; no mutable internal references leak."""
         import copy
@@ -209,6 +225,10 @@ class NodeState:
                 "last_core_poll_utc": self._last_core_poll_utc,
                 "last_optional_poll_utc": self._last_obs_poll_utc,
                 "last_success_utc": self._last_success_utc,
+                "last_core_duration_ms": self._last_core_duration_ms,
+                "last_optional_duration_ms": self._last_optional_duration_ms,
+                "last_core_completed_utc": self._last_core_completed_utc,
+                "last_optional_completed_utc": self._last_optional_completed_utc,
                 "overview": _overview(self._last_stats),
                 "stats": metrics,
                 "observations": groups,

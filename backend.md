@@ -4,7 +4,7 @@ This implementation is a **read-only, manually registered fleet backend and brow
 
 ## Setup
 
-Requires Python **3.9+** on a Linux host with direct, operator-approved reachability to the agents' TCP port (9797 by default). Runtime uses the Python standard library only.
+Requires Python **3.9+** on a Linux or Windows Hub host with direct, operator-approved reachability to the Linux agents' TCP port (9797 by default). Runtime uses the Python standard library only.
 
 1. Copy `nodes.example.json` to a private `nodes.json` outside the source checkout.
 2. Create canonical opaque UUIDs with `python3 -c 'import uuid; print(uuid.uuid4())'`; keep them stable through IP changes and agent restarts.
@@ -21,6 +21,8 @@ Requires Python **3.9+** on a Linux host with direct, operator-approved reachabi
 
 4. Start locally: `python3 -m hub --nodes /path/to/nodes.json`. The read-only HTTP server binds to **127.0.0.1:9787** by default. A modified registry requires a Hub restart. To bind non-loopback, place the Hub behind an operator-controlled authenticated and encrypted access layer; the initial MVP itself has **no authentication or TLS**.
 5. Open `http://127.0.0.1:9787/` in a local browser or inspect `curl -fsS http://127.0.0.1:9787/api/nodes`. The browser fetches only Hub endpoints, never agents directly.
+
+The Hub listens on **TCP 9787** by default (Agent listens on **TCP 9797**). Use `--port 9798` to select a different fixed port if needed; no automatic port selection or fallback is performed. Startup reports an actionable error if the listener cannot bind, including port-in-use and permission/reservation failures. See [port policy and conflict diagnosis](docs/ports.md) for Windows and Linux commands.
 
 No automatic network scanning, browser-supplied agent URLs, writable registry API, outbound Push, or agent control is implemented. No agent-side modifications are required.
 
