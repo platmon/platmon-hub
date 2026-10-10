@@ -237,10 +237,19 @@ class PollTests(unittest.TestCase):
                 with lock: hits.add(endpoint)
                 return {"/api/status": st(), "/api/stats": stats(), "/api/observations": obs()}[path]
         fleet = Fleet(nodes, client=Many(), max_concurrency=2, core_interval=0.02, observations_interval=0.02)
+        expected = {n.endpoint for n in nodes}
         try:
             fleet.start()
-            time.sleep(0.3)
-            self.assertEqual(hits, {n.endpoint for n in nodes})
+            # Wait for actual observations rather than assuming 300 ms scheduling
+            # on all hosts (especially busy Windows CI runners).
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline:
+                with lock:
+                    if hits == expected:
+                        break
+                time.sleep(0.02)
+            with lock:
+                self.assertEqual(hits, expected)
         finally: fleet.close()
 
 
