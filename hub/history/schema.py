@@ -53,3 +53,16 @@ CREATE TABLE hub_sessions (
 PRAGMA user_version=2;
 """
 VERSION = 2
+
+MIGRATION_3 = """
+CREATE TABLE events (
+    node_id TEXT, event_type TEXT NOT NULL, received_at_ms INTEGER NOT NULL,
+    previous_state TEXT, current_state TEXT, reason_code TEXT NOT NULL,
+    event_id TEXT PRIMARY KEY
+);
+CREATE INDEX events_time ON events (received_at_ms, event_id);
+CREATE INDEX events_node_time ON events (node_id, received_at_ms);
+ALTER TABLE continuity ADD COLUMN headline TEXT;
+PRAGMA user_version=3;
+"""
+VERSION = 3

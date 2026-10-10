@@ -9,18 +9,21 @@ from pathlib import Path
 
 from .store import HistoryStore, SchemaError
 from .schema import VERSION
-from .projector import ContinuityRecord
+from .projector import ContinuityRecord, EventRecord
 
 LOG = logging.getLogger(__name__)
 
 
 class HistoryWriter:
     def __init__(self, path, *, capacity=2048, retention_days=7, store_factory=HistoryStore,
-                 retry_seconds=5.0, clock=time.monotonic, wall=time.time):
+                 retry_seconds=5.0, clock=time.monotonic, wall=time.time, event_retention_days=30):
         if type(capacity) is not int or capacity < 1:
             raise ValueError('invalid history queue capacity')
         if not math.isfinite(retention_days) or retention_days <= 0:
             raise ValueError('invalid history retention')
+        if not math.isfinite(event_retention_days) or event_retention_days <= 0:
+            raise ValueError('invalid event retention')
+        self.event_retention_ms = event_retention_days * 86400000
         self.path = Path(path).resolve()
         self.retention_ms = retention_days * 86400000
         self.store_factory = store_factory
@@ -32,6 +35,8 @@ class HistoryWriter:
         self._thread = None
         self._accepting = True
         self._losses = {}
+        self._pending_events = {}
+        self._last_overflow_event = float("-inf")
         self._stats = dict(enabled=True, state='starting', schema_version=None, submitted=0,
                            persisted=0, duplicates=0, dropped_regression=0, dropped_queue_full=0,
                            dropped_storage_error=0, dropped_invalid=0, dropped_closed=0,
@@ -62,20 +67,25 @@ class HistoryWriter:
             except queue.Full:
                 self._stats['dropped_queue_full'] += 1
                 self._remember_loss(record)
+                if self.clock() - self._last_overflow_event >= 60:
+                    self._pending_events['history_queue_overflow'] = EventRecord.create(None, 'history_queue_overflow', int(self.wall()*1000), None, 'dropping', 'queue_full')
+                    self._last_overflow_event = self.clock()
                 return False
             self._stats['submitted'] += 1
             return True
 
     def _remember_loss(self, record):
         # Caller holds _lock. One earliest loss per node/scope, capped independently.
+        if record.node_id is None:
+            return
         key = (record.node_id, getattr(record, 'group_name', getattr(record, 'scope', 'core')))
         if key not in self._losses and len(self._losses) < 1024:
-            self._losses[key] = ContinuityRecord(key[0], key[1], record.instance_id,
+            self._losses[key] = ContinuityRecord(key[0], key[1], getattr(record, 'instance_id', None),
                                                  record.received_at_ms, 'storage_loss')
 
     def snapshot(self):
         with self._lock:
-            return dict(self._stats, queue_depth=self.queue.qsize(), queue_capacity=self.queue.maxsize)
+            return dict(self._stats, queue_depth=self.queue.qsize(), queue_capacity=self.queue.maxsize, pending_events=len(self._pending_events))
 
     def start(self):
         if self._thread is not None:
@@ -88,6 +98,8 @@ class HistoryWriter:
         previous = self.snapshot()['last_error']
         self._update(state='degraded', last_error=category, last_error_ms=int(self.wall() * 1000))
         if category != previous:
+            with self._lock:
+                self._pending_events['history_writer_error'] = EventRecord.create(None, 'history_writer_error', int(self.wall()*1000), 'healthy', 'degraded', category)
             LOG.warning('history unavailable: %s', category)
 
     def _run(self):
@@ -99,7 +111,7 @@ class HistoryWriter:
         next_retention = self.clock()
         last_wall, last_tick = self.wall(), self.clock()
         try:
-            while not self._stop.is_set() or batch or not self.queue.empty():
+            while not self._stop.is_set() or batch or not self.queue.empty() or self._pending_events:
                 now = self.clock()
                 wall = self.wall()
                 if abs((wall - last_wall) - (now - last_tick)) > 60:
@@ -109,6 +121,9 @@ class HistoryWriter:
                     candidate = self.store_factory(self.path)
                     try:
                         store = candidate.open()
+                        if self.snapshot()['last_error'] is not None:
+                            with self._lock:
+                                self._pending_events['history_writer_recovered'] = EventRecord.create(None, 'history_writer_recovered', int(self.wall()*1000), 'degraded', 'healthy', 'opened')
                         self._update(state='healthy', schema_version=VERSION)
                     except Exception as exc:
                         candidate.close()
@@ -131,7 +146,7 @@ class HistoryWriter:
                 if batch:
                     if store is not None:
                         try:
-                            expired = [] if self.snapshot()['clock_discontinuity'] else [r for r in batch if r.received_at_ms < wall * 1000 - self.retention_ms]
+                            expired = [] if self.snapshot()['clock_discontinuity'] else [r for r in batch if r.received_at_ms < wall * 1000 - (self.event_retention_ms if isinstance(r, EventRecord) else self.retention_ms)]
                             active = [r for r in batch if r not in expired]
                             with self._lock:
                                 losses = dict(self._losses)
@@ -141,6 +156,9 @@ class HistoryWriter:
                                     if self._losses.get(key) is value:
                                         del self._losses[key]
                             self._count(**counts, dropped_expired=len(expired))
+                            if self.snapshot()['state'] == 'degraded':
+                                with self._lock:
+                                    self._pending_events['history_writer_recovered'] = EventRecord.create(None, 'history_writer_recovered', int(self.wall()*1000), 'degraded', 'healthy', 'commit_succeeded')
                             self._update(state='healthy', last_commit_ms=int(self.wall() * 1000), last_error=None)
                             batch.clear()
                         except Exception as exc:
@@ -154,7 +172,7 @@ class HistoryWriter:
                     self._update(in_flight=len(batch))
                 if store is not None and not batch and now >= next_retention and not self.snapshot()['clock_discontinuity']:
                     try:
-                        deleted = store.prune(int(wall * 1000 - self.retention_ms))
+                        deleted = store.prune(int(wall * 1000 - self.retention_ms), event_cutoff_ms=int(wall * 1000 - self.event_retention_ms))
                         self._count(retention_deleted=deleted)
                         self._update(last_retention_ms=int(wall * 1000))
                         checkpoint_start = self.clock()
@@ -167,6 +185,21 @@ class HistoryWriter:
                     except Exception as exc:
                         self._error(exc)
                         next_retention = now + 3600
+                with self._lock:
+                    events = dict(self._pending_events)
+                if store is not None and events:
+                    try:
+                        self._count(**store.insert_batch(list(events.values())))
+                        with self._lock:
+                            for key, event in events.items():
+                                if self._pending_events.get(key) is event:
+                                    del self._pending_events[key]
+                    except Exception as exc:
+                        self._error(exc)
+                if self._stop.is_set():
+                    with self._lock:
+                        self._stats['dropped_storage_error'] += len(self._pending_events)
+                        self._pending_events.clear()
                 if batch:
                     self._stop.wait(0.1)
         except Exception as exc:
@@ -187,6 +220,6 @@ class HistoryWriter:
         if self._thread is not None:
             self._thread.join(timeout=max(0, timeout))
         state = self.snapshot()
-        remaining = state['queue_depth'] + state['in_flight']
+        remaining = state['queue_depth'] + state['in_flight'] + state['pending_events']
         return {'flushed': remaining == 0 and not (self._thread and self._thread.is_alive()) and
                 state['dropped_storage_error'] == 0, 'remaining': remaining}

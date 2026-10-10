@@ -11,7 +11,7 @@ from .state import NodeState
 from .registry import validate_registry
 from .reload import RegistryWatcher
 from dataclasses import asdict
-from .history.projector import ContinuityRecord, project_observation
+from .history.projector import ContinuityRecord, project_observation, EventRecord
 
 LOG = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ class Fleet:
         elif snapshot['core_error'] == 'transport' and reason != 'offline':
             reason = 'transport'
         self._history_submit(ContinuityRecord(state.node.node_id, 'core', snapshot['instance_id'],
-                                             int(time.time() * 1000), reason, state.grace_ms + 6000))
+                                             int(time.time() * 1000), reason, state.grace_ms + 6000, snapshot['headline']))
 
     def apply_registry(self, nodes):
         nodes = validate_registry({'nodes': [asdict(node) for node in nodes]})
@@ -69,6 +69,11 @@ class Fleet:
             now = self.clock()
             for node in nodes:
                 old = self.nodes.get(node.node_id)
+                if old is None or old.node != node:
+                    reason = 'added' if old is None else 'endpoint_changed' if old.node.endpoint != node.endpoint else 'enabled_changed' if old.node.enabled != node.enabled else 'renamed'
+                    self._history_submit(EventRecord.create(node.node_id, 'registry_changed', int(time.time()*1000),
+                                                           None if old is None else ('enabled' if old.node.enabled else 'disabled'),
+                                                           'enabled' if node.enabled else 'disabled', reason))
                 if old is not None and old.node.endpoint == node.endpoint and old.node.enabled == node.enabled:
                     old.update_node(node)
                     replacement[node.node_id] = old
@@ -80,6 +85,7 @@ class Fleet:
                     self._history_submit(ContinuityRecord(node.node_id, 'core', instance, int(time.time()*1000),
                                                          'unobserved' if node.enabled else 'disabled'))
             for node_id in set(self.nodes) - set(replacement):
+                self._history_submit(EventRecord.create(node_id, 'registry_changed', int(time.time()*1000), 'registered', 'removed', 'removed'))
                 self._due.pop(node_id, None)
             self.nodes = replacement
 

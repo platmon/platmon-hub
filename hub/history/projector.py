@@ -79,6 +79,7 @@ class ContinuityRecord:
     received_at_ms: int
     reason: object
     silence_ms: float = 15000
+    headline: object = None
 
     def valid(self):
         try:
@@ -127,3 +128,35 @@ def project_observation(node_id, instance_id, name, group, received_at_ms):
     payload = json.dumps({rows_name: projected}, allow_nan=False, separators=(',', ':'))
     return ObservationRecord(node_id, instance_id, name, publication['id'], received_at_ms,
                              publication['data_age_ms'], group['stale_after_ms'], group['state'], payload)
+
+
+EVENT_TYPES = ('core_state', 'agent_restart', 'optional_error', 'optional_recovered',
+               'history_writer_error', 'history_writer_recovered', 'history_queue_overflow', 'registry_changed')
+
+
+@dataclass(frozen=True)
+class EventRecord:
+    node_id: object
+    event_type: str
+    received_at_ms: int
+    previous_state: object
+    current_state: object
+    reason_code: str
+    event_id: str
+
+    @classmethod
+    def create(cls, node_id, event_type, received_at_ms, previous_state, current_state, reason_code):
+        return cls(node_id, event_type, received_at_ms, previous_state, current_state, reason_code, str(uuid.uuid4()))
+
+    def valid(self):
+        try:
+            return (self.event_type in EVENT_TYPES and str(uuid.UUID(self.event_id)) == self.event_id and
+                    (self.node_id is None or str(uuid.UUID(self.node_id)) == self.node_id) and
+                    type(self.received_at_ms) is int and 0 <= self.received_at_ms < 2**63 and
+                    all(v is None or (isinstance(v, str) and len(v.encode('utf-8')) <= 128)
+                        for v in (self.previous_state, self.current_state, self.reason_code)))
+        except (ValueError, AttributeError, TypeError):
+            return False
+
+    def values(self):
+        return astuple(self)

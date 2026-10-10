@@ -117,7 +117,7 @@ class WriterTests(unittest.TestCase):
         self.assertTrue(writer.close()['flushed'])
         self.assertFalse(writer.submit(record(3)))
         state = writer.snapshot()
-        self.assertEqual(state['persisted'], 2)  # Sample plus recovered storage-loss evidence.
+        self.assertEqual(state['persisted'], 3)  # Sample, loss evidence and overflow event.
         self.assertEqual(state['dropped_queue_full'], 1)
         self.assertEqual(state['dropped_invalid'], 1)
         self.assertEqual(state['dropped_closed'], 1)
