@@ -1,7 +1,5 @@
 """Opt-in local registry management; no sessions, discovery or Agent requests."""
 import json
-import os
-import secrets
 from pathlib import Path
 from dataclasses import asdict
 from .registry import validate_registry
@@ -15,25 +13,8 @@ class AdminError(Exception):
 
 
 class RegistryAdmin:
-    def __init__(self, registry_path, token_path):
+    def __init__(self, registry_path):
         self.registry_path = Path(registry_path).resolve()
-        path = Path(token_path)
-        if os.name != 'nt' and path.stat().st_mode & 0o077:
-            raise ValueError('admin token file must be accessible only to its owner')
-        with path.open('rb') as handle:
-            raw = handle.read(129)
-        token = raw.strip()
-        if len(raw) > 128 or len(token) != 64 or any(c not in b'0123456789abcdef' for c in token):
-            raise ValueError('admin token file must contain a 64-character lowercase hex token')
-        self._token = token
-
-    def authorized(self, authorization):
-        if not authorization or not authorization.startswith('Bearer '):
-            return False
-        try:
-            return secrets.compare_digest(authorization[7:].encode('ascii'), self._token)
-        except UnicodeError:
-            return False
 
     def list_nodes(self):
         try:

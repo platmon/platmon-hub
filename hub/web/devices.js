@@ -3,10 +3,6 @@
   const monitoring = document.getElementById("monitoring-view");
   const management = document.getElementById("devices-view");
   const tabs = [document.getElementById("monitoring-tab"), document.getElementById("devices-tab")];
-  const unlock = document.getElementById("devices-unlock");
-  const tokenInput = document.getElementById("devices-token");
-  const unlockButton = document.getElementById("devices-unlock-button");
-  const lockButton = document.getElementById("devices-lock");
   const addButton = document.getElementById("add-device");
   const status = document.getElementById("devices-status");
   const list = document.getElementById("devices-list");
@@ -18,8 +14,7 @@
   const cancelButton = document.getElementById("device-cancel");
   const removePreview = document.getElementById("device-remove-preview");
   const controllers = new Set();
-  let token = "";
-  let expiry = null;
+  let available = false;
   let ticket = 0;
   let busy = false;
   let entries = [];
@@ -32,13 +27,12 @@
     if (text !== undefined) result.textContent = text;
     return result;
   }
-  async function request(path, body, credential) {
+  async function request(path, body) {
     const controller = new AbortController();
     controllers.add(controller);
     const timeout = setTimeout(() => controller.abort(), 5000);
     try {
-      const headers = {};
-      if (credential) headers.Authorization = "Bearer " + credential;
+      const headers = {"X-Platmon-Admin":"1"};
       if (body !== undefined) headers["Content-Type"] = "application/json";
       const response = await fetch(path, {method:body === undefined ? "GET" : "POST",
         headers, body:body === undefined ? undefined : JSON.stringify(body),
@@ -53,42 +47,18 @@
       return data;
     } finally { clearTimeout(timeout); controllers.delete(controller); }
   }
-  function lock(message) {
+  function suspend() {
     const pending = busy;
     ticket++;
-    token = "";
-    tokenInput.value = "";
-    clearTimeout(expiry);
-    expiry = null;
+    available = false;
     for (const controller of controllers) controller.abort();
     busy = false;
     entries = [];
     editing = null;
     if (dialog.open) dialog.close();
     list.replaceChildren();
-    unlock.hidden = false;
-    unlockButton.disabled = tokenInput.disabled;
-    lockButton.hidden = true;
     addButton.disabled = true;
-    status.textContent = (message || "Management locked. Enter the administrator token to continue.") +
-      (pending ? " If a change was being saved, refresh Devices before retrying." : "");
-  }
-  async function capabilities() {
-    const current = ticket;
-    tokenInput.disabled = true;
-    unlockButton.disabled = true;
-    status.textContent = "Checking device management…";
-    try {
-      const data = await request("/api/admin/status");
-      if (current !== ticket || management.hidden || document.hidden) return;
-      const local = location.protocol === "http:" && ["127.0.0.1", "localhost"].includes(location.hostname) && Number(location.port || 80) === data.local_port;
-      tokenInput.disabled = !(data.enabled && local);
-      unlockButton.disabled = tokenInput.disabled;
-      status.textContent = !data.enabled ? "Web device management is disabled. Ask your administrator to enable it, or use the local registry CLI." :
-        !local ? "Device management is available only on the local Hub page." : "Enter the administrator token to manage devices.";
-    } catch (_error) {
-      if (current === ticket && !management.hidden) status.textContent = "Cannot check management. Refresh this tab to retry.";
-    }
+    if (pending) status.textContent = "A change may already be saved. Refresh Devices before retrying.";
   }
   function showView(devices) {
     monitoring.hidden = devices;
@@ -98,9 +68,10 @@
       tab.setAttribute("aria-selected", String(selected));
       tab.tabIndex = selected ? 0 : -1;
     });
+    document.getElementById("refresh").setAttribute("aria-label", devices ? "Refresh device registry" : "Refresh fleet data");
     history.replaceState(null, "", devices ? "#devices" : "#monitoring");
-    if (!devices) lock();
-    else if (!token) capabilities();
+    suspend();
+    if (devices) refresh();
     document.dispatchEvent(new Event("view-change"));
   }
   tabs.forEach((tab, index) => {
@@ -120,7 +91,7 @@
 
   function render() {
     list.replaceChildren();
-    if (!token) return;
+    if (!available) return;
     if (!entries.length) { list.append(element("p", "empty", "No devices registered. Use Add device to register an Agent.")); return; }
     for (const node of entries) {
       const card = element("article", "management-card");
@@ -142,64 +113,47 @@
   function validateEntries(data) {
     if (!Array.isArray(data.nodes) || data.nodes.length > 256 || data.nodes.some(node =>
       !node || typeof node.node_id !== "string" || typeof node.name !== "string" || typeof node.endpoint !== "string" || typeof node.enabled !== "boolean")) {
-      throw new Error("Invalid registry response. Lock and reload Devices.");
+      throw new Error("Invalid registry response. Refresh Devices.");
     }
     return data.nodes;
   }
   async function refresh() {
     if (management.hidden || document.hidden || busy) return;
-    if (!token) { await capabilities(); return; }
     const current = ticket;
     busy = true;
     addButton.disabled = true;
     render();
     try {
-      const data = await request("/api/admin/nodes", undefined, token);
+      const capability = await request("/api/admin/status");
+      if (current !== ticket) return;
+      const local = location.protocol === "http:" && ["127.0.0.1", "localhost"].includes(location.hostname) && Number(location.port || 80) === capability.local_port;
+      if (!capability.enabled || !local) {
+        available = false;
+        entries = [];
+        status.textContent = !capability.enabled ? "Device management is disabled. Start Hub with --web-admin, or use the local registry CLI." : "Device management is available only on the local Hub page.";
+        return;
+      }
+      const data = await request("/api/admin/nodes");
       if (current !== ticket) return;
       entries = validateEntries(data);
+      available = true;
       status.textContent = entries.length + " registered devices · Registry settings · Fleet applies changes automatically.";
     } catch (error) {
       if (current !== ticket) return;
-      if (error.status === 401) lock("Administrator token rejected. Unlock again.");
-      else status.textContent = "Could not refresh Devices. Displayed settings may be outdated. " + error.message;
+      status.textContent = "Could not refresh Devices. Displayed settings may be outdated. " + error.message;
     } finally {
-      if (current === ticket) { busy = false; addButton.disabled = !token; render(); }
+      if (current === ticket) { busy = false; addButton.disabled = !available; render(); }
     }
   }
-  unlock.addEventListener("submit", async event => {
-    event.preventDefault();
-    if (busy || tokenInput.disabled || !unlock.reportValidity()) return;
-    const credential = tokenInput.value;
-    tokenInput.value = "";
-    const current = ++ticket;
-    busy = true;
-    unlockButton.disabled = true;
-    status.textContent = "Unlocking management…";
-    try {
-      const data = await request("/api/admin/nodes", undefined, credential);
-      if (current !== ticket || management.hidden || document.hidden) return;
-      entries = validateEntries(data);
-      token = credential;
-      expiry = setTimeout(() => lock("Management access expired. Unlock again."), 5 * 60 * 1000);
-      unlock.hidden = true;
-      lockButton.hidden = false;
-      status.textContent = entries.length + " registered devices · Changes preserve History.";
-    } catch (error) {
-      if (current === ticket) status.textContent = error.message;
-    } finally {
-      if (current === ticket) { busy = false; unlockButton.disabled = tokenInput.disabled; addButton.disabled = !token; render(); }
-    }
-  });
-  lockButton.addEventListener("click", () => lock());
   addButton.addEventListener("click", () => openDialog("add", null));
   document.getElementById("refresh").addEventListener("click", refresh);
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) lock("Management locked while the page was hidden. Unlock again.");
-    else if (!management.hidden) capabilities();
+    if (document.hidden) suspend();
+    else if (!management.hidden) refresh();
   });
 
   function openDialog(action, node) {
-    if (busy || !token || dialog.open) return;
+    if (busy || !available || dialog.open) return;
     form.reset();
     editing = node;
     operation = action === "toggle" ? "update" : action;
@@ -232,7 +186,7 @@
   dialog.addEventListener("close", () => { if (!dialog.open) editing = null; });
   form.addEventListener("submit", async event => {
     event.preventDefault();
-    if (busy || !token || saveButton.disabled || !form.reportValidity()) return;
+    if (busy || !available || saveButton.disabled || !form.reportValidity()) return;
     const current = ticket;
     let body;
     const target = operation === "add" ? "/api/admin/nodes" : "/api/admin/nodes/" + encodeURIComponent(editing.node_id) + "/" + operation;
@@ -251,7 +205,7 @@
     formStatus.textContent = operation === "remove" ? "Removing registration…" : "Saving device…";
     let saved = false;
     try {
-      const data = await request(target, body, token);
+      const data = await request(target, body);
       if (current !== ticket) return;
       if (data.saved !== true || typeof data.node_id !== "string") throw new Error("Cannot confirm save. Refresh Devices before retrying.");
       saved = true;
@@ -259,11 +213,10 @@
       status.textContent = "Registry saved. Waiting for Fleet reload; inspect monitoring for current Agent status.";
       cancelButton.textContent = "Close";
       document.dispatchEvent(new Event("registry-change"));
-      const registry = await request("/api/admin/nodes", undefined, token);
+      const registry = await request("/api/admin/nodes");
       if (current === ticket) { entries = validateEntries(registry); render(); }
     } catch (error) {
       if (current !== ticket) return;
-      if (error.status === 401) { lock("Administrator token rejected. Unlock again."); return; }
       if (saved) {
         formStatus.textContent = "Registry saved, but list refresh failed. Close and refresh Devices.";
         return;
@@ -272,7 +225,7 @@
       fields.disabled = operation === "remove";
       saveButton.disabled = false;
     } finally {
-      if (current === ticket) { busy = false; cancelButton.disabled = false; addButton.disabled = !token; render(); }
+      if (current === ticket) { busy = false; cancelButton.disabled = false; addButton.disabled = !available; render(); }
     }
   });
   if (location.hash === "#devices") showView(true);

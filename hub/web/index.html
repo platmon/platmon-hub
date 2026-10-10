@@ -90,14 +90,8 @@
         <div><p class="eyebrow">Device management</p><h1>Manage your devices</h1>
           <p class="subtle">Add, update or remove registered devices. Existing History is preserved.</p></div>
         <div class="device-actions"><button type="button" class="refresh-button" id="add-device" disabled>Add device</button>
-          <button type="button" class="refresh-button" id="devices-lock" hidden>Lock management</button></div>
+        </div>
       </div>
-      <form id="devices-unlock" class="management-unlock">
-        <label for="devices-token">Administrator token</label>
-        <input id="devices-token" type="password" minlength="64" maxlength="64" pattern="[0-9a-f]{64}" required autocomplete="off" spellcheck="false" disabled>
-        <button type="submit" class="refresh-button" id="devices-unlock-button" disabled>Unlock management</button>
-        <p class="subtle">Access lasts up to 5 minutes and ends when you leave this tab or hide the page. The token is never saved in browser storage.</p>
-      </form>
       <p id="devices-status" class="subtle" role="status" aria-live="polite">Enter the local Devices tab to manage the registry.</p>
       <div id="devices-list" class="management-list"></div>
     </section>

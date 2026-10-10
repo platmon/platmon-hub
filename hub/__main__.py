@@ -70,7 +70,7 @@ def main(argv=None):
     parser.add_argument("--nodes", required=True, help="path to explicitly managed node registry JSON")
     parser.add_argument("--bind", default="127.0.0.1", help="Hub bind address; loopback by default")
     parser.add_argument("--port", type=tcp_port, default=9787, help="Hub TCP listen port (default: 9787)")
-    parser.add_argument("--admin-token-file", help="opt-in local web device registration with a protected token file")
+    parser.add_argument("--web-admin", action="store_true", help="enable device management for trusted local users (loopback only)")
     parser.add_argument("--alerts", help="local alert rules JSON (requires history)")
     parser.add_argument("--history-db", help="explicit local SQLite history path (disabled by default)")
     parser.add_argument("--event-retention-days", type=positive_days, default=30)
@@ -78,14 +78,11 @@ def main(argv=None):
     parser.add_argument("--no-registry-reload", action="store_true", help="disable automatic registry reload")
     args = parser.parse_args(argv)
     admin = None
-    if args.admin_token_file:
+    if args.web_admin:
         if args.bind != '127.0.0.1' or args.no_registry_reload:
-            parser.error('--admin-token-file requires --bind 127.0.0.1 and registry reload')
+            parser.error('--web-admin requires --bind 127.0.0.1 and registry reload')
         from .admin import RegistryAdmin
-        try:
-            admin = RegistryAdmin(args.nodes, args.admin_token_file)
-        except (OSError, ValueError):
-            parser.error('admin token file must be readable, owner-only on POSIX, and contain 64 lowercase hex characters')
+        admin = RegistryAdmin(args.nodes)
     handlers = [RotatingFileHandler(args.log_file, maxBytes=2*1024*1024, backupCount=3, encoding="utf-8")] if args.log_file else None
     logging.basicConfig(level=logging.INFO, handlers=handlers, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     nodes = load_registry(args.nodes)

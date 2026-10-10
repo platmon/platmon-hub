@@ -1,8 +1,8 @@
 # Access boundaries
 
 The Hub has no public authentication endpoint. HTTP is read-only by default;
-[local web registration](web-registration.md) is an explicit token-authenticated
-exception for adding devices from the Hub host.
+[local web registration](web-registration.md) is an explicitly enabled local-only
+exception for managing devices from a trusted Hub host.
 Keep its default `127.0.0.1:9787` listener. Agent endpoints remain private, explicit
 GET-only origins. Do not publish either Hub or Agent ports directly to the internet.
 A local process with access to loopback can read fleet data; the host is a trust
@@ -11,7 +11,7 @@ boundary. Loopback binding is not user authentication on a shared host.
 | Identity | Permitted operations | Enforcement |
 | --- | --- | --- |
 | Authenticated proxy viewer | Dashboard and read-only APIs | TLS proxy authentication |
-| Local web administrator | List/add/edit/disable/remove registrations, when explicitly enabled | Protected token, loopback listener, exact Origin/Host and JSON request checks |
+| Trusted local user/process | List/add/edit/disable/remove registrations, when explicitly enabled | Explicit --web-admin, loopback listener, exact Origin/Host and non-simple request header |
 | OS administrator | Local registry CLI, rules, service configuration | OS login, filesystem ACLs, approved sudo/task permissions |
 | Hub service account | Read registry/rules; write its DB/log directories | Dedicated account and directory permissions |
 | Anonymous remote client | No fleet access | Authenticated proxy and firewall |
@@ -36,6 +36,7 @@ restricted private-key/password-file permissions and a strong supported password
 hash. Never store credentials in source control, URLs or Hub config. Protect all
 paths, including assets, health and history. Rewrite upstream Host to the loopback
 origin; the Hub rejects arbitrary Host names on loopback to reduce DNS rebinding.
+Reject `/api/admin/` routes and strip upstream X-Platmon-Admin as in the example.
 Strip upstream Authorization/Cookie; do not trust client-provided identity headers.
 Use `nginx -t` before reload. Proxy and Hub ports must not provide an authentication
 bypass through another interface. Review both IPv4 and IPv6 firewall rules.
@@ -45,9 +46,8 @@ Browsers may cache credentials, so there is no reliable application logout or id
 session timeout in this example. Removing a viewer's password entry revokes future
 requests. If timed sessions, MFA or centrally managed logout are required, use the
 organization's identity-aware gateway before deployment. Do not claim those features
-for this Basic-auth example. No Hub session cookies are issued. The optional local admin token is held in a
-protected file and loaded at startup; it is never returned by the API or persisted
-in the Dashboard.
+for this Basic-auth example. No Hub session cookies or local administrator tokens are issued. Enabling local
+web management trusts all users/processes that can access the loopback listener.
 
 Official configuration references: [nginx Basic authentication](https://nginx.org/en/docs/http/ngx_http_auth_basic_module.html),
 [HTTPS configuration](https://nginx.org/en/docs/http/configuring_https_servers.html),
@@ -69,7 +69,7 @@ SQL inputs are parameterized, metric names allowlisted, responses bounded and mi
 metrics preserved as null. HTTP APIs remain same-origin with no permissive CORS.
 All application responses carry no-store/nosniff, restrictive CSP and frame denial;
 static files retain their exact allowlist. Read-only operations have no CSRF-sensitive mutation; the opt-in local write
-routes enforce exact Origin/Host, bearer authorization and non-simple JSON requests. The proxy must not add permissive CORS or relax these headers.
+routes enforce exact Origin/Host, the non-simple X-Platmon-Admin header and JSON requests. The proxy must not add permissive CORS or relax these headers.
 
 Hub access logs record method/status only, excluding URLs, query strings, headers,
 credentials and arbitrary strings. Use `--log-file` for rotation. The proxy's

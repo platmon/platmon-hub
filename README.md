@@ -47,7 +47,7 @@ History API and local Canvas graphs preserve missing values and restart boundari
 
 Keep Hub loopback-only and Agents on a trusted management network. The optional
 [TLS/authentication proxy](docs/security.md) is a separate, explicitly configured
-component. HTTP is read-only by default. Opt-in [local web device management](docs/web-registration.md) uses a protected administrator token.
+component. HTTP is read-only by default. Opt-in [local web device management](docs/web-registration.md) is enabled with `--web-admin` for trusted local users.
 
 ## Documentation
 

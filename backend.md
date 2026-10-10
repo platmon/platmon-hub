@@ -1,6 +1,6 @@
 # Backend behavior
 
-This is a **read-only, explicitly registered Fleet backend and Dashboard** for platmon agents, with optional SQLite history, events and internal alerts. Registry administration is available through the local CLI and opt-in authenticated local web management routes. It never installs or controls Agents.
+This is a **read-only, explicitly registered Fleet backend and Dashboard** for platmon agents, with optional SQLite history, events and internal alerts. Registry administration is available through the local CLI and opt-in local-only web management routes. It never installs or controls Agents.
 
 ## Setup
 
@@ -215,7 +215,7 @@ atomically replace the registry. Invalid input or replace failure leaves the
 original intact. Cooperative CLI writers cannot overwrite each other; manual
 editors must coordinate with the operator. The latest backup is a recovery copy,
 not an indefinite audit log. Protect the registry, backup and directory with OS
-permissions/ACLs; [web management](docs/web-registration.md) requires explicit local token configuration. The running Hub watches this file by default; `--no-registry-reload` retains startup-only behavior.
+permissions/ACLs; [web management](docs/web-registration.md) requires explicit `--web-admin` configuration. The running Hub watches this file by default; `--no-registry-reload` retains startup-only behavior.
 
 
 ## Registry hot reload

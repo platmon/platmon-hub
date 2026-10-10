@@ -2,7 +2,6 @@ import contextlib
 import http.client
 import io
 import json
-import os
 import tempfile
 import threading
 import unittest
@@ -25,10 +24,7 @@ class WebRegistrationTests(unittest.TestCase):
         root = Path(self.directory.name)
         self.registry = root / 'nodes.json'
         self.registry.write_text('{"nodes": []}', encoding='utf-8')
-        self.token = root / 'admin-token.txt'
-        self.token.write_text('a' * 64 + '\n', encoding='utf-8')
-        self.token.chmod(0o600)
-        self.admin = RegistryAdmin(self.registry, self.token)
+        self.admin = RegistryAdmin(self.registry)
         self.fleet = Fleet([], registry_path=self.registry)
         self.addCleanup(self.fleet.close)
         self.server = HubServer(('127.0.0.1', 0), self.fleet, admin=self.admin)
@@ -41,7 +37,7 @@ class WebRegistrationTests(unittest.TestCase):
 
     def request(self, data=None, headers=None, method='POST', path='/api/admin/nodes', raw=None):
         origin = 'http://127.0.0.1:' + str(self.server.server_port)
-        values = {'Origin': origin, 'Authorization': 'Bearer ' + 'a' * 64, 'Content-Type': 'application/json'}
+        values = {'Origin': origin, 'X-Platmon-Admin': '1', 'Content-Type': 'application/json'}
         if headers:
             for key, value in headers.items():
                 if value is None: values.pop(key, None)
@@ -55,7 +51,7 @@ class WebRegistrationTests(unittest.TestCase):
         finally:
             connection.close()
 
-    def test_authenticated_add_backup_uuid_and_reload_without_agent_requests(self):
+    def test_local_add_backup_uuid_and_reload_without_agent_requests(self):
         original = self.registry.read_bytes()
         with patch('urllib.request.urlopen') as request:
             status, headers, body = self.request({'name': 'Lab', 'host': '::1', 'port': 9797, 'enabled': False})
@@ -75,10 +71,10 @@ class WebRegistrationTests(unittest.TestCase):
         self.assertEqual(headers['X-Frame-Options'], 'DENY')
         self.assertIn("form-action 'none'", headers['Content-Security-Policy'])
 
-    def test_authentication_csrf_and_forged_identity_never_write(self):
+    def test_csrf_and_forged_identity_never_write(self):
         original = self.registry.read_bytes()
-        cases = [({'Authorization': None, 'X-Forwarded-User': 'admin'}, 401),
-                 ({'Authorization': 'Bearer fake'}, 401),
+        cases = [({'X-Platmon-Admin': None, 'X-Forwarded-User': 'admin'}, 403),
+                 ({'X-Platmon-Admin': 'wrong'}, 403),
                  ({'Origin': None}, 403), ({'Origin': 'http://evil.example'}, 403),
                  ({'Origin': 'http://127.0.0.1:9798'}, 403),
                  ({'Host': 'evil.example'}, 403),
@@ -93,7 +89,7 @@ class WebRegistrationTests(unittest.TestCase):
         self.assertFalse(self.request(method='GET', path='/api/admin/status')[2]['enabled'])
         self.assertEqual(self.request()[0], 405)
         self.server.admin = self.admin
-        for method in ('PUT', 'PATCH', 'DELETE'):
+        for method in ('PUT', 'PATCH', 'DELETE', 'OPTIONS'):
             self.assertEqual(self.request(method=method)[0], 405)
         self.assertEqual(self.request(path='/api/nodes')[0], 405)
         self.assertEqual(self.request(path='/api/admin/nodes?host=evil')[0], 405)
@@ -127,22 +123,16 @@ class WebRegistrationTests(unittest.TestCase):
         self.assertEqual(self.registry.read_bytes(), original)
         self.assertEqual(self.request({'name': 'Other', 'host': '192.0.2.11'})[0], 201)
 
-    def test_admin_rate_budget_and_token_redaction(self):
+    def test_admin_rate_budget_and_header_redaction(self):
         self.server.admin_budget = RequestBudget(rate=0, burst=1)
         with self.assertLogs('hub.access', 'INFO') as logs:
-            self.assertEqual(self.request(headers={'Authorization': 'Bearer private-token'})[0], 401)
+            self.assertEqual(self.request(headers={'Authorization': 'Bearer private-token'})[0], 201)
             self.assertEqual(self.request()[0], 429)
         self.assertNotIn('private-token', ''.join(logs.output))
-        self.assertNotIn('a' * 64, ''.join(logs.output))
+        # List refreshes do not spend the mutation budget.
+        self.assertEqual(self.request(method='GET')[0], 200)
 
-    def test_token_permissions_and_fail_closed_configuration(self):
-        for text in ('short', 'A' * 64, 'g' * 64, 'a' * 200):
-            self.token.write_text(text, encoding='utf-8')
-            with self.assertRaises(ValueError): RegistryAdmin(self.registry, self.token)
-        if os.name != 'nt':
-            self.token.write_text('a' * 64, encoding='utf-8')
-            self.token.chmod(0o644)
-            with self.assertRaises(ValueError): RegistryAdmin(self.registry, self.token)
+    def test_fail_closed_configuration(self):
         with self.assertRaises(ValueError): HubServer(('0.0.0.0', 0), self.fleet, admin=self.admin)
         empty = Fleet([])
         try:
@@ -150,16 +140,16 @@ class WebRegistrationTests(unittest.TestCase):
         finally: empty.close()
         for options in (['--bind', '0.0.0.0'], ['--no-registry-reload']):
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit), patch('hub.__main__.Fleet') as fleet:
-                main(['--nodes', str(self.registry), '--admin-token-file', str(self.token)] + options)
+                main(['--nodes', str(self.registry), '--web-admin'] + options)
             fleet.assert_not_called()
 
     def test_duplicate_sensitive_headers_and_global_budget_fail_closed(self):
         origin = 'http://127.0.0.1:' + str(self.server.server_port)
-        for duplicate in ('Host', 'Origin', 'Authorization', 'Content-Length'):
+        for duplicate in ('Host', 'Origin', 'X-Platmon-Admin', 'Content-Length'):
             with self.subTest(header=duplicate):
                 connection = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=2)
                 body = b'{"name":"Lab","host":"192.0.2.10"}'
-                values = [('Host', origin[7:]), ('Origin', origin), ('Authorization', 'Bearer ' + 'a' * 64),
+                values = [('Host', origin[7:]), ('Origin', origin), ('X-Platmon-Admin', '1'),
                           ('Content-Length', str(len(body))), ('Content-Type', 'application/json')]
                 try:
                     connection.putrequest('POST', '/api/admin/nodes', skip_host=True)
@@ -183,21 +173,21 @@ class WebRegistrationTests(unittest.TestCase):
             connection = http.client.HTTPConnection('127.0.0.1', actual_port, timeout=2)
             try:
                 connection.request('POST', '/api/admin/nodes', body=json.dumps({'name': 'Lab', 'host': '192.0.2.10'}),
-                    headers={'Host': 'localhost', 'Origin': 'http://localhost', 'Authorization': 'Bearer ' + 'a' * 64, 'Content-Type': 'application/json'})
+                    headers={'Host': 'localhost', 'Origin': 'http://localhost', 'X-Platmon-Admin': '1', 'Content-Type': 'application/json'})
                 response = connection.getresponse()
                 self.assertEqual(response.status, 201)
                 response.read()
             finally: connection.close()
 
-    def test_management_list_requires_authentication_and_local_origin(self):
+    def test_management_list_requires_non_simple_header_and_local_origin(self):
         self.assertEqual(self.request()[0], 201)
-        for headers, code in (({'Authorization': None}, 401), ({'Origin': 'http://evil.example'}, 403),
+        for headers, code in (({'X-Platmon-Admin': None}, 403), ({'Origin': 'http://evil.example'}, 403),
                               ({'Sec-Fetch-Site': 'cross-site'}, 403)):
             with self.subTest(headers=headers):
                 result = self.request(method='GET', headers=headers)
                 self.assertEqual(result[0], code)
                 self.assertNotIn('192.0.2.10', json.dumps(result[2]))
-        # Same-origin browser GET does not send Origin; bearer authorization is required.
+        # Same-origin browser GET does not send Origin; the non-simple header is required.
         status, _, result = self.request(method='GET', headers={'Origin': None})
         self.assertEqual(status, 200)
         self.assertEqual(result['nodes'][0]['endpoint'], 'http://192.0.2.10:9797')
@@ -247,7 +237,7 @@ class WebRegistrationTests(unittest.TestCase):
         original = self.registry.read_bytes()
         update = dict(name='Changed', host='192.0.2.12', port=9797, enabled=True, expected=node)
         for suffix, body in (('/update', update), ('/remove', dict(expected=node, confirm_node_id=identity))):
-            for headers, code in (({'Authorization': None}, 401), ({'Origin': None}, 403)):
+            for headers, code in (({'X-Platmon-Admin': None}, 403), ({'Origin': None}, 403), ({'Origin': 'http://evil.example'}, 403), ({'Sec-Fetch-Site': 'cross-site'}, 403)):
                 self.assertEqual(self.request(body, headers=headers, path='/api/admin/nodes/' + identity + suffix)[0], code)
         for body in ({'expected': node}, {'expected': node, 'confirm_node_id': 'wrong'},
                      {'expected':node, 'confirm_node_id':identity, 'delete_history':True}):

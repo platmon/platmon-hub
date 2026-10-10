@@ -153,7 +153,7 @@ class HubHandler(BaseHTTPRequestHandler):
         elif path.path == "/api/admin/nodes":
             if self.server.admin is None:
                 self._reply(403, {"error": "admin_disabled", "message": "Web device management is disabled."})
-            elif self._authorize_admin(write=False):
+            elif self._check_admin_origin(write=False):
                 self._admin_result(self.server.admin.list_nodes)
         elif path.path == "/api/admin/status":
             self._reply(200, {"schema_version": 1, "enabled": self.server.admin is not None, "local_port": self.server.server_port})
@@ -194,8 +194,8 @@ class HubHandler(BaseHTTPRequestHandler):
         except QueryError as exc:
             self._reply(exc.status, {'schema_version': 1, 'error': exc.code})
 
-    def _authorize_admin(self, write=True):
-        # Mutation requires exact Origin; authenticated reads allow its absence.
+    def _check_admin_origin(self, write=True):
+        # Mutation requires exact Origin; local reads allow its absence.
         host = self.headers.get('Host', '').lower()
         suffix = '' if self.server.server_port == 80 else ':' + str(self.server.server_port)
         allowed = ('127.0.0.1' + suffix, 'localhost' + suffix)
@@ -206,13 +206,12 @@ class HubHandler(BaseHTTPRequestHandler):
                 self.headers.get('Sec-Fetch-Site', 'same-origin') != 'same-origin'):
             self._reply(403, {'error': 'untrusted_origin', 'message': 'Use the local Hub page to manage devices.'})
             return False
-        authorized = (len(self.headers.get_all('Authorization', [])) == 1 and
-                      self.server.admin.authorized(self.headers.get('Authorization')))
-        if (write or not authorized) and not self.server.admin_budget.take():
-            self._reply(429, {'error': 'rate_limited', 'message': 'Wait a few seconds before retrying.'})
+        # A non-simple header blocks cross-site forms/resource loads; it is not a secret.
+        if self.headers.get_all('X-Platmon-Admin', []) != ['1']:
+            self._reply(403, {'error': 'untrusted_request', 'message': 'Use the local Devices tab to manage devices.'})
             return False
-        if not authorized:
-            self._reply(401, {'error': 'unauthorized', 'message': 'Enter the correct administrator token.'})
+        if write and not self.server.admin_budget.take():
+            self._reply(429, {'error': 'rate_limited', 'message': 'Wait a few seconds before retrying.'})
             return False
         return True
 
@@ -232,7 +231,7 @@ class HubHandler(BaseHTTPRequestHandler):
         if self.server.admin is None or action is None:
             self._read_only()
             return
-        if self._request_path() is None or not self._authorize_admin():
+        if self._request_path() is None or not self._check_admin_origin():
             return
         if self.headers.get('Transfer-Encoding') or len(self.headers.get_all('Content-Length', [])) != 1:
             self._reply(400, {'error': 'invalid_body', 'message': 'A bounded JSON body is required.'})
@@ -263,7 +262,7 @@ class HubHandler(BaseHTTPRequestHandler):
     def _read_only(self):
         self._reply(405, {"error": "read_only"})
 
-    do_PUT = do_PATCH = do_DELETE = _read_only
+    do_PUT = do_PATCH = do_DELETE = do_OPTIONS = _read_only
 
     def _static(self, filename, media_type):
         # Exact route-to-file mapping: no user-selected paths or directory traversal.

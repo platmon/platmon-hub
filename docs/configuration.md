@@ -51,9 +51,9 @@ Invalid reloads preserve the last accepted registry. HTTP registry writes are di
 
 ## Opt-in local web device management
 
-`--admin-token-file /private/admin-token.txt` enables the Dashboard **Devices**
-management tab on the local Hub page with bearer authorization. It requires loopback binding
-and registry reload; other HTTP write routes remain disabled. The Hub account
-needs write permission for the registry directory and backup. See
-[web registration](web-registration.md) for protected token creation, Windows ACLs,
-CSRF/Origin rules, rotation and viewer-proxy restrictions.
+`--web-admin` enables the Dashboard **Devices** management tab on the local Hub
+page without a token or login. It trusts all local users/processes, requires
+loopback binding and registry reload; other HTTP write routes remain disabled.
+The Hub account needs write permission for the registry directory and backup. See
+[web management](web-registration.md) for Origin/header checks and viewer-proxy
+restrictions. Omit the option to retain read-only HTTP behavior.
