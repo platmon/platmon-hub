@@ -171,6 +171,41 @@ python -m hub nodes --file /path/to/nodes.json enable NODE_UUID
 python -m hub nodes --file /path/to/nodes.json remove NODE_UUID
 ```
 
+For a new device, the shortest noninteractive command is:
+
+```sh
+python -m hub nodes --file /path/to/nodes.json add --name "Lab node" --host 192.0.2.1
+```
+
+`--host` accepts an explicit IP or hostname and uses Agent port `9797` by default.
+Use `--port 12345` for another Agent port (not the Hub port). Bare or bracketed
+IPv6 is accepted, for example `--host ::1`. Use `--endpoint` instead for a complete
+plain HTTP origin; the existing command remains supported. Do not combine
+`--endpoint` with `--host` or `--port`. No DNS lookup or connectivity check happens
+at registration time; an unreachable approved target can still be registered.
+
+For guided local registration:
+
+```sh
+python -m hub nodes --file /path/to/nodes.json add --interactive
+```
+
+Enter the display name, Agent IP/hostname and port (Enter accepts `9797`), review
+the validated preview, then type `yes` to save. The confirmation defaults to no;
+canceling or interrupted input writes nothing and does not acquire the registry
+lock. Supplied `--name`, `--host`, `--endpoint` or `--port` skip those questions.
+`--disabled` registers an inactive target. Prompts/preview use stderr and the
+successful result remains one JSON object on stdout. The destination parent
+directory must already exist. Registration never contacts or modifies an Agent.
+
+On success the result contains the new `node_id`. The running Hub normally
+applies the same registry automatically within about one second. Confirm it in
+the Fleet Dashboard; inspect `/api/registry/status` for rejected changes. The
+Hub's `--nodes` path and the CLI's `--file` path must refer to the same file.
+With `--no-registry-reload`, restart the Hub to apply changes. Existing endpoints
+are rejected with guidance to list and update the original UUID rather than
+creating a second identity.
+
 Add generates a UUID; all other changes retain it. `add --disabled` registers an
 inactive target. Remove only removes the registry entry; it never deletes history.
 All commands preserve existing limits and endpoint validation and never contact

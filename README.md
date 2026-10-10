@@ -27,6 +27,18 @@ changes preserve it. Without installation, use `python -m hub` in place of
 `platmon-hub`. See [build and installation](docs/operations.md) to create the wheel.
 Open `http://127.0.0.1:9787/`. The example registry contains no active targets.
 
+Add an approved device to the same registry from a local terminal:
+
+```sh
+python -m hub nodes --file nodes.json add --interactive
+# Or supply the name and Agent IP; Agent port defaults to 9797:
+python -m hub nodes --file nodes.json add --name "Lab node" --host 192.0.2.1
+```
+
+The running Hub automatically reloads its registry; no Agent or Hub restart is
+needed by default. See [local registry CLI](backend.md#local-registry-cli) for
+custom ports, disabled registration, validation and cancellation.
+
 History is opt-in via `--history-db`; internal alerts additionally require
 `--alerts /private/alerts.json`. Review [example rules](alerts.example.json) against
 your devices. Defaults retain metrics for 7 days and events for 30 days. Storage
