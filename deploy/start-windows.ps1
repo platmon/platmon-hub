@@ -40,7 +40,7 @@ foreach ($name in @('Registry', 'Python', 'StateDirectory', 'Port', 'ReadOnly'))
 }
 $registryPath = (Resolve-Path -LiteralPath $defaults.Registry).ProviderPath
 if (-not (Test-Path -LiteralPath $registryPath -PathType Leaf)) { throw 'Registry must be an existing file.' }
-$pythonPath = (Get-Command $defaults.Python -CommandType Application -ErrorAction Stop).Source
+$pythonPath = @(Get-Command $defaults.Python -CommandType Application -ErrorAction Stop)[0].Source
 $statePath = [IO.Path]::GetFullPath($defaults.StateDirectory)
 $settingsFile = [IO.Path]::GetFullPath($SettingsPath)
 foreach ($value in @($registryPath, $pythonPath, $statePath, $settingsFile)) {

@@ -14,10 +14,10 @@ try {
     [IO.File]::WriteAllText($registry, '{"nodes": []}')
     $settings = Join-Path $work 'launcher.json'
     $state = Join-Path $work 'state'
-    $pythonPath = (Get-Command python -CommandType Application).Source
+    $pythonPath = @(Get-Command python -CommandType Application)[0].Source
     $launcher = Join-Path $root 'deploy\start-windows.ps1'
     $startup = Join-Path $root 'deploy\install-windows-startup.ps1'
-    & $launcher -Registry $registry -Python $pythonPath -StateDirectory $state -SettingsPath $settings -SaveSettings -Check | Out-Null
+    & $launcher -Registry $registry -Python python -StateDirectory $state -SettingsPath $settings -SaveSettings -Check | Out-Null
     $loaded = & $launcher -SettingsPath $settings -Check | ConvertFrom-Json
     if ($loaded.Registry -ne $registry -or $loaded.Python -ne $pythonPath -or $loaded.Port -ne 9787 -or $loaded.ReadOnly) {
         throw 'Saved launcher settings did not round-trip.'
