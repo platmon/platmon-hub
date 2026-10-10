@@ -1,8 +1,18 @@
 """Loopback-default read-only Hub JSON endpoints."""
 
 import json
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
+
+
+ASSET_ROOT = Path(__file__).resolve().parent / "web"
+ASSETS = {
+    "/": ("index.html", "text/html; charset=utf-8"),
+    "/index.html": ("index.html", "text/html; charset=utf-8"),
+    "/assets/styles.css": ("styles.css", "text/css; charset=utf-8"),
+    "/assets/app.js": ("app.js", "text/javascript; charset=utf-8"),
+}
 
 
 class HubServer(ThreadingHTTPServer):
@@ -19,6 +29,8 @@ class HubHandler(BaseHTTPRequestHandler):
         path = urlsplit(self.path)
         if path.query or path.fragment:
             self._reply(404, {"error": "not_found"})
+        elif path.path in ASSETS:
+            self._static(*ASSETS[path.path])
         elif path.path == "/healthz":
             self._reply(200, {"status": "ok"})
         elif path.path == "/api/nodes":
@@ -33,6 +45,19 @@ class HubHandler(BaseHTTPRequestHandler):
         self._reply(405, {"error": "read_only"})
 
     do_PUT = do_PATCH = do_DELETE = do_POST
+
+    def _static(self, filename, media_type):
+        # Exact route-to-file mapping: no user-selected paths or directory traversal.
+        data = (ASSET_ROOT / filename).read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", media_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+        self.send_header("X-Frame-Options", "DENY")
+        self.end_headers()
+        self.wfile.write(data)
 
     def _reply(self, status, body):
         output = json.dumps(body, allow_nan=False, separators=(",", ":")).encode("utf-8")
