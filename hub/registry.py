@@ -1,0 +1,55 @@
+"""Operator-managed, immutable-in-process node registry."""
+
+import json
+import uuid
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlsplit
+
+
+@dataclass(frozen=True)
+class Node:
+    node_id: str
+    name: str
+    endpoint: str
+    enabled: bool = True
+
+
+def load_registry(path):
+    """Read explicit node inventory; no scanning or remote registration."""
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(raw, dict) or set(raw) != {"nodes"} or not isinstance(raw["nodes"], list):
+        raise ValueError("registry must be an object with one nodes list")
+    nodes, ids, endpoints = [], set(), set()
+    if len(raw["nodes"]) > 256:
+        raise ValueError("registry exceeds 256 nodes")
+    for record in raw["nodes"]:
+        if not isinstance(record, dict) or not {"node_id", "name", "endpoint"} <= set(record) or set(record) - {"node_id", "name", "endpoint", "enabled"}:
+            raise ValueError("invalid node record")
+        identity, name, endpoint = record["node_id"], record["name"], record["endpoint"]
+        enabled = record.get("enabled", True)
+        if not isinstance(identity, str) or str(uuid.UUID(identity)) != identity:
+            raise ValueError("node_id must be canonical UUID")
+        if not isinstance(name, str) or not (1 <= len(name) <= 100) or not name.strip():
+            raise ValueError("node name must be nonempty and at most 100 characters")
+        if type(enabled) is not bool:
+            raise ValueError("enabled must be boolean")
+        if not isinstance(endpoint, str):
+            raise ValueError("endpoint must be an HTTP origin")
+        url = urlsplit(endpoint)
+        try:
+            hostname = url.hostname
+            port = url.port if url.port is not None else 80
+        except ValueError as exc:
+            raise ValueError("invalid agent port") from exc
+        if (url.scheme != "http" or not hostname or url.username is not None or
+                url.password is not None or url.path not in ("", "/") or url.query or
+                url.fragment or not 1 <= port <= 65535 or any(c.isspace() for c in endpoint)):
+            raise ValueError("agent endpoint must be a plain HTTP origin without credentials or path")
+        origin = f"http://{hostname.lower()}:{port}"
+        if identity in ids or origin in endpoints:
+            raise ValueError("duplicate node_id or agent endpoint")
+        ids.add(identity)
+        endpoints.add(origin)
+        nodes.append(Node(identity, name, endpoint.rstrip("/"), enabled))
+    return tuple(nodes)
