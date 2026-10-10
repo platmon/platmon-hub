@@ -26,6 +26,12 @@ $nodeCountFailures = 0
 $liveFailures = 0
 $lastCpu = $null
 $lastTick = $null
+$firstCpuSec = $null
+$firstCpuTick = $null
+$finalCpuSec = $null
+$finalCpuTick = $null
+$firstRssMiB = $null
+$finalRssMiB = $null
 $clock = [Diagnostics.Stopwatch]::StartNew()
 $startUtc = [DateTime]::UtcNow
 
@@ -44,6 +50,14 @@ try {
     $proc = Get-Process -Id $HubPid -ErrorAction Stop
     $cpu = $proc.TotalProcessorTime.TotalSeconds
     $rss = [Math]::Round($proc.WorkingSet64 / 1MB, 3)
+    if ($null -eq $firstCpuSec) {
+      $firstCpuSec = $cpu
+      $firstCpuTick = $tick
+      $firstRssMiB = $rss
+    }
+    $finalCpuSec = $cpu
+    $finalCpuTick = $tick
+    $finalRssMiB = $rss
     $cpuPercent = $null
     if ($null -ne $lastCpu -and $null -ne $lastTick -and $tick -gt $lastTick) {
       $cpuPercent = [Math]::Round([Math]::Max(0, $cpu - $lastCpu) * 100 / ($tick - $lastTick), 3)
@@ -129,6 +143,17 @@ foreach ($group in ($nodeRows | Group-Object NodeId)) {
     max_data_age_ms = ($records | Measure-Object -Property DataAgeMs -Maximum).Maximum
   }
 }
+$cpuMeanPercent = $null
+$cpuDeltaSec = $null
+$cpuMeasurementSeconds = $null
+if ($null -ne $firstCpuSec -and $null -ne $finalCpuSec -and
+    $null -ne $firstCpuTick -and $null -ne $finalCpuTick) {
+  $cpuMeasurementSeconds = $finalCpuTick - $firstCpuTick
+  if ($cpuMeasurementSeconds -gt 0) {
+    $cpuDeltaSec = [Math]::Max(0, $finalCpuSec - $firstCpuSec)
+    $cpuMeanPercent = [Math]::Round(100 * $cpuDeltaSec / $cpuMeasurementSeconds, 4)
+  }
+}
 $success = $apiFailures -eq 0 -and $nodeCountFailures -eq 0 -and
   (-not $RequireLive -or $liveFailures -eq 0) -and
   $clock.Elapsed.TotalSeconds -ge ($DurationSeconds - 0.2)
@@ -145,6 +170,14 @@ $summary = [ordered]@{
   required_live_violation_count = $liveFailures
   hub_api_p95_ms = Percentile95 @($rows | Where-Object { -not $_.HubApiError } | ForEach-Object { $_.HubApiDurationMs })
   hub_cpu_p95_percent_one_core = Percentile95 @($rows | ForEach-Object { $_.HubCpuPercentOneCore })
+  hub_cpu_mean_percent_one_core = $cpuMeanPercent
+  hub_cpu_total_seconds_between_samples = $cpuDeltaSec
+  hub_cpu_elapsed_seconds_between_samples = $cpuMeasurementSeconds
+  hub_rss_first_mib = $firstRssMiB
+  hub_rss_last_mib = $finalRssMiB
+  hub_rss_delta_mib = if ($null -ne $firstRssMiB -and $null -ne $finalRssMiB) {
+    [Math]::Round($finalRssMiB - $firstRssMiB, 3)
+  } else { $null }
   hub_rss_peak_mib = ($rows | Measure-Object -Property HubRssMiB -Maximum).Maximum
   nodes = @($nodesReport)
   passed = $success
@@ -153,5 +186,7 @@ $summary | ConvertTo-Json -Depth 8 | Set-Content -Path $jsonPath -Encoding utf8
 Write-Host "CSV: $csvPath"
 Write-Host "Summary: $jsonPath"
 Write-Host "Passed: $success"
+Write-Host "CPU mean (% of one core): $cpuMeanPercent; CPU p95: $($summary.hub_cpu_p95_percent_one_core)"
+Write-Host "RSS first/last/peak (MiB): $firstRssMiB / $finalRssMiB / $($summary.hub_rss_peak_mib)"
 $nodesReport | Format-Table -AutoSize
 if (-not $success) { exit 1 }
