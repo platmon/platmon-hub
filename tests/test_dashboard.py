@@ -170,6 +170,12 @@ class DashboardHttpTests(unittest.TestCase):
         self.assertIn('/assets/brand/platmon-icon-dark.svg', document)
         self.assertIn('prefers-color-scheme: dark', document)
         self.assertNotIn('class="brand-mark" aria-hidden="true">p_', document)
+        self.assertNotIn('class="brand-label"', document)
+        self.assertNotIn('platmon <strong>hub</strong>', document)
+        self.assertIn('<img src="/assets/brand/platmon-icon-light.svg" alt="platmon"', document)
+        self.assertIn('<title>Fleet monitoring</title>', document)
+        self.assertNotIn("platmon-hub · Cached fleet view", document)
+        self.assertIn('<span class="product-tag">Fleet monitoring</span>', document)
 
     def test_fleet_summary_is_compact_and_detail_is_cached(self):
         status, headers, data = self.request("GET", "/api/nodes")

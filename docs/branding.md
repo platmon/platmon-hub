@@ -10,7 +10,7 @@ The five SVG files in `hub/web/assets/brand/` are copied **byte-for-byte** from 
 | Dark header icon | `/assets/brand/platmon-icon-dark.svg` selected with `prefers-color-scheme: dark` |
 | Browser favicon | `/favicon.svg` (approved dark backing) |
 | README horizontal logos | `hub/web/assets/brand/platmon-logo-light.svg` and `platmon-logo-dark.svg` |
-| Hub product qualifier | `hub` text alongside the approved symbol; no new logo artwork |
+| Hub web header | Approved icon only, with `Fleet monitoring` descriptor; no visible `platmon hub` word label |
 
 The Hub serves **only exact allowlisted** SVG paths with `image/svg+xml`, `Cache-Control: no-store`, and `X-Content-Type-Options: nosniff`. The document CSP allows same-origin images (`img-src 'self'`) but not external image sources. No font files, external CDN, JS or dynamic asset paths are introduced.
 
