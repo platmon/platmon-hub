@@ -215,7 +215,7 @@
     }
   }
   async function refreshFleet() {
-    if (document.hidden || fleetBusy) return;
+    if (document.hidden || document.getElementById("monitoring-view").hidden || fleetBusy) return;
     fleetBusy = true;
     refreshButton.disabled = true;
     try {
@@ -344,7 +344,7 @@
       " · Min " + format(p.minimum) + " · Max " + format(p.maximum) + " · " + p.count + " samples · Instance " + p.instance_id;
   }
   async function loadHistory(force) {
-    if (document.hidden) return;
+    if (document.hidden || document.getElementById("monitoring-view").hidden) return;
     const key = [selected, historyMetric.value, historyRange.value].join(":");
     if (!force && key === historyKey && (historyController || Date.now()-historyLoaded < 30000)) return;
     cancelHistory();
@@ -409,7 +409,7 @@
   const alertsList = document.getElementById("alerts-list");
   let alertsController = null;
   async function refreshAlerts() {
-    if (document.hidden || alertsController) return;
+    if (document.hidden || document.getElementById("monitoring-view").hidden || alertsController) return;
     const controller = new AbortController();
     alertsController = controller;
     const timer = setTimeout(() => controller.abort(), 4000);
@@ -444,7 +444,14 @@
   setInterval(refreshAlerts, 5000);
   refreshAlerts();
 
-  refreshButton.addEventListener("click", refreshFleet);
+  refreshButton.addEventListener("click", () => {
+    if (!document.getElementById("monitoring-view").hidden) refreshFleet();
+  });
+  document.addEventListener("registry-change", refreshFleet);
+  document.addEventListener("view-change", () => {
+    if (!document.getElementById("monitoring-view").hidden) { refreshFleet(); refreshAlerts(); loadHistory(true); }
+    else { cancelHistory(); if (alertsController) alertsController.abort(); }
+  });
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) { refreshFleet(); loadHistory(true); }
     else { cancelHistory(); historyStatus.textContent = "History paused while tab is hidden."; }

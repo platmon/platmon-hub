@@ -10,7 +10,7 @@ Agents collect local hardware/system information, publish samples and keep their
 own short memory history. Hub reads only `/api/status`, `/api/stats` and
 `/api/observations`; it never imports Agent modules, copies hardware collectors,
 controls Agents, discovers addresses or polls `/api/history`. Hub downtime or
-storage failure does not stop an Agent. The browser accesses only Hub read APIs.
+storage failure does not stop an Agent. The Monitoring tab accesses Hub read APIs. The Devices tab uses the explicitly enabled local-only registry management routes.
 
 ```mermaid
 flowchart LR
@@ -103,8 +103,10 @@ limits; forced termination may lose queued records. An Agent remains independent
 ## Operations and limits
 
 OS-authenticated local administrators manage config/services. Proxy viewers receive
-read-only access; there is no web admin role, writable Registry API, arbitrary URL
-proxy, discovery, external notification delivery or Agent control. Default loopback
+read-only access. Opt-in [local web registration](web-registration.md) enables
+explicit Registry management routes for trusted local users with strict Origin
+and non-simple request-header checks. There is no arbitrary URL proxy, discovery, external notification delivery
+or Agent control. Default loopback
 and canonical brand assets remain unchanged. See [security](security.md).
 
 Installation/backup/restore are documented in [operations](operations.md).

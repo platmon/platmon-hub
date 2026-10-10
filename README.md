@@ -27,6 +27,18 @@ changes preserve it. Without installation, use `python -m hub` in place of
 `platmon-hub`. See [build and installation](docs/operations.md) to create the wheel.
 Open `http://127.0.0.1:9787/`. The example registry contains no active targets.
 
+Use the **Devices** tab in the Dashboard after enabling [local web registration](docs/web-registration.md), or add an approved device from a local terminal:
+
+```sh
+python -m hub nodes --file nodes.json add --interactive
+# Or supply the name and Agent IP; Agent port defaults to 9797:
+python -m hub nodes --file nodes.json add --name "Lab node" --host 192.0.2.1
+```
+
+The running Hub automatically reloads its registry; no Agent or Hub restart is
+needed by default. See [local registry CLI](backend.md#local-registry-cli) for
+custom ports, disabled registration, validation and cancellation.
+
 History is opt-in via `--history-db`; internal alerts additionally require
 `--alerts /private/alerts.json`. Review [example rules](alerts.example.json) against
 your devices. Defaults retain metrics for 7 days and events for 30 days. Storage
@@ -35,7 +47,57 @@ History API and local Canvas graphs preserve missing values and restart boundari
 
 Keep Hub loopback-only and Agents on a trusted management network. The optional
 [TLS/authentication proxy](docs/security.md) is a separate, explicitly configured
-component. HTTP remains read-only; local administration relies on OS permissions.
+component. HTTP is read-only by default. Opt-in [local web device management](docs/web-registration.md) is enabled with `--web-admin` for trusted local users.
+
+## Windows quick start
+
+From PowerShell in the source checkout, stop any existing Hub using the same
+Registry/DB before launching. Save your existing Registry path once:
+
+```powershell
+.\start-hub.cmd -Registry 'C:\platmon-config\nodes.json' -SaveSettings -Check
+```
+
+Then start with one command, or double-click `start-hub.cmd`:
+
+```powershell
+.\start-hub.cmd
+```
+
+The launcher remembers the Registry/Python paths in
+`%LOCALAPPDATA%\platmon-hub\launcher.json`. It enables History and local web
+management, using loopback `127.0.0.1:9787` and that directory's `history.db` /
+`hub.log`. Existing Registry UUIDs and History are preserved. Use `-Python PATH`
+for a particular interpreter, `-StateDirectory PATH` for an existing data
+location, or `-ReadOnly` to disable web management; add `-SaveSettings` to remember
+an override. Press Ctrl+C to stop the foreground instance.
+
+To start automatically **at current-user login**, use another PowerShell window
+in the checkout (no administrator rights needed):
+
+```powershell
+.\deploy\install-windows-startup.ps1 -WhatIf
+.\deploy\install-windows-startup.ps1
+```
+
+This creates a minimized-launch shortcut in the user's Startup folder; it does
+not start Hub immediately or overwrite an existing shortcut. Optional Desktop
+shortcut and automatic-start removal are separate commands:
+
+```powershell
+# Optional manual-launch shortcut:
+.\deploy\install-windows-startup.ps1 -Desktop
+# Remove login startup without stopping the running Hub:
+.\deploy\install-windows-startup.ps1 -Remove
+```
+
+Run only the command for the action you want. Desktop shortcut removal uses
+`-Desktop -Remove`. Keep the checkout at its registered location and avoid
+starting a second Hub while the login instance is running. Login startup requires
+a logged-in user and does not restart failed processes. For startup before login,
+use the separate [Task Scheduler deployment](docs/operations.md#windows-task-scheduler-example).
+See [launcher options and startup details](docs/operations.md#windows-quick-start-and-login-startup)
+for settings backups, wheel installs, script policy and moving the checkout.
 
 ## Documentation
 
@@ -55,6 +117,7 @@ component. HTTP remains read-only; local administration relies on OS permissions
 python -m unittest discover -s tests -v
 python -m compileall -q hub tests
 node --check hub/web/app.js
+node --check hub/web/devices.js
 python scripts/check-package.py --output-dir /temporary/candidate-artifacts
 ```
 

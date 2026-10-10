@@ -47,4 +47,13 @@ The root has only `nodes`; each entry contains `node_id`, `name`, `endpoint` and
 paths, query or fragment; duplicate IDs/endpoints and more than 256 entries are
 rejected. This parser limit is not a measured capacity guarantee. Name and endpoint
 changes preserve the UUID. Disable stops scheduling; remove does not erase history.
-Invalid reloads preserve the last accepted registry. No HTTP registry write API exists.
+Invalid reloads preserve the last accepted registry. HTTP registry writes are disabled unless local web administration is explicitly enabled.
+
+## Opt-in local web device management
+
+`--web-admin` enables the Dashboard **Devices** management tab on the local Hub
+page without a token or login. It trusts all local users/processes, requires
+loopback binding and registry reload; other HTTP write routes remain disabled.
+The Hub account needs write permission for the registry directory and backup. See
+[web management](web-registration.md) for Origin/header checks and viewer-proxy
+restrictions. Omit the option to retain read-only HTTP behavior.

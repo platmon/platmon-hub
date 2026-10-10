@@ -25,10 +25,12 @@ def tcp_port(value):
     return port
 
 
-def bind_hub(bind, port, fleet):
+def bind_hub(bind, port, fleet, admin=None):
     """Fail closed and explain local bind conflicts; never select another port."""
     try:
-        return HubServer((bind, port), fleet)
+        if admin is None:
+            return HubServer((bind, port), fleet)
+        return HubServer((bind, port), fleet, admin=admin)
     except OSError as exc:
         if exc.errno in (errno.EADDRINUSE, 10048):
             reason = "address/port is already in use"
@@ -68,12 +70,19 @@ def main(argv=None):
     parser.add_argument("--nodes", required=True, help="path to explicitly managed node registry JSON")
     parser.add_argument("--bind", default="127.0.0.1", help="Hub bind address; loopback by default")
     parser.add_argument("--port", type=tcp_port, default=9787, help="Hub TCP listen port (default: 9787)")
+    parser.add_argument("--web-admin", action="store_true", help="enable device management for trusted local users (loopback only)")
     parser.add_argument("--alerts", help="local alert rules JSON (requires history)")
     parser.add_argument("--history-db", help="explicit local SQLite history path (disabled by default)")
     parser.add_argument("--event-retention-days", type=positive_days, default=30)
     parser.add_argument("--history-retention-days", type=positive_days, default=7)
     parser.add_argument("--no-registry-reload", action="store_true", help="disable automatic registry reload")
     args = parser.parse_args(argv)
+    admin = None
+    if args.web_admin:
+        if args.bind != '127.0.0.1' or args.no_registry_reload:
+            parser.error('--web-admin requires --bind 127.0.0.1 and registry reload')
+        from .admin import RegistryAdmin
+        admin = RegistryAdmin(args.nodes)
     handlers = [RotatingFileHandler(args.log_file, maxBytes=2*1024*1024, backupCount=3, encoding="utf-8")] if args.log_file else None
     logging.basicConfig(level=logging.INFO, handlers=handlers, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     nodes = load_registry(args.nodes)
@@ -87,7 +96,7 @@ def main(argv=None):
     history = HistoryWriter(args.history_db, retention_days=args.history_retention_days, event_retention_days=args.event_retention_days) if args.history_db else None
     fleet = Fleet(nodes, history=history, registry_path=None if args.no_registry_reload else args.nodes, alert_rules=alert_rules)
     try:
-        server = bind_hub(args.bind, args.port, fleet)
+        server = bind_hub(args.bind, args.port, fleet, admin=admin)
     except BaseException:
         # A failed bind must not strand an unstarted thread pool.
         fleet.close()

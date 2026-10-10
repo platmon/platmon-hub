@@ -8,6 +8,7 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from .access import RequestBudget
+from .admin import AdminError, unique_object
 from .history.query import QueryError, parameters, query_history
 from .history.events import query_events
 
@@ -18,6 +19,7 @@ ASSETS = {
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/assets/styles.css": ("styles.css", "text/css; charset=utf-8"),
     "/assets/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/assets/devices.js": ("devices.js", "text/javascript; charset=utf-8"),
     "/favicon.svg": ("assets/brand/favicon.svg", "image/svg+xml"),
     "/assets/brand/platmon-icon-light.svg": ("assets/brand/platmon-icon-light.svg", "image/svg+xml"),
     "/assets/brand/platmon-icon-dark.svg": ("assets/brand/platmon-icon-dark.svg", "image/svg+xml"),
@@ -30,7 +32,12 @@ class HubServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address, fleet):
+    def __init__(self, address, fleet, admin=None):
+        if admin is not None and (address[0] != '127.0.0.1' or fleet.watcher is None or
+                fleet.watcher.path.resolve() != admin.registry_path):
+            raise ValueError('web registry administration requires loopback and the same active registry watcher')
+        self.admin = admin
+        self.admin_budget = RequestBudget(rate=0.2, burst=5)
         self.fleet = fleet
         self.request_budget = RequestBudget()
         self._requests = threading.BoundedSemaphore(32)
@@ -101,25 +108,31 @@ class HubHandler(BaseHTTPRequestHandler):
         self.send_header('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
         super().end_headers()
 
-    def do_GET(self):
+    def _request_path(self):
         if len(self.path) > 4096 or sum(len(k)+len(v) for k,v in self.headers.items()) > 16384:
             self._reply(431, {'error': 'request_too_large'})
-            return
+            return None
         try:
             host = urlsplit('http://' + self.headers.get('Host', '')).hostname
             path = urlsplit(self.path)
         except ValueError:
             self._reply(400, {'error': 'invalid_request'})
-            return
+            return None
         # A loopback listener must not answer a browser rebinding an arbitrary domain.
         if self.server.server_address[0] in ('127.0.0.1', '::1') and host not in ('127.0.0.1', 'localhost', '::1'):
             self._reply(403, {'error': 'untrusted_host'})
-            return
+            return None
         if path.scheme or path.netloc:
             self._reply(400, {'error': 'invalid_request'})
-            return
+            return None
         if not self.server.request_budget.take():
             self._reply(429, {'error': 'rate_limited'})
+            return None
+        return path
+
+    def do_GET(self):
+        path = self._request_path()
+        if path is None:
             return
         if path.path == '/api/events' and not path.fragment:
             self._events(path.query)
@@ -137,6 +150,13 @@ class HubHandler(BaseHTTPRequestHandler):
         elif path.path == "/api/history/status":
             history = self.server.fleet.history
             self._reply(200, {"schema_version": 1, "history": history.snapshot() if history else {"enabled": False, "state": "disabled"}})
+        elif path.path == "/api/admin/nodes":
+            if self.server.admin is None:
+                self._reply(403, {"error": "admin_disabled", "message": "Web device management is disabled."})
+            elif self._check_admin_origin(write=False):
+                self._admin_result(self.server.admin.list_nodes)
+        elif path.path == "/api/admin/status":
+            self._reply(200, {"schema_version": 1, "enabled": self.server.admin is not None, "local_port": self.server.server_port})
         elif path.path == "/api/alerts":
             alerts = self.server.fleet.alerts
             self._reply(200, dict(schema_version=1, **(alerts.snapshot() if alerts else {"enabled": False, "alerts": []})))
@@ -174,10 +194,75 @@ class HubHandler(BaseHTTPRequestHandler):
         except QueryError as exc:
             self._reply(exc.status, {'schema_version': 1, 'error': exc.code})
 
+    def _check_admin_origin(self, write=True):
+        # Mutation requires exact Origin; local reads allow its absence.
+        host = self.headers.get('Host', '').lower()
+        suffix = '' if self.server.server_port == 80 else ':' + str(self.server.server_port)
+        allowed = ('127.0.0.1' + suffix, 'localhost' + suffix)
+        origins = self.headers.get_all('Origin', [])
+        if (len(self.headers.get_all('Host', [])) != 1 or host not in allowed or
+                (write and len(origins) != 1) or len(origins) > 1 or
+                (origins and origins[0] != 'http://' + host) or
+                self.headers.get('Sec-Fetch-Site', 'same-origin') != 'same-origin'):
+            self._reply(403, {'error': 'untrusted_origin', 'message': 'Use the local Hub page to manage devices.'})
+            return False
+        # A non-simple header blocks cross-site forms/resource loads; it is not a secret.
+        if self.headers.get_all('X-Platmon-Admin', []) != ['1']:
+            self._reply(403, {'error': 'untrusted_request', 'message': 'Use the local Devices tab to manage devices.'})
+            return False
+        if write and not self.server.admin_budget.take():
+            self._reply(429, {'error': 'rate_limited', 'message': 'Wait a few seconds before retrying.'})
+            return False
+        return True
+
+    def _admin_result(self, operation, *args, status=200):
+        try:
+            self._reply(status, operation(*args))
+        except AdminError as exc:
+            self._reply(exc.status, {'schema_version': 1, 'error': exc.code, 'message': exc.message})
+
     def do_POST(self):
+        parts = self.path.split('/')
+        action, identity = None, None
+        if self.path == '/api/admin/nodes':
+            action = 'add'
+        elif len(parts) == 6 and parts[:4] == ['', 'api', 'admin', 'nodes'] and parts[-1] in ('update', 'remove') and parts[4]:
+            action, identity = parts[-1], parts[4]
+        if self.server.admin is None or action is None:
+            self._read_only()
+            return
+        if self._request_path() is None or not self._check_admin_origin():
+            return
+        if self.headers.get('Transfer-Encoding') or len(self.headers.get_all('Content-Length', [])) != 1:
+            self._reply(400, {'error': 'invalid_body', 'message': 'A bounded JSON body is required.'})
+            return
+        try:
+            length = int(self.headers.get('Content-Length'))
+        except ValueError:
+            length = -1
+        if not 1 <= length <= 4096:
+            self._reply(413, {'error': 'invalid_body', 'message': 'Device registration body must be at most 4 KiB.'})
+            return
+        if self.headers.get('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
+            self._reply(415, {'error': 'invalid_body', 'message': 'JSON content is required.'})
+            return
+        try:
+            raw = self.rfile.read(length)
+            if len(raw) != length:
+                raise ValueError('incomplete body')
+            data = json.loads(raw.decode('utf-8'), object_pairs_hook=unique_object)
+        except (ValueError, UnicodeError):
+            self._reply(400, {'error': 'invalid_body', 'message': 'Invalid JSON body.'})
+            return
+        if action == 'add':
+            self._admin_result(self.server.admin.add, data, status=201)
+        else:
+            self._admin_result(getattr(self.server.admin, action), identity, data)
+
+    def _read_only(self):
         self._reply(405, {"error": "read_only"})
 
-    do_PUT = do_PATCH = do_DELETE = do_POST
+    do_PUT = do_PATCH = do_DELETE = do_OPTIONS = _read_only
 
     def _static(self, filename, media_type):
         # Exact route-to-file mapping: no user-selected paths or directory traversal.

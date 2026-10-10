@@ -1,6 +1,6 @@
 # Backend behavior
 
-This is a **read-only, explicitly registered Fleet backend and Dashboard** for platmon agents, with optional SQLite history, events and internal alerts. Local registry administration is separate from the HTTP read API. It never installs or controls Agents.
+This is a **read-only, explicitly registered Fleet backend and Dashboard** for platmon agents, with optional SQLite history, events and internal alerts. Registry administration is available through the local CLI and opt-in local-only web management routes. It never installs or controls Agents.
 
 ## Setup
 
@@ -19,12 +19,12 @@ Requires Python **3.9+** on a Linux or Windows Hub host with direct, operator-ap
    }
    ```
 
-4. Start locally: `python3 -m hub --nodes /path/to/nodes.json`. The read-only HTTP server binds to **127.0.0.1:9787** by default. Valid registry edits reload automatically after a short debounce. To bind non-loopback, place the Hub behind an operator-controlled authenticated and encrypted access layer; the Hub itself has **no built-in authentication or TLS**; prefer keeping its listener on loopback behind the proxy.
+4. Start locally: `python3 -m hub --nodes /path/to/nodes.json`. The read-only HTTP server binds to **127.0.0.1:9787** by default. Valid registry edits reload automatically after a short debounce. To bind non-loopback, place the Hub behind an operator-controlled authenticated and encrypted access layer; read APIs have **no built-in viewer authentication or TLS**; prefer keeping its listener on loopback behind the proxy.
 5. Open `http://127.0.0.1:9787/` in a local browser or inspect `curl -fsS http://127.0.0.1:9787/api/nodes`. The browser fetches only Hub endpoints, never agents directly.
 
 The Hub listens on **TCP 9787** by default (Agent listens on **TCP 9797**). Use `--port 9798` to select a different fixed port if needed; no automatic port selection or fallback is performed. Startup reports an actionable error if the listener cannot bind, including port-in-use and permission/reservation failures. See [port policy and conflict diagnosis](docs/ports.md) for Windows and Linux commands.
 
-No automatic network scanning, browser-supplied agent URLs, writable registry API, outbound Push, or agent control is implemented. No agent-side modifications are required.
+No automatic network scanning, arbitrary URL-fetch API, outbound Push, or agent control is implemented. Registry writes require explicitly enabled local administration. No agent-side modifications are required.
 
 ## Read-only Fleet Dashboard
 
@@ -44,7 +44,7 @@ History and internal alerts are opt-in. Authenticated remote viewing requires th
 | `GET /api/nodes` | All registered nodes and status/age diagnostics, no full metric payloads. |
 | `GET /api/nodes/<node_id>` | Single node with last-known agent stats/observations and explicit `data_current`. |
 
-Writes return HTTP 405. Unknown resources return 404. All supported responses are JSON with `Cache-Control: no-store`; there is no arbitrary URL-fetch/proxy endpoint. The hub's own API schema is **independent** of the agent's endpoint schemas.
+Writes return HTTP 405 by default; the opt-in local management routes are documented in [web management](docs/web-registration.md). Unknown resources return 404. All supported responses are JSON with `Cache-Control: no-store`; there is no arbitrary URL-fetch/proxy endpoint. The hub's own API schema is **independent** of the agent's endpoint schemas.
 
 ## Agent consumption
 
@@ -171,6 +171,41 @@ python -m hub nodes --file /path/to/nodes.json enable NODE_UUID
 python -m hub nodes --file /path/to/nodes.json remove NODE_UUID
 ```
 
+For a new device, the shortest noninteractive command is:
+
+```sh
+python -m hub nodes --file /path/to/nodes.json add --name "Lab node" --host 192.0.2.1
+```
+
+`--host` accepts an explicit IP or hostname and uses Agent port `9797` by default.
+Use `--port 12345` for another Agent port (not the Hub port). Bare or bracketed
+IPv6 is accepted, for example `--host ::1`. Use `--endpoint` instead for a complete
+plain HTTP origin; the existing command remains supported. Do not combine
+`--endpoint` with `--host` or `--port`. No DNS lookup or connectivity check happens
+at registration time; an unreachable approved target can still be registered.
+
+For guided local registration:
+
+```sh
+python -m hub nodes --file /path/to/nodes.json add --interactive
+```
+
+Enter the display name, Agent IP/hostname and port (Enter accepts `9797`), review
+the validated preview, then type `yes` to save. The confirmation defaults to no;
+canceling or interrupted input writes nothing and does not acquire the registry
+lock. Supplied `--name`, `--host`, `--endpoint` or `--port` skip those questions.
+`--disabled` registers an inactive target. Prompts/preview use stderr and the
+successful result remains one JSON object on stdout. The destination parent
+directory must already exist. Registration never contacts or modifies an Agent.
+
+On success the result contains the new `node_id`. The running Hub normally
+applies the same registry automatically within about one second. Confirm it in
+the Fleet Dashboard; inspect `/api/registry/status` for rejected changes. The
+Hub's `--nodes` path and the CLI's `--file` path must refer to the same file.
+With `--no-registry-reload`, restart the Hub to apply changes. Existing endpoints
+are rejected with guidance to list and update the original UUID rather than
+creating a second identity.
+
 Add generates a UUID; all other changes retain it. `add --disabled` registers an
 inactive target. Remove only removes the registry entry; it never deletes history.
 All commands preserve existing limits and endpoint validation and never contact
@@ -180,7 +215,7 @@ atomically replace the registry. Invalid input or replace failure leaves the
 original intact. Cooperative CLI writers cannot overwrite each other; manual
 editors must coordinate with the operator. The latest backup is a recovery copy,
 not an indefinite audit log. Protect the registry, backup and directory with OS
-permissions/ACLs; no web management API is provided. The running Hub watches this file by default; `--no-registry-reload` retains startup-only behavior.
+permissions/ACLs; [web management](docs/web-registration.md) requires explicit `--web-admin` configuration. The running Hub watches this file by default; `--no-registry-reload` retains startup-only behavior.
 
 
 ## Registry hot reload
@@ -236,7 +271,7 @@ stores current alert configuration/state atomically with transitions. See
 
 ## Access boundary
 
-HTTP remains read-only. Local loopback requests must use Host `localhost`,
+HTTP remains read-only by default. Local loopback requests must use Host `localhost`,
 `127.0.0.1` or `::1`; a proxy must rewrite its upstream Host accordingly.
 Admission limits are 32 connections and a shared 100 GET/s budget (burst 200),
 with 5-second socket inactivity timeout. Oversized targets/headers are rejected.

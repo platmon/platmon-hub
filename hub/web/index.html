@@ -9,6 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/assets/styles.css">
   <script src="/assets/app.js" defer></script>
+  <script src="/assets/devices.js" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -25,13 +26,18 @@
     </div>
   </header>
   <main class="shell">
+    <nav class="view-tabs" role="tablist" aria-label="Hub views">
+      <button type="button" id="monitoring-tab" role="tab" aria-controls="monitoring-view" aria-selected="true">Monitoring</button>
+      <button type="button" id="devices-tab" role="tab" aria-controls="devices-view" aria-selected="false" tabindex="-1">Devices</button>
+    </nav>
+    <div id="monitoring-view" role="tabpanel" aria-labelledby="monitoring-tab">
     <div class="intro">
       <div>
         <p class="eyebrow">Fleet overview</p>
         <h1>Devices at a glance</h1>
         <p class="subtle">Live readings, status and last-known metrics from registered platmon agents.</p>
       </div>
-      <span class="scope-chip">Read-only · Trusted network</span>
+      <span class="scope-chip">Agent readings · Trusted network</span>
     </div>
     <div role="alert" id="connection-error" class="error-banner" hidden></div>
     <section class="summary" id="fleet-summary" aria-label="Fleet status summary"></section>
@@ -78,7 +84,36 @@
         </section>
       </section>
     </div>
+    </div>
+    <section id="devices-view" role="tabpanel" aria-labelledby="devices-tab" hidden>
+      <div class="intro">
+        <div><p class="eyebrow">Device management</p><h1>Manage your devices</h1>
+          <p class="subtle">Add, update or remove registered devices. Existing History is preserved.</p></div>
+        <div class="device-actions"><button type="button" class="refresh-button" id="add-device" disabled>Add device</button>
+        </div>
+      </div>
+      <p id="devices-status" class="subtle" role="status" aria-live="polite">Enter the local Devices tab to manage the registry.</p>
+      <div id="devices-list" class="management-list"></div>
+    </section>
   </main>
+  <dialog id="device-dialog" aria-labelledby="device-dialog-title">
+    <form id="device-form">
+      <h2 id="device-dialog-title">Add device</h2>
+      <p id="device-dialog-help" class="subtle">Register an Agent address. The Hub will collect its readings automatically.</p>
+      <p id="device-form-status" class="subtle" role="status" aria-live="polite"></p>
+      <p id="device-remove-preview" class="remove-preview" hidden></p>
+      <fieldset id="device-fields" disabled>
+        <label>Device name <input id="device-name" name="device-name" maxlength="100" required autocomplete="off"></label>
+        <label>Agent IP or hostname <input id="device-host" name="device-host" maxlength="253" required placeholder="192.0.2.1" autocomplete="off"></label>
+        <label>Agent port <input id="device-port" name="device-port" type="number" min="1" max="65535" value="9797" required></label>
+        <label class="device-checkbox"><input id="device-enabled" type="checkbox" checked> Start monitoring after registration</label>
+      </fieldset>
+      <div class="device-actions">
+        <button type="button" id="device-cancel" class="refresh-button">Cancel</button>
+        <button type="submit" id="device-save" class="refresh-button" disabled>Save device</button>
+      </div>
+    </form>
+  </dialog>
   <footer class="footer">Cached fleet view · Data ages are estimates based on the agent clock and Hub receive time.</footer>
 </body>
 </html>

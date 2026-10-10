@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from hub.admin import RegistryAdmin
 from hub.http import HubServer
 from hub.runtime import Fleet
 
@@ -26,8 +27,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--nginx', default='nginx')
     args = parser.parse_args()
-    fleet = Fleet([])
-    server = HubServer(('127.0.0.1', 0), fleet)
+    registry_directory = tempfile.TemporaryDirectory(prefix='platmon-proxy-registry-')
+    registry = Path(registry_directory.name)/'nodes.json'
+    registry.write_text('{"nodes": []}', encoding='utf-8')
+    fleet = Fleet([], registry_path=registry)
+    server = HubServer(('127.0.0.1', 0), fleet, admin=RegistryAdmin(registry))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     process = None
@@ -61,12 +65,13 @@ def main():
                     process.kill(); process.wait()
             cleanup.callback(stop_proxy)
             context = ssl.create_default_context(cafile=str(root/'server.crt'))
-            def request(method='GET', auth=None):
+            def request(method='GET', auth=None, path='/api/nodes', extra=None):
                 client = http.client.HTTPSConnection('127.0.0.1', port, context=context, timeout=2)
                 try:
                     headers = {'Host':'hub.example.com'}
                     if auth is not None: headers['Authorization'] = 'Basic '+base64.b64encode(auth.encode()).decode()
-                    client.request(method, '/api/nodes', headers=headers)
+                    headers.update(extra or {})
+                    client.request(method, path, headers=headers)
                     response = client.getresponse()
                     body = response.read()
                     return response.status, body
@@ -84,12 +89,18 @@ def main():
             assert status == 200 and json.loads(body)['nodes'] == []
             for method in ('POST', 'PUT', 'PATCH', 'DELETE'):
                 assert request(method, 'viewer:temporary-test-password')[0] == 405
+            # Even a valid proxy viewer forging all local management markers is denied.
+            for method in ('GET', 'POST'):
+                status, _ = request(method, 'viewer:temporary-test-password', '/api/admin/nodes',
+                    {'Origin': 'http://127.0.0.1:'+str(server.server_port), 'X-Platmon-Admin':'1'})
+                assert status == 403
+            assert registry.read_text(encoding='utf-8') == '{"nodes": []}'
             audit = (root/'access.log').read_text(encoding='utf-8')
             assert '401' in audit and '405' in audit and '200' in audit
             assert 'temporary-test-password' not in audit and 'Authorization' not in audit
-            print('TLS verified; anonymous/invalid credentials 401; viewer read 200; writes 405; status-only audit verified.')
+            print('TLS verified; anonymous/invalid credentials 401; viewer read 200; writes 405; enabled local management blocked at proxy; status-only audit verified.')
     finally:
-        server.shutdown(); server.server_close(); thread.join(); fleet.close()
+        server.shutdown(); server.server_close(); thread.join(); fleet.close(); registry_directory.cleanup()
 
 
 if __name__ == '__main__': main()
