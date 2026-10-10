@@ -1,6 +1,6 @@
-# Backend foundation (PR #2)
+# Backend behavior
 
-This implementation is a **read-only, manually registered fleet backend and browser dashboard** for platmon v1.0.0. It is not an agent installer, alerting platform, or persistent metrics store.
+This is a **read-only, explicitly registered Fleet backend and Dashboard** for platmon agents, with optional SQLite history, events and internal alerts. Local registry administration is separate from the HTTP read API. It never installs or controls Agents.
 
 ## Setup
 
@@ -19,7 +19,7 @@ Requires Python **3.9+** on a Linux or Windows Hub host with direct, operator-ap
    }
    ```
 
-4. Start locally: `python3 -m hub --nodes /path/to/nodes.json`. The read-only HTTP server binds to **127.0.0.1:9787** by default. Valid registry edits reload automatically after a short debounce. To bind non-loopback, place the Hub behind an operator-controlled authenticated and encrypted access layer; the initial MVP itself has **no authentication or TLS**.
+4. Start locally: `python3 -m hub --nodes /path/to/nodes.json`. The read-only HTTP server binds to **127.0.0.1:9787** by default. Valid registry edits reload automatically after a short debounce. To bind non-loopback, place the Hub behind an operator-controlled authenticated and encrypted access layer; the Hub itself has **no built-in authentication or TLS**; prefer keeping its listener on loopback behind the proxy.
 5. Open `http://127.0.0.1:9787/` in a local browser or inspect `curl -fsS http://127.0.0.1:9787/api/nodes`. The browser fetches only Hub endpoints, never agents directly.
 
 The Hub listens on **TCP 9787** by default (Agent listens on **TCP 9797**). Use `--port 9798` to select a different fixed port if needed; no automatic port selection or fallback is performed. Startup reports an actionable error if the listener cannot bind, including port-in-use and permission/reservation failures. See [port policy and conflict diagnosis](docs/ports.md) for Windows and Linux commands.
@@ -34,9 +34,9 @@ The browser polls Hub `/api/nodes` every 5 s while visible and `/api/nodes/<node
 
 The Hub's `/api/nodes` summary adds an `overview` object with optional `cpu_percent`, `gpu_percent`, `memory_percent`, `disk_percent`, and `hottest_c` fields; unavailable readings are JSON null. This is an additive, Hub-owned schema-1 projection. It is computed only from the last accepted agent snapshot; callers must consult `data_current` and `headline` before calling the values live. The detail response includes the same `overview` and original cached `stats` / independent `observations`.
 
-Note: production internet exposure, authenticated access, history retention, alerting and broad-fleet capacity remain outside this preview. Default bind remains loopback.
+History and internal alerts are opt-in. Authenticated remote viewing requires the separately configured proxy; see [security](docs/security.md). Synthetic capacity and actual three-device evidence have explicit [limits](docs/resource-budget.md). Default bind remains loopback.
 
-## Hub endpoints (provisional schema v1)
+## Hub endpoints (Hub schema 1)
 
 | Route | Response |
 | --- | --- |
@@ -62,7 +62,7 @@ The Hub calls only three fixed GET paths: `/api/status` (schema 1), `/api/stats`
 
 The scheduler rotates nodes fairly at capacity; time spent on a failed request does not block polling workers for other nodes while capacity is available. A success of `/api/status` followed by a `/api/stats` timeout is **not** treated as two consecutive unreachable cycles. Optional endpoint failures are reported separately from core health. Unknown schemas fail explicitly for required endpoints; unsupported `observations` never cause core Offline.
 
-**Runtime limitation:** `urllib` socket timeouts do not forcibly cancel a blocked operating-system DNS resolution. Poll work stays bounded to 16 workers; shutdown may block waiting on such a resolver. True end-to-end hard deadlines or process isolation require separate implementation/measurement before untrusted large-fleet deployment. The scheduler applies bounded exponential backoff to failed core transport polls, bounded retry delay to optional failures, and up to 0.5 s completion-time jitter. No polls overlap per node; precise cadences are not guaranteed under saturation. Capacity and performance have **not** been validated on actual Orin/Pi hardware.
+**Runtime limitation:** `urllib` socket timeouts do not forcibly cancel a blocked operating-system DNS resolution. Poll work stays bounded to 16 workers; shutdown may block waiting on such a resolver. True end-to-end hard deadlines or process isolation require separate implementation/measurement before untrusted large-fleet deployment. The scheduler applies bounded exponential backoff to failed core transport polls, bounded retry delay to optional failures, and up to 0.5 s completion-time jitter. No polls overlap per node; precise cadences are not guaranteed under saturation. Actual three-device read-only collection and restart checks passed on Linux and Windows; see [measured limits](docs/resource-budget.md). These are not production capacity guarantees.
 
 ## Development validation
 
@@ -71,7 +71,7 @@ python3 -m unittest discover -s tests -v
 python3 -m compileall -q hub tests
 ```
 
-Fixtures use synthetic schema-1/status/stats and schema-2/observations payloads, HTTP test servers and a monotonic fake clock. These are not a substitute for the [hardware smoke plan](mvp-acceptance.md) and do not claim actual board validation.
+Fixtures use synthetic schema-1/status/stats and schema-2/observations payloads, HTTP test servers and a monotonic fake clock. These are not a substitute for the [hardware smoke plan](docs/mvp-acceptance.md) and are distinct from the short three-device field checks documented in the resource budget.
 
 ## Optional core history
 
@@ -91,7 +91,7 @@ between Hub processes or place it on a network share. Back up with SQLite's back
 API or after clean shutdown, not by copying an active DB without its WAL.
 See [the storage contract](docs/adr/0002-hub-history-storage.md).
 
-### Observations and discontinuities (history schema 2)
+### Observations and discontinuities (introduced in history schema 2)
 
 Storage, Wi-Fi and TCP-probe publications are deduplicated independently by node,
 instance, group and observation ID. Only fresh, actually received publications are
@@ -103,7 +103,7 @@ No probe is configured or triggered by Hub. Core sequence is never an optional I
 
 Schema 1 upgrades transactionally to schema 2 after a verified adjacent
 `.v1-backup-<unique-id>` snapshot. Keep that backup for rollback with Hub stopped;
-older software cannot open schema 2. New tables record group publications,
+older software cannot open newer schemas. The current schema is 4; see [migration history](docs/history-schema.md). New tables record group publications,
 continuity evidence, gaps and Hub sessions. Core and optional history share the
 configured retention period (default seven days). Diagnostic persisted/submitted
 counts include continuity records as well as metric records.

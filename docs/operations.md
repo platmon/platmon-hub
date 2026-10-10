@@ -3,8 +3,9 @@
 Hub runs on Python 3.9+ using only its standard library. Build tooling uses
 setuptools/wheel; neither is a service dependency. A wheel is preferable to a
 custom service wrapper: it preserves the existing Python entrypoint and includes
-all allowlisted web assets. Use a dedicated virtual environment to avoid Python
-package-name collisions. The current development version is not a release tag.
+all allowlisted web assets. Deployment examples, empty registry/rule examples and
+operational docs are installed under the environment’s `share/platmon-hub`. Use a dedicated virtual environment to avoid Python
+package-name collisions. The current `0.2.0rc1` candidate is not a release tag.
 
 ## Build and local install
 
@@ -106,6 +107,8 @@ for that loss. Code downgrade does not imply automatic database downgrade.
 CI builds and installs the wheel on Ubuntu/Windows with Python 3.9/3.13, checks
 packaged assets, parses the Task Scheduler script and validates a systemd unit
 with a local executable substitution. These are not reboot or account-permission
-tests. Actual Windows 11/systemd installation, restart/reboot, upgrades with live
-agents and machine-specific ACLs must be verified before operational rollout.
+tests. Short foreground collection and process restart with three real Agents passed on
+Linux and native Windows. Actual Windows 11/systemd installation, reboot startup,
+installed-service upgrades and machine-specific ACLs remain to be verified before
+operational rollout. See [candidate evidence](release.md).
 Release tagging and operational deployment require separate approval.

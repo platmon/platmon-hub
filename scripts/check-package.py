@@ -1,41 +1,70 @@
-"""Build/install a wheel in temporary directories; leave the checkout untouched."""
-
+"""Rebuild/install a wheel in temporary directories without changing the checkout."""
+import argparse
+import hashlib
+import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
 import tempfile
+import venv
 import zipfile
 from pathlib import Path
 
 
 def main():
-    root = Path(__file__).resolve().parents[1]
-    with tempfile.TemporaryDirectory() as directory:
-        work = Path(directory)
-        source = work / 'source'
-        source.mkdir()
-        for name in ('hub', 'deploy'):
-            shutil.copytree(root / name, source / name, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
-        for name in ('pyproject.toml', 'README.md', 'LICENSE'):
-            shutil.copyfile(root / name, source / name)
-        wheels = work / 'wheels'
-        subprocess.run([sys.executable, '-m', 'pip', 'wheel', '--no-deps', '--wheel-dir', str(wheels), str(source)], check=True)
-        wheel = next(wheels.glob('*.whl'))
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output-dir', help='optional directory for validated wheel/report artifacts')
+    args=parser.parse_args()
+    root=Path(__file__).resolve().parents[1]
+    with tempfile.TemporaryDirectory(prefix='platmon-package-') as directory:
+        work=Path(directory)
+        build_env=work/'build-env'
+        venv.EnvBuilder(with_pip=True).create(build_env)
+        builder=build_env/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
+        subprocess.run([str(builder),'-m','pip','install','setuptools>=61','wheel'],check=True)
+        versions=json.loads(subprocess.check_output([str(builder),'-c',
+            'import importlib.metadata,json;print(json.dumps({n:importlib.metadata.version(n) for n in ("setuptools","wheel")}))'],text=True))
+        # Fixed ZIP timestamps make the same inputs/toolchain reproducible.
+        env=dict(os.environ,SOURCE_DATE_EPOCH=os.environ.get('SOURCE_DATE_EPOCH','1704067200'))
+        artifacts=[]
+        for index in range(2):
+            source=work/('source-'+str(index));source.mkdir()
+            for name in ('hub','deploy','docs'):
+                shutil.copytree(root/name,source/name,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+            for name in ('pyproject.toml','README.md','backend.md','LICENSE','CHANGELOG.md','nodes.example.json','alerts.example.json'):
+                shutil.copyfile(root/name,source/name)
+            wheels=work/('wheels-'+str(index))
+            subprocess.run([str(builder),'-m','pip','wheel','--no-deps','--no-build-isolation','--wheel-dir',str(wheels),str(source)],env=env,check=True)
+            artifacts.append(next(wheels.glob('*.whl')))
+        hashes=[hashlib.sha256(path.read_bytes()).hexdigest() for path in artifacts]
+        assert hashes[0]==hashes[1], 'same-toolchain wheel builds differ'
+        wheel=artifacts[0]
         with zipfile.ZipFile(wheel) as package:
-            files = package.namelist()
-            assert 'hub/web/app.js' in files
-            assert 'hub/web/assets/brand/favicon.svg' in files
+            files=package.namelist()
+            assert 'hub/web/app.js' in files and 'hub/web/assets/brand/favicon.svg' in files
+            assert any(name.endswith('/share/platmon-hub/nodes.example.json') for name in files)
+            assert any(name.endswith('/docs/operations.md') for name in files)
+            assert any(name.endswith('/deploy/nginx.conf.example') for name in files)
             assert not any(name.endswith('nodes.json') or 'soak-results' in name for name in files)
-            metadata = package.read(next(name for name in files if name.endswith('/METADATA'))).decode('utf-8')
+            metadata=package.read(next(name for name in files if name.endswith('/METADATA'))).decode('utf-8')
             assert 'Requires-Dist:' not in metadata
-        site = work / 'installed'
-        subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-deps', '--target', str(site), str(wheel)], check=True)
-        env = dict(os.environ, PYTHONPATH=str(site))
-        subprocess.run([sys.executable, '-m', 'hub', '--version'], cwd=str(work), env=env, check=True)
-        subprocess.run([sys.executable, '-c', 'from hub.http import ASSETS, ASSET_ROOT; assert all((ASSET_ROOT / path).is_file() for path, mime in ASSETS.values())'], cwd=str(work), env=env, check=True)
-        print('Wheel build, isolated install, version and packaged assets passed')
+        site=work/'installed'
+        subprocess.run([str(builder),'-m','pip','install','--no-deps','--target',str(site),str(wheel)],check=True)
+        installed_env=dict(os.environ,PYTHONPATH=str(site))
+        version=subprocess.check_output([sys.executable,'-m','hub','--version'],cwd=str(work),env=installed_env,text=True).strip()
+        subprocess.run([sys.executable,'-c','from hub.http import ASSETS,ASSET_ROOT; assert all((ASSET_ROOT/p).is_file() for p,m in ASSETS.values())'],cwd=str(work),env=installed_env,check=True)
+        empty=site/'share'/'platmon-hub'/'nodes.example.json'
+        subprocess.run([sys.executable,'-m','hub','nodes','--file',str(empty),'validate'],cwd=str(work),env=installed_env,check=True)
+        report=dict(version=version,wheel=wheel.name,sha256=hashes[0],reproducible=True,
+            source_date_epoch=env['SOURCE_DATE_EPOCH'],build_tools=versions,python=platform.python_version(),platform=platform.system())
+        if args.output_dir:
+            output=Path(args.output_dir);output.mkdir(parents=True,exist_ok=True)
+            shutil.copyfile(wheel,output/wheel.name)
+            (output/'package-report.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+        print(json.dumps(report))
+        print('Identical wheel rebuilds, isolated install, CLI, examples and assets passed')
 
 
-if __name__ == '__main__':
-    main()
+if __name__=='__main__': main()

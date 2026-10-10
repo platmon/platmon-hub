@@ -24,7 +24,7 @@ jobs:
       - name: Synthetic fleet harness smoke (loopback only)
         run: python scripts/benchmark-fleet.py --nodes 10 --seconds 3 --output "${{ runner.temp }}/synthetic-smoke.json"
       - name: Build and install isolated wheel
-        run: python scripts/check-package.py
+        run: python scripts/check-package.py --output-dir "${{ runner.temp }}/candidate-artifacts"
       - name: Validate systemd example syntax
         if: runner.os == 'Linux'
         run: python scripts/check-service.py
