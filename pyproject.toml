@@ -24,4 +24,4 @@ include = ["hub", "hub.*"]
 hub = ["web/*.html", "web/*.css", "web/*.js", "web/assets/brand/*.svg"]
 
 [tool.setuptools.data-files]
-"share/platmon-hub/deploy" = ["deploy/platmon-hub.service", "deploy/hub.env.example", "deploy/install-windows-task.ps1"]
+"share/platmon-hub/deploy" = ["deploy/platmon-hub.service", "deploy/hub.env.example", "deploy/install-windows-task.ps1", "deploy/nginx.conf.example"]

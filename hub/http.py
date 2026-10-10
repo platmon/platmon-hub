@@ -1,9 +1,12 @@
 """Loopback-default read-only Hub JSON endpoints."""
 
 import json
+import logging
+import threading
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
+from .access import RequestBudget
 from .history.query import QueryError, parameters, query_history
 from .history.events import query_events
 
@@ -28,12 +31,75 @@ class HubServer(ThreadingHTTPServer):
 
     def __init__(self, address, fleet):
         self.fleet = fleet
+        self.request_budget = RequestBudget()
+        self._requests = threading.BoundedSemaphore(32)
         super().__init__(address, HubHandler)
+
+    def get_request(self):
+        request, address = super().get_request()
+        request.settimeout(5)
+        return request, address
+
+    def process_request(self, request, address):
+        if not self._requests.acquire(blocking=False):
+            try:
+                request.sendall(b'HTTP/1.0 503 Service Unavailable\r\nContent-Length: 0\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nConnection: close\r\n\r\n')
+            except OSError:
+                pass
+            finally:
+                self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, address)
+        except BaseException:
+            self._requests.release()
+            raise
+
+    def process_request_thread(self, request, address):
+        try:
+            super().process_request_thread(request, address)
+        finally:
+            self._requests.release()
 
 
 class HubHandler(BaseHTTPRequestHandler):
+    server_version = 'platmon-hub'
+    sys_version = ''
+
+    def log_request(self, code='-', size='-'):
+        # Never log query strings, credentials, arbitrary paths or headers.
+        logging.getLogger('hub.access').info('request method=%s status=%s',
+            self.command if self.command in ('GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS') else 'other', code)
+
+    def log_message(self, format, *args):
+        logging.getLogger('hub.access').warning('HTTP protocol error or timeout')
+
+    def end_headers(self):
+        self.send_header('X-Frame-Options', 'DENY')
+        self.send_header('Referrer-Policy', 'no-referrer')
+        self.send_header('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+        super().end_headers()
+
     def do_GET(self):
-        path = urlsplit(self.path)
+        if len(self.path) > 4096 or sum(len(k)+len(v) for k,v in self.headers.items()) > 16384:
+            self._reply(431, {'error': 'request_too_large'})
+            return
+        try:
+            host = urlsplit('http://' + self.headers.get('Host', '')).hostname
+            path = urlsplit(self.path)
+        except ValueError:
+            self._reply(400, {'error': 'invalid_request'})
+            return
+        # A loopback listener must not answer a browser rebinding an arbitrary domain.
+        if self.server.server_address[0] in ('127.0.0.1', '::1') and host not in ('127.0.0.1', 'localhost', '::1'):
+            self._reply(403, {'error': 'untrusted_host'})
+            return
+        if path.scheme or path.netloc:
+            self._reply(400, {'error': 'invalid_request'})
+            return
+        if not self.server.request_budget.take():
+            self._reply(429, {'error': 'rate_limited'})
+            return
         if path.path == '/api/events' and not path.fragment:
             self._events(path.query)
         elif path.path.startswith('/api/nodes/') and path.path.endswith('/history') and path.path.count('/') == 4 and not path.fragment:
@@ -100,8 +166,6 @@ class HubHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
-        self.send_header("X-Frame-Options", "DENY")
         self.end_headers()
         self.wfile.write(data)
 
