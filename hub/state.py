@@ -78,6 +78,10 @@ class NodeState:
         self._last_core_completed_utc = None
         self._last_optional_completed_utc = None
 
+    def update_node(self, node):
+        with self._lock:
+            self.node = node
+
     def _today(self):
         return datetime.now(timezone.utc).isoformat()
 

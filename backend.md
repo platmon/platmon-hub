@@ -19,7 +19,7 @@ Requires Python **3.9+** on a Linux or Windows Hub host with direct, operator-ap
    }
    ```
 
-4. Start locally: `python3 -m hub --nodes /path/to/nodes.json`. The read-only HTTP server binds to **127.0.0.1:9787** by default. A modified registry requires a Hub restart. To bind non-loopback, place the Hub behind an operator-controlled authenticated and encrypted access layer; the initial MVP itself has **no authentication or TLS**.
+4. Start locally: `python3 -m hub --nodes /path/to/nodes.json`. The read-only HTTP server binds to **127.0.0.1:9787** by default. Valid registry edits reload automatically after a short debounce. To bind non-loopback, place the Hub behind an operator-controlled authenticated and encrypted access layer; the initial MVP itself has **no authentication or TLS**.
 5. Open `http://127.0.0.1:9787/` in a local browser or inspect `curl -fsS http://127.0.0.1:9787/api/nodes`. The browser fetches only Hub endpoints, never agents directly.
 
 The Hub listens on **TCP 9787** by default (Agent listens on **TCP 9797**). Use `--port 9798` to select a different fixed port if needed; no automatic port selection or fallback is performed. Startup reports an actionable error if the listener cannot bind, including port-in-use and permission/reservation failures. See [port policy and conflict diagnosis](docs/ports.md) for Windows and Linux commands.
@@ -180,5 +180,24 @@ atomically replace the registry. Invalid input or replace failure leaves the
 original intact. Cooperative CLI writers cannot overwrite each other; manual
 editors must coordinate with the operator. The latest backup is a recovery copy,
 not an indefinite audit log. Protect the registry, backup and directory with OS
-permissions/ACLs; no web management API is provided. Runtime reload follows in
-the next stage; this CLI alone does not force running Hub to reload.
+permissions/ACLs; no web management API is provided. The running Hub watches this file by default; `--no-registry-reload` retains startup-only behavior.
+
+
+## Registry hot reload
+
+A dedicated watcher checks the local file every 250 ms and waits for 500 ms of
+stable content before full validation. Reads are capped at 1 MiB. Missing,
+malformed, duplicate or otherwise invalid registries leave the last valid fleet
+running; `/api/registry/status` exposes the error category and reload count.
+Returning to the previous valid file clears the error. No network discovery is
+performed. The watcher never holds the registry lock while reading disk.
+
+Applying a valid file is atomic with respect to scheduler and API readers. Names
+change without clearing samples. Endpoint or enabled-state changes keep the UUID
+and stored History but reset the live cache. Removed nodes receive no new polls.
+An old in-flight request may finish within existing transport limits, but its
+response is discarded if its state generation has been replaced. A re-added
+node with the same UUID waits for that old request to finish: it cannot overlap
+another request for the same node. Other nodes continue independently. The
+existing OS DNS timeout limitation still applies. The watcher stops on shutdown;
+no Hub or agent restart is needed to apply registry changes.
