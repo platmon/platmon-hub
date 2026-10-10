@@ -53,7 +53,8 @@ and [request limiting](https://nginx.org/en/docs/http/ngx_http_limit_req_module.
 Hub HTTP admission is capped at 32 concurrent connections, with a 5-second socket
 inactivity timeout. GET requests share a 100 requests/second token budget with a
 200-request burst; exhausted budget returns 429. Exhausted connection slots return
-503. The proxy example applies an additional per-IP 10 requests/second, burst 20.
+503 for a complete bounded request; clients that do not finish headers within
+100ms may instead be disconnected. The proxy example applies an additional per-IP 10 requests/second, burst 20.
 These are initial protection budgets, not measured supported viewer capacity. Requests
 have a 4 KiB target and 16 KiB parsed-header limit; Python's parser has its own limits
 before that check. An inactivity timeout is not a total request deadline. The Hub is
