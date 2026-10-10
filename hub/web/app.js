@@ -229,8 +229,21 @@
       updated.textContent = "Hub updated " + lastSuccess.toLocaleTimeString();
       await loadDetail();
     } catch (_err) {
+      // Hub reachability is independent of agent health. Never keep cached
+      // browser readings marked current after losing the Hub connection.
+      nodes = nodes.map(function (n) {
+        return Object.assign({}, n, {
+          data_current: false,
+          headline: n.headline === "live" || n.headline === "partial" ? "stale" : n.headline
+        });
+      });
+      renderSummary();
+      renderCards();
+      detailTicket++;
+      detailNote.textContent = "Hub unavailable";
+      details.replaceChildren(element("p", "empty", "Hub connection lost. Device details cannot be verified; retry to refresh."));
       banner.hidden = false;
-      banner.textContent = "Hub connection lost. Values shown are last known; they may no longer be current.";
+      banner.textContent = "Hub connection lost. Node readings are last known, not current.";
       updated.textContent = lastSuccess ? "Last Hub contact " + lastSuccess.toLocaleTimeString() : "Hub unavailable";
       fleetNote.textContent = "Refresh failed";
     } finally {
