@@ -5,42 +5,63 @@
   <img src="hub/web/assets/brand/platmon-logo-light.svg" alt="platmon — approved C / Terminal P brand" width="300">
 </picture>
 
-Centralized, read-only fleet monitoring for Linux devices running [platmon](https://github.com/platmon/platmon).
+Centralized, read-only Fleet monitoring for independent [platmon](https://github.com/platmon/platmon) agents, with a Windows/Linux Hub and Python 3.9+ standard-library runtime.
 
-> **Project status:** Fleet Dashboard preview implemented; no release package, production authentication, or long-term metrics database yet. Windows two-device fault isolation and a 30-minute two-node soak manually validated; large-fleet capacity and production security remain unverified.
+> **Status: 0.2.0rc1 candidate.** History, registry management, events, internal alerts and packaging are implemented. Three real devices passed short read-only collection/restart checks on Linux and native Windows. Synthetic 100-node results are documented with limits. Service reboot/ACL acceptance and a longer profiled soak remain before production rollout; no release tag or deployment is implied.
 
-`platmon` v1.0.0 is the independently deployed device agent. Each agent owns local hardware collection, CLI/Web UI, HTTP API and bounded in-memory history. The Hub reads existing published agent responses from an explicit registry, keeping per-node state, age and errors. It does not install/control agents, read their host files, or scan networks.
+Agents own hardware collection and remain independent when the Hub stops. The Hub
+uses explicit registry entries and fixed GET paths. It never imports Agent code,
+scans networks, controls devices or uses Agent in-memory history as persistence.
 
-## Try the backend (Python 3.9+)
+## Start locally
 
 ```sh
-cp nodes.example.json nodes.json      # edit with explicitly approved agent endpoints and stable UUIDs
-python3 -m hub --nodes nodes.json     # loopback 127.0.0.1:9787 by default
-curl -fsS http://127.0.0.1:9787/api/nodes
-# Open http://127.0.0.1:9787/ in a browser for Fleet Overview
+python -m pip install --no-deps /path/to/platmon_hub-0.2.0rc1-py3-none-any.whl
+platmon-hub nodes --file /private/nodes.json add --name "Approved device" --endpoint http://192.0.2.1:9797
+platmon-hub --nodes /private/nodes.json --history-db /private/history.db
 ```
 
-The example contains **no active targets**. See [backend setup, API and security limitations](backend.md) before configuring a private registry. No third-party Python dependencies are required.
+The IP above is documentation-only; substitute an explicitly approved Agent origin.
+The parent directory must exist. The CLI assigns a stable UUID; endpoint/name
+changes preserve it. Without installation, use `python -m hub` in place of
+`platmon-hub`. See [build and installation](docs/operations.md) to create the wheel.
+Open `http://127.0.0.1:9787/`. The example registry contains no active targets.
 
-## Documents
+History is opt-in via `--history-db`; internal alerts additionally require
+`--alerts /private/alerts.json`. Review [example rules](alerts.example.json) against
+your devices. Defaults retain metrics for 7 days and events for 30 days. Storage
+failure does not stop live polling, but queued history can be lost. A bounded
+History API and local Canvas graphs preserve missing values and restart boundaries.
 
-- [Brand identity and asset provenance](docs/branding.md) — canonical platmon SVGs, dark/light variants, favicon and local static routes.
-- [Installation and operations](docs/operations.md) — wheel packaging, systemd/Task Scheduler, logs, backup and rollback.
-- [Default ports and collision diagnostics](docs/ports.md) — fixed Hub TCP 9787, Agent TCP 9797, bind failures, Windows/Linux checks.
-- [Windows CI and 30-minute soak validation](docs/windows-soak.md) — cross-platform CI, Windows process CPU/RSS, poll duration and fleet status sampling.
-- [Backend foundation operations](backend.md) — registry, runtime defaults, HTTP routes and known limitations.
-- [Architecture and boundaries](docs/architecture.md) — components, polling, lifecycle, failure isolation, security, and milestones.
-- [Agent API consumption contract](docs/agent-contract.md) — v1.0.0 HTTP schemas, identities and freshness.
-- [MVP acceptance and verification plan](docs/mvp-acceptance.md) — contract scenarios and two-device field validation.
-- [ADR-0001: HTTP Pull and Hub-owned identity](docs/adr/0001-http-pull-and-device-identity.md).
+Keep Hub loopback-only and Agents on a trusted management network. The optional
+[TLS/authentication proxy](docs/security.md) is a separate, explicitly configured
+component. HTTP remains read-only; local administration relies on OS permissions.
 
-## Milestones
+## Documentation
 
-1. **Architecture & Contract** — merged in PR #1.
-2. **Backend foundation** — this PR: registry, polling, state projection, tests and read-only API.
-3. **Fleet overview** — this PR: static read-only browser page with node summary and details.
-4. **Persistence & history** — long-term retention, gap-aware graph and optional alerts.
+- [Installation, services, logs, backup and rollback](docs/operations.md)
+- [Configuration and CLI](docs/configuration.md)
+- [Hub API contract](docs/api.md) and [backend behavior](backend.md)
+- [History schema and migrations](docs/history-schema.md), [storage ADR](docs/adr/0002-hub-history-storage.md)
+- [Internal alerts](docs/alerts.md) and [access boundaries](docs/security.md)
+- [Measured resource budget and limitations](docs/resource-budget.md)
+- [Architecture](docs/architecture.md), [Agent contract](docs/agent-contract.md), [ports](docs/ports.md)
+- [Troubleshooting](docs/troubleshooting.md), [release/upgrade policy](docs/release.md), [CHANGELOG](CHANGELOG.md)
+- [Brand provenance](docs/branding.md), [earlier Windows validation](docs/windows-soak.md)
 
-Upstream baseline: [platmon v1.0.0](https://github.com/platmon/platmon/releases/tag/v1.0.0), with `/api/status` and `/api/stats` schema 1 and `/api/observations` schema 2. Application versions and API schemas are independent.
+## Development validation
+
+```sh
+python -m unittest discover -s tests -v
+python -m compileall -q hub tests
+node --check hub/web/app.js
+python scripts/check-package.py --output-dir /temporary/candidate-artifacts
+```
+
+CI covers Ubuntu/Windows × Python 3.9/3.13, isolated package install/rebuild,
+synthetic smoke and platform configuration checks. Python package build tools are
+not Hub runtime dependencies. Real registry files and operational logs stay private.
+Application version, Hub HTTP schema 1, SQLite schema 4 and Agent API schemas are
+independent contracts. See the release policy before upgrading or downgrading.
 
 [Apache License 2.0](LICENSE).
