@@ -39,7 +39,17 @@ jobs:
               Start-Sleep -Milliseconds 250
             }
             if (-not $ready) { throw "Hub did not become healthy" }
-            ./scripts/soak-windows.ps1 -HubPid $server.Id -DurationSeconds 4 -SampleIntervalSeconds 1 -ExpectedNodeCount 0 -OutputDirectory (Join-Path $env:RUNNER_TEMP "soak-smoke")
+            $outDir = Join-Path $env:RUNNER_TEMP "soak-smoke"
+            ./scripts/soak-windows.ps1 -HubPid $server.Id -DurationSeconds 4 -SampleIntervalSeconds 1 -ExpectedNodeCount 0 -OutputDirectory $outDir
+            $summaryPath = @(Get-ChildItem $outDir -Filter "*-summary.json")[0].FullName
+            $summary = Get-Content $summaryPath -Raw | ConvertFrom-Json
+            if (-not $summary.passed -or
+                $null -eq $summary.hub_cpu_mean_percent_one_core -or
+                $null -eq $summary.hub_cpu_total_seconds_between_samples -or
+                $null -eq $summary.hub_rss_first_mib -or
+                $null -eq $summary.hub_rss_last_mib) {
+              throw "Windows soak summary is incomplete"
+            }
           } finally {
             if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
           }
