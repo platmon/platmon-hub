@@ -2,7 +2,7 @@
 (function () {
   const monitoring = document.getElementById("monitoring-view");
   const management = document.getElementById("devices-view");
-  const tabs = [document.getElementById("monitoring-tab"), document.getElementById("devices-tab")];
+  const tabs = ["monitoring", "devices", "data"].map(name => document.getElementById(name + "-tab"));
   const addButton = document.getElementById("add-device");
   const status = document.getElementById("devices-status");
   const list = document.getElementById("devices-list");
@@ -60,34 +60,37 @@
     addButton.disabled = true;
     if (pending) status.textContent = "A change may already be saved. Refresh Devices before retrying.";
   }
-  function showView(devices) {
-    monitoring.hidden = devices;
+  function showView(view) {
+    const devices = view === 1;
+    monitoring.hidden = view !== 0;
     management.hidden = !devices;
+    document.getElementById("data-view").hidden = view !== 2;
     tabs.forEach((tab, index) => {
-      const selected = index === (devices ? 1 : 0);
+      const selected = index === view;
       tab.setAttribute("aria-selected", String(selected));
       tab.tabIndex = selected ? 0 : -1;
     });
-    document.getElementById("refresh").setAttribute("aria-label", devices ? "Refresh device registry" : "Refresh fleet data");
-    history.replaceState(null, "", devices ? "#devices" : "#monitoring");
+    document.getElementById("refresh").setAttribute("aria-label", ["Refresh fleet data", "Refresh device registry", "Refresh data options"][view]);
+    history.replaceState(null, "", ["#monitoring", "#devices", "#data"][view]);
     suspend();
     if (devices) refresh();
     document.dispatchEvent(new Event("view-change"));
   }
   tabs.forEach((tab, index) => {
-    tab.addEventListener("click", () => showView(index === 1));
+    tab.addEventListener("click", () => showView(index));
     tab.addEventListener("keydown", event => {
       let target;
-      if (event.key === "ArrowRight" || event.key === "ArrowLeft") target = 1 - index;
+      if (event.key === "ArrowRight") target = (index + 1) % tabs.length;
+      else if (event.key === "ArrowLeft") target = (index + tabs.length - 1) % tabs.length;
       else if (event.key === "Home") target = 0;
-      else if (event.key === "End") target = 1;
+      else if (event.key === "End") target = tabs.length - 1;
       else return;
       event.preventDefault();
-      showView(target === 1);
+      showView(target);
       tabs[target].focus();
     });
   });
-  window.addEventListener("hashchange", () => showView(location.hash === "#devices"));
+  window.addEventListener("hashchange", () => showView(location.hash === "#data" ? 2 : location.hash === "#devices" ? 1 : 0));
 
   function render() {
     list.replaceChildren();
@@ -228,5 +231,5 @@
       if (current === ticket) { busy = false; cancelButton.disabled = false; addButton.disabled = !available; render(); }
     }
   });
-  if (location.hash === "#devices") showView(true);
+  if (location.hash === "#devices" || location.hash === "#data") showView(location.hash === "#data" ? 2 : 1);
 })();

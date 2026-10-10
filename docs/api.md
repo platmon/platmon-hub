@@ -67,3 +67,11 @@ headers and a shared GET budget of 100/second with burst 200. Excess load can re
 429 or 503; clients should back off. These controls do not replace TLS or user
 authentication. See [security](security.md) for the optional proxy and OS-local
 administration boundary.
+
+## Data downloads
+
+`GET /api/data/export?from_ms=...&to_ms=...&node_id=...` downloads a bounded
+CSV ZIP of persisted rows (not graph buckets). `node_id` is optional and may refer
+to a removed registration. See [data-export.md](data-export.md) for format 1,
+limits and errors. All other methods remain 405. Existing security headers and
+request admission apply. Archives are private operational material.

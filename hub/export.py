@@ -158,7 +158,7 @@ def export_history(database, output, start, end, node_ids=(), observations=False
             if nodes:
                 condition += ' AND node_id IN (' + ','.join('?' for _ in nodes) + ')'
                 params += nodes
-            selected = connection.execute('SELECT DISTINCT node_id FROM core_samples WHERE ' + condition, params).fetchall()
+            selected = connection.execute('SELECT DISTINCT node_id FROM core_samples WHERE ' + condition, params)
             for (node,) in selected:
                 identity(node)
                 member = None
@@ -174,6 +174,8 @@ def export_history(database, output, start, end, node_ids=(), observations=False
                                 member = None
                             part = part + 1 if day == previous_day else 1
                             previous_day = day
+                            if len(manifest['files']) >= 10000:
+                                raise ExportError('file count limit exceeded')
                             member = CsvMember(archive, 'measurements/' + node + '/' + day + '-' + str(part) + '.csv', CORE, budget)
                         member.row(row)
                 finally:
@@ -219,9 +221,12 @@ def main(argv=None):
     parser.add_argument('--to-ms', required=True, type=int)
     parser.add_argument('--node-id', action='append', default=[])
     parser.add_argument('--observations', action='store_true', help='include selected optional data, potentially containing private probe addresses')
+    parser.add_argument('--timeout', type=float, default=30)
+    parser.add_argument('--max-rows', type=int, default=5000000)
+    parser.add_argument('--max-bytes', type=int, default=512 * 1024 * 1024)
     args = parser.parse_args(argv)
     try:
-        result = export_history(args.db, args.output, args.from_ms, args.to_ms, args.node_id, args.observations)
+        result = export_history(args.db, args.output, args.from_ms, args.to_ms, args.node_id, args.observations, args.timeout, args.max_rows, args.max_bytes)
     except (OSError, sqlite3.Error, ExportError) as exc:
         parser.exit(2, 'Export failed: ' + type(exc).__name__ + '\n')
     print(json.dumps({'output': str(Path(args.output).resolve()), 'format_version': FORMAT_VERSION,

@@ -73,3 +73,25 @@ are not currently stored and are not included.
 
 Database retention remains separate from archive retention. Automatic archives
 must be written before data expires; failures must not block Agent polling.
+
+## Dashboard Data tab
+
+Select **Data**, choose a registered device (or all stored devices), and set From
+and To in **UTC**, then download the ZIP. For a removed device, enter its canonical
+UUID in the optional field. The manual UUID overrides the selector.
+
+`GET /api/data/export?from_ms=...&to_ms=...&node_id=...` is read-only. The device
+filter is optional and independent of current registration. The web path allows
+7 days, 200,000 total rows and 32 MiB uncompressed CSV, with a 10-second worker
+budget and a 12-second parent deadline. Only one web export runs at a time;
+requests during that work return 429. A subprocess isolates generation from the
+Polling threads. Its output streams in bounded chunks only after successful
+completion; temporary data is removed on completion or disconnected download.
+Invalid selections return 400, disabled/unavailable History 503, and failed or
+oversized exports 422. Use a smaller range or CLI for larger work.
+
+The browser suppresses duplicate submissions and cancels pending downloads on
+leaving the tab or hiding the page. It retains no downloaded archive after the
+browser save is initiated. Live Fleet requests are suspended on other tabs;
+Agent polling remains active. No directory listing, user-selected output path,
+network URL, new write API or external chart service is introduced.

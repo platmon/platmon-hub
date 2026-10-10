@@ -23,6 +23,7 @@ jobs:
         run: |
           node --check hub/web/app.js
           node --check hub/web/devices.js
+          node --check hub/web/data.js
       - name: Synthetic fleet harness smoke (loopback only)
         run: python scripts/benchmark-fleet.py --nodes 10 --seconds 3 --output "${{ runner.temp }}/synthetic-smoke.json"
       - name: Long-soak reporting smoke (loopback only)

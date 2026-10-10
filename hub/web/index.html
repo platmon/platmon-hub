@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/assets/styles.css">
   <script src="/assets/app.js" defer></script>
   <script src="/assets/devices.js" defer></script>
+  <script src="/assets/data.js" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -29,6 +30,7 @@
     <nav class="view-tabs" role="tablist" aria-label="Hub views">
       <button type="button" id="monitoring-tab" role="tab" aria-controls="monitoring-view" aria-selected="true">Monitoring</button>
       <button type="button" id="devices-tab" role="tab" aria-controls="devices-view" aria-selected="false" tabindex="-1">Devices</button>
+      <button type="button" id="data-tab" role="tab" aria-controls="data-view" aria-selected="false" tabindex="-1">Data</button>
     </nav>
     <div id="monitoring-view" role="tabpanel" aria-labelledby="monitoring-tab">
     <div class="intro">
@@ -94,6 +96,21 @@
       </div>
       <p id="devices-status" class="subtle" role="status" aria-live="polite">Enter the local Devices tab to manage the registry.</p>
       <div id="devices-list" class="management-list"></div>
+    </section>
+    <section id="data-view" role="tabpanel" aria-labelledby="data-tab" hidden>
+      <div class="intro"><div><p class="eyebrow">Collected data</p><h1>Export your measurements</h1>
+      <p class="subtle">Original persisted values, events and gaps. UTC receipt time · Missing values stay empty.</p></div></div>
+      <p id="data-status" class="subtle" role="status" aria-live="polite">Select a device and time range.</p>
+      <form id="data-form" class="history-controls">
+        <label>Device <select id="data-node"><option value="">All stored devices</option></select></label>
+        <label>Stored device UUID (optional) <input id="data-uuid" placeholder="Removed device UUID" maxlength="36"></label>
+        <label>From (UTC) <input id="data-from" type="datetime-local" required></label>
+        <label>To (UTC) <input id="data-to" type="datetime-local" required></label>
+        <button type="submit" id="data-download" class="refresh-button">Download CSV ZIP</button>
+      </form>
+      <p class="subtle">Maximum 7 days, 200,000 rows and 32 MiB of CSV per download. For larger exports use the local CLI.
+      The ZIP includes a manifest with units, row counts and hashes. It contains only data still in History.
+      The UUID field overrides the device selector; it also supports removed devices.</p>
     </section>
   </main>
   <dialog id="device-dialog" aria-labelledby="device-dialog-title">
