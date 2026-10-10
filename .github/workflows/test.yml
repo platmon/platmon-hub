@@ -23,6 +23,8 @@ jobs:
         run: node --check hub/web/app.js
       - name: Synthetic fleet harness smoke (loopback only)
         run: python scripts/benchmark-fleet.py --nodes 10 --seconds 3 --output "${{ runner.temp }}/synthetic-smoke.json"
+      - name: Long-soak reporting smoke (loopback only)
+        run: python scripts/soak-fleet.py --synthetic 10 --seconds 10 --window-seconds 2 --output "${{ runner.temp }}/soak-smoke.json"
       - name: Build and install isolated wheel
         run: python scripts/check-package.py --output-dir "${{ runner.temp }}/candidate-artifacts"
       - name: Validate systemd example syntax

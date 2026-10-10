@@ -2,7 +2,8 @@ import http.client
 import threading
 import unittest
 from hub.access import RequestBudget
-from hub.http import HubServer
+from hub.http import HubServer, HubHandler
+from unittest.mock import patch
 from hub.runtime import Fleet
 
 
@@ -64,3 +65,23 @@ class AccessTests(unittest.TestCase):
             self.assertLess(time.monotonic()-began, 2)
         finally:
             for _ in range(32): self.server._requests.release()
+
+    def test_client_disconnect_releases_slot_without_server_traceback(self):
+        from test_history import wait_for
+        for failure in (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            with self.subTest(failure=failure.__name__):
+                with patch.object(HubHandler, '_reply', side_effect=failure('peer closed')):
+                    with patch.object(self.server, 'handle_error') as error:
+                        with self.assertRaises(http.client.RemoteDisconnected): self.request()
+                        wait_for(lambda: self.server._requests._value == 32)
+                        error.assert_not_called()
+                self.assertEqual(self.request()[0], 200)
+
+    def test_unexpected_handler_errors_remain_visible(self):
+        from test_history import wait_for
+        with patch.object(HubHandler, '_reply', side_effect=RuntimeError('unexpected failure')):
+            with patch.object(self.server, 'handle_error') as error:
+                with self.assertRaises(http.client.RemoteDisconnected): self.request()
+                wait_for(lambda: self.server._requests._value == 32)
+                error.assert_called_once()
+        self.assertEqual(self.request()[0], 200)

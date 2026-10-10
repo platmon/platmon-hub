@@ -79,6 +79,14 @@ class HubHandler(BaseHTTPRequestHandler):
     server_version = 'platmon-hub'
     sys_version = ''
 
+    def handle(self):
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            # Dashboard selection changes abort in-flight requests. The peer has
+            # gone away; finish this request and release its admission slot.
+            self.close_connection = True
+
     def log_request(self, code='-', size='-'):
         # Never log query strings, credentials, arbitrary paths or headers.
         logging.getLogger('hub.access').info('request method=%s status=%s',

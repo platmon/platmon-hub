@@ -48,3 +48,10 @@ workload is 60 seconds plus 15 seconds after process restart. It contacts real
 registered agents with the normal fixed GET paths, so run only with authorization.
 Keep field reports and screenshots outside the repository; publish a reviewed
 aggregate summary, not private configuration or operational logs.
+
+## Extended soak
+
+[90-minute results and investigation](long-soak.md), [aggregate windows](long-soak-summary.json),
+[experiment plan](long-soak-plan.md), [RSS regression proof](windows-rss-probe.json)
+and [bounded-allocation/HTTP probes](windows-stdlib-probes.json). Raw field reports
+and browser heap snapshots remain private.
