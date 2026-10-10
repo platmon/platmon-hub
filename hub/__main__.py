@@ -3,9 +3,11 @@
 import argparse
 import errno
 import logging
+import math
 from .http import HubServer
 from .registry import load_registry
 from .runtime import Fleet
+from .history.writer import HistoryWriter
 
 
 def tcp_port(value):
@@ -38,14 +40,28 @@ def bind_hub(bind, port, fleet):
         ) from None
 
 
+def positive_days(value):
+    try:
+        days = float(value)
+        if not math.isfinite(days) or days <= 0:
+            raise ValueError()
+        return days
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("retention days must be finite and positive") from exc
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="platmon-hub read-only backend")
     parser.add_argument("--nodes", required=True, help="path to explicitly managed node registry JSON")
     parser.add_argument("--bind", default="127.0.0.1", help="Hub bind address; loopback by default")
     parser.add_argument("--port", type=tcp_port, default=9787, help="Hub TCP listen port (default: 9787)")
+    parser.add_argument("--history-db", help="explicit local SQLite history path (disabled by default)")
+    parser.add_argument("--history-retention-days", type=positive_days, default=7)
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO)
-    fleet = Fleet(load_registry(args.nodes))
+    nodes = load_registry(args.nodes)
+    history = HistoryWriter(args.history_db, retention_days=args.history_retention_days) if args.history_db else None
+    fleet = Fleet(nodes, history=history)
     try:
         server = bind_hub(args.bind, args.port, fleet)
     except BaseException:

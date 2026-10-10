@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from threading import RLock
 
 from . import protocol
+from .history.projector import Acceptance, CoreRecord
 
 
 
@@ -101,7 +102,7 @@ class NodeState:
             if not st["ready"]:
                 self._headline = st["state"]
 
-    def accept_core(self, document, metrics=None):
+    def accept_core(self, document, metrics=None, *, received_at_ms=None):
         """Commit validated core response; status and stats belong to one instance."""
         st = protocol.status(document)
         if st["ready"]:
@@ -110,21 +111,29 @@ class NodeState:
             protocol.stats(metrics, st["instance_id"])
         self.note_valid_status(st)
         if not st["ready"]:
-            return
+            return Acceptance("rejected")
         with self._lock:
             new_key = (st["instance_id"], metrics["sample"]["sequence"])
             if self._sample_key is not None and new_key[1] < self._sample_key[1]:
                 self._core_error = "out_of_order_sample"
                 self._headline = "error"
-                return
+                return Acceptance("rejected")
             if metrics["sample"]["data_age_ms"] > metrics["sample"]["stale_after_ms"]:
                 self._core_error = "expired_sample"
                 self._headline = "stale"
-                return
+                return Acceptance("rejected")
+            duplicate = self._sample_key == new_key
             self._sample_key = new_key
             self._last_stats = metrics
             self._last_stats_tick = self.clock()
             self._headline = "partial" if st["state"] == "degraded" else "live"
+            if duplicate:
+                return Acceptance("duplicate")
+            record = CoreRecord(self.node.node_id, st["instance_id"], new_key[1],
+                                int(time.time() * 1000) if received_at_ms is None else received_at_ms,
+                                metrics["sample"]["data_age_ms"], metrics["sample"]["stale_after_ms"],
+                                st["state"], **_overview(metrics))
+            return Acceptance("new", record)
 
     def fail_core(self, failure):
         if not isinstance(failure, protocol.AgentFailure):

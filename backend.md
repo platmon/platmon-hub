@@ -72,3 +72,21 @@ python3 -m compileall -q hub tests
 ```
 
 Fixtures use synthetic schema-1/status/stats and schema-2/observations payloads, HTTP test servers and a monotonic fake clock. These are not a substitute for the [hardware smoke plan](mvp-acceptance.md) and do not claim actual board validation.
+
+## Optional core history
+
+Pass `--history-db /path/to/history.db` to enable SQLite persistence. The parent
+must already exist on a local disk with write permission; otherwise live polling
+continues and history reports its failure. `--history-retention-days` defaults to
+7. History is disabled without an explicit path. Core receipt times are UTC
+milliseconds; missing metrics remain null. Sample identity includes the Hub UUID,
+agent instance and sequence. Duplicate or regressing sequences do not add rows.
+
+A single background writer owns SQLite and its adjacent process lock; queueing is
+nonblocking (2,048 records). Overflow and storage failures can lose history while
+live monitoring continues. Read `/api/history/status` for queue, commit, drop and
+error diagnostics; these counters reset with Hub. Shutdown attempts a five-second
+writer drain; queued/uncommitted data is not crash-durable. Do not share a DB
+between Hub processes or place it on a network share. Back up with SQLite's backup
+API or after clean shutdown, not by copying an active DB without its WAL.
+See [the storage contract](docs/adr/0002-hub-history-storage.md).
