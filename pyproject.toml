@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "platmon-hub"
+dynamic = ["version"]
+description = "Read-only fleet monitoring for independent platmon agents"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {file = "LICENSE"}
+dependencies = []
+
+[project.scripts]
+platmon-hub = "hub.__main__:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "hub.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["hub", "hub.*"]
+
+[tool.setuptools.package-data]
+hub = ["web/*.html", "web/*.css", "web/*.js", "web/assets/brand/*.svg"]
+
+[tool.setuptools.data-files]
+"share/platmon-hub/deploy" = ["deploy/platmon-hub.service", "deploy/hub.env.example", "deploy/install-windows-task.ps1"]

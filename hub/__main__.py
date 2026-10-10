@@ -5,6 +5,9 @@ import errno
 import logging
 import math
 import sys
+import signal
+from logging.handlers import RotatingFileHandler
+from . import __version__
 from .http import HubServer
 from .registry import load_registry
 from .runtime import Fleet
@@ -53,10 +56,15 @@ def positive_days(value):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "backup":
+        from .backup import main as backup_main
+        return backup_main(argv[1:])
     if argv and argv[0] == "nodes":
         from .nodes_cli import main as nodes_main
         return nodes_main(argv[1:])
     parser = argparse.ArgumentParser(description="platmon-hub read-only backend")
+    parser.add_argument("--version", action="version", version=__version__)
+    parser.add_argument("--log-file", help="optional UTF-8 rotating local log file")
     parser.add_argument("--nodes", required=True, help="path to explicitly managed node registry JSON")
     parser.add_argument("--bind", default="127.0.0.1", help="Hub bind address; loopback by default")
     parser.add_argument("--port", type=tcp_port, default=9787, help="Hub TCP listen port (default: 9787)")
@@ -64,7 +72,8 @@ def main(argv=None):
     parser.add_argument("--history-retention-days", type=positive_days, default=7)
     parser.add_argument("--no-registry-reload", action="store_true", help="disable automatic registry reload")
     args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO)
+    handlers = [RotatingFileHandler(args.log_file, maxBytes=2*1024*1024, backupCount=3, encoding="utf-8")] if args.log_file else None
+    logging.basicConfig(level=logging.INFO, handlers=handlers, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     nodes = load_registry(args.nodes)
     history = HistoryWriter(args.history_db, retention_days=args.history_retention_days) if args.history_db else None
     fleet = Fleet(nodes, history=history, registry_path=None if args.no_registry_reload else args.nodes)
@@ -74,15 +83,20 @@ def main(argv=None):
         # A failed bind must not strand an unstarted thread pool.
         fleet.close()
         raise
+    previous_sigterm = signal.getsignal(signal.SIGTERM)
+    def terminate(signum, frame):
+        raise KeyboardInterrupt()
+    signal.signal(signal.SIGTERM, terminate)
     try:
         fleet.start()
-        print(f"platmon-hub serving on {server.server_address[0]}:{server.server_address[1]}", flush=True)
+        logging.info("platmon-hub serving on %s:%s", *server.server_address[:2])
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
         pass
     finally:
         server.server_close()
         fleet.close()
+        signal.signal(signal.SIGTERM, previous_sigterm)
 
 
 if __name__ == "__main__":

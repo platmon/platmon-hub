@@ -21,6 +21,19 @@ jobs:
       - run: python -m compileall -q hub tests
       - name: Check browser JavaScript syntax
         run: node --check hub/web/app.js
+      - name: Build and install isolated wheel
+        run: python scripts/check-package.py
+      - name: Validate systemd example syntax
+        if: runner.os == 'Linux'
+        run: python scripts/check-service.py
+      - name: Validate Windows task script syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path deploy/install-windows-task.ps1), [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
       - name: Windows loopback soak harness smoke (no device targets)
         if: runner.os == 'Windows'
         shell: pwsh

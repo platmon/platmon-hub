@@ -1,0 +1,27 @@
+[Unit]
+Description=platmon Fleet monitoring
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=platmon-hub
+Group=platmon-hub
+Environment=HUB_PORT=9787
+EnvironmentFile=-/etc/platmon-hub/hub.env
+ExecStart=/opt/platmon-hub/venv/bin/platmon-hub --nodes /etc/platmon-hub/nodes.json --history-db /var/lib/platmon-hub/history.db --log-file /var/log/platmon-hub/hub.log --port ${HUB_PORT}
+StateDirectory=platmon-hub
+LogsDirectory=platmon-hub
+WorkingDirectory=/var/lib/platmon-hub
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/etc/platmon-hub
+
+[Install]
+WantedBy=multi-user.target

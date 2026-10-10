@@ -25,6 +25,7 @@ The example contains **no active targets**. See [backend setup, API and security
 ## Documents
 
 - [Brand identity and asset provenance](docs/branding.md) — canonical platmon SVGs, dark/light variants, favicon and local static routes.
+- [Installation and operations](docs/operations.md) — wheel packaging, systemd/Task Scheduler, logs, backup and rollback.
 - [Default ports and collision diagnostics](docs/ports.md) — fixed Hub TCP 9787, Agent TCP 9797, bind failures, Windows/Linux checks.
 - [Windows CI and 30-minute soak validation](docs/windows-soak.md) — cross-platform CI, Windows process CPU/RSS, poll duration and fleet status sampling.
 - [Backend foundation operations](backend.md) — registry, runtime defaults, HTTP routes and known limitations.
