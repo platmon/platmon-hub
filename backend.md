@@ -1,6 +1,6 @@
 # Backend foundation (PR #2)
 
-This implementation is a **read-only, manually registered fleet backend** for platmon v1.0.0. It is not a web dashboard, an agent installer, alerting platform, or persistent metrics store.
+This implementation is a **read-only, manually registered fleet backend and browser dashboard** for platmon v1.0.0. It is not an agent installer, alerting platform, or persistent metrics store.
 
 ## Setup
 
@@ -20,9 +20,19 @@ Requires Python **3.9+** on a Linux host with direct, operator-approved reachabi
    ```
 
 4. Start locally: `python3 -m hub --nodes /path/to/nodes.json`. The read-only HTTP server binds to **127.0.0.1:9787** by default. A modified registry requires a Hub restart. To bind non-loopback, place the Hub behind an operator-controlled authenticated and encrypted access layer; the initial MVP itself has **no authentication or TLS**.
-5. Inspect `curl -fsS http://127.0.0.1:9787/api/nodes` or `GET /api/nodes/<node_id>`.
+5. Open `http://127.0.0.1:9787/` in a local browser or inspect `curl -fsS http://127.0.0.1:9787/api/nodes`. The browser fetches only Hub endpoints, never agents directly.
 
 No automatic network scanning, browser-supplied agent URLs, writable registry API, outbound Push, or agent control is implemented. No agent-side modifications are required.
+
+## Read-only Fleet Dashboard
+
+The zero-dependency static page at `/` shows a fleet-wide count of Live, Partial, Stale/Starting and Offline/Error nodes, node cards (CPU, GPU, memory, root filesystem and hottest sensor), and a selected-node detail including per-core CPU, temperatures, optional observations and per-interface network/disk I/O rates when present. Unsupported and missing readings are marked N/A, **never zero**. Cached metrics remain visible as **last known** with their age once `data_current` is false.
+
+The browser polls Hub `/api/nodes` every 5 s while visible and `/api/nodes/<node_id>` for the selected node. It does **not** trigger additional agent reads, discover endpoints or fetch arbitrary URLs. Hidden tabs stop requesting data until visible again; failed Hub requests show a connection banner without silently turning last-known values current. All agent-provided labels are rendered using DOM `textContent`, never interpolated as HTML. Assets are served from an exact allowlist with a restrictive Content Security Policy; there are no external browser dependencies.
+
+The Hub's `/api/nodes` summary adds an `overview` object with optional `cpu_percent`, `gpu_percent`, `memory_percent`, `disk_percent`, and `hottest_c` fields; unavailable readings are JSON null. This is an additive, Hub-owned schema-1 projection. It is computed only from the last accepted agent snapshot; callers must consult `data_current` and `headline` before calling the values live. The detail response includes the same `overview` and original cached `stats` / independent `observations`.
+
+Note: production internet exposure, authenticated access, history retention, alerting and broad-fleet capacity remain outside this preview. Default bind remains loopback.
 
 ## Hub endpoints (provisional schema v1)
 
