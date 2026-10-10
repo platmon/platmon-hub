@@ -11,14 +11,14 @@ boundary. Loopback binding is not user authentication on a shared host.
 | Identity | Permitted operations | Enforcement |
 | --- | --- | --- |
 | Authenticated proxy viewer | Dashboard and read-only APIs | TLS proxy authentication |
-| Local web administrator | Add registered devices only, when explicitly enabled | Protected token, loopback listener, exact Origin/Host and JSON request checks |
+| Local web administrator | List/add/edit/disable/remove registrations, when explicitly enabled | Protected token, loopback listener, exact Origin/Host and JSON request checks |
 | OS administrator | Local registry CLI, rules, service configuration | OS login, filesystem ACLs, approved sudo/task permissions |
 | Hub service account | Read registry/rules; write its DB/log directories | Dedicated account and directory permissions |
 | Anonymous remote client | No fleet access | Authenticated proxy and firewall |
 
-`POST`, `PUT`, `PATCH`, `DELETE` remain 405 except opt-in `POST /api/admin/nodes`.
+`POST`, `PUT`, `PATCH`, `DELETE` remain 405 except the opt-in registry POST routes documented in [web management](web-registration.md).
 Forged forwarded user identities grant no access. There is no URL-fetch proxy,
-network discovery, web device editor/removal or Agent control path. The existing
+network discovery or Agent control path. The existing
 TLS proxy is for read-only viewers; local web registration is not enabled through it.
 
 ## Optional TLS proxy
@@ -69,7 +69,7 @@ SQL inputs are parameterized, metric names allowlisted, responses bounded and mi
 metrics preserved as null. HTTP APIs remain same-origin with no permissive CORS.
 All application responses carry no-store/nosniff, restrictive CSP and frame denial;
 static files retain their exact allowlist. Read-only operations have no CSRF-sensitive mutation; the opt-in local write
-route enforces exact Origin/Host, bearer authorization and non-simple JSON requests. The proxy must not add permissive CORS or relax these headers.
+routes enforce exact Origin/Host, bearer authorization and non-simple JSON requests. The proxy must not add permissive CORS or relax these headers.
 
 Hub access logs record method/status only, excluding URLs, query strings, headers,
 credentials and arbitrary strings. Use `--log-file` for rotation. The proxy's

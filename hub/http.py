@@ -19,6 +19,7 @@ ASSETS = {
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/assets/styles.css": ("styles.css", "text/css; charset=utf-8"),
     "/assets/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/assets/devices.js": ("devices.js", "text/javascript; charset=utf-8"),
     "/favicon.svg": ("assets/brand/favicon.svg", "image/svg+xml"),
     "/assets/brand/platmon-icon-light.svg": ("assets/brand/platmon-icon-light.svg", "image/svg+xml"),
     "/assets/brand/platmon-icon-dark.svg": ("assets/brand/platmon-icon-dark.svg", "image/svg+xml"),
@@ -149,6 +150,11 @@ class HubHandler(BaseHTTPRequestHandler):
         elif path.path == "/api/history/status":
             history = self.server.fleet.history
             self._reply(200, {"schema_version": 1, "history": history.snapshot() if history else {"enabled": False, "state": "disabled"}})
+        elif path.path == "/api/admin/nodes":
+            if self.server.admin is None:
+                self._reply(403, {"error": "admin_disabled", "message": "Web device management is disabled."})
+            elif self._authorize_admin(write=False):
+                self._admin_result(self.server.admin.list_nodes)
         elif path.path == "/api/admin/status":
             self._reply(200, {"schema_version": 1, "enabled": self.server.admin is not None, "local_port": self.server.server_port})
         elif path.path == "/api/alerts":
@@ -188,27 +194,45 @@ class HubHandler(BaseHTTPRequestHandler):
         except QueryError as exc:
             self._reply(exc.status, {'schema_version': 1, 'error': exc.code})
 
-    def do_POST(self):
-        if self.server.admin is None or self.path != '/api/admin/nodes':
-            self._read_only()
-            return
-        if self._request_path() is None:
-            return
-        # Strict local Origin/Host matching protects against CSRF and rebinding.
+    def _authorize_admin(self, write=True):
+        # Mutation requires exact Origin; authenticated reads allow its absence.
         host = self.headers.get('Host', '').lower()
         suffix = '' if self.server.server_port == 80 else ':' + str(self.server.server_port)
         allowed = ('127.0.0.1' + suffix, 'localhost' + suffix)
+        origins = self.headers.get_all('Origin', [])
         if (len(self.headers.get_all('Host', [])) != 1 or host not in allowed or
-                len(self.headers.get_all('Origin', [])) != 1 or self.headers.get('Origin') != 'http://' + host or
+                (write and len(origins) != 1) or len(origins) > 1 or
+                (origins and origins[0] != 'http://' + host) or
                 self.headers.get('Sec-Fetch-Site', 'same-origin') != 'same-origin'):
-            self._reply(403, {'error': 'untrusted_origin', 'message': 'Use the local Hub page to add devices.'})
-            return
-        if not self.server.admin_budget.take():
+            self._reply(403, {'error': 'untrusted_origin', 'message': 'Use the local Hub page to manage devices.'})
+            return False
+        authorized = (len(self.headers.get_all('Authorization', [])) == 1 and
+                      self.server.admin.authorized(self.headers.get('Authorization')))
+        if (write or not authorized) and not self.server.admin_budget.take():
             self._reply(429, {'error': 'rate_limited', 'message': 'Wait a few seconds before retrying.'})
-            return
-        if (len(self.headers.get_all('Authorization', [])) != 1 or
-                not self.server.admin.authorized(self.headers.get('Authorization'))):
+            return False
+        if not authorized:
             self._reply(401, {'error': 'unauthorized', 'message': 'Enter the correct administrator token.'})
+            return False
+        return True
+
+    def _admin_result(self, operation, *args, status=200):
+        try:
+            self._reply(status, operation(*args))
+        except AdminError as exc:
+            self._reply(exc.status, {'schema_version': 1, 'error': exc.code, 'message': exc.message})
+
+    def do_POST(self):
+        parts = self.path.split('/')
+        action, identity = None, None
+        if self.path == '/api/admin/nodes':
+            action = 'add'
+        elif len(parts) == 6 and parts[:4] == ['', 'api', 'admin', 'nodes'] and parts[-1] in ('update', 'remove') and parts[4]:
+            action, identity = parts[-1], parts[4]
+        if self.server.admin is None or action is None:
+            self._read_only()
+            return
+        if self._request_path() is None or not self._authorize_admin():
             return
         if self.headers.get('Transfer-Encoding') or len(self.headers.get_all('Content-Length', [])) != 1:
             self._reply(400, {'error': 'invalid_body', 'message': 'A bounded JSON body is required.'})
@@ -231,10 +255,10 @@ class HubHandler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeError):
             self._reply(400, {'error': 'invalid_body', 'message': 'Invalid JSON body.'})
             return
-        try:
-            self._reply(201, self.server.admin.add(data))
-        except AdminError as exc:
-            self._reply(exc.status, {'schema_version': 1, 'error': exc.code, 'message': exc.message})
+        if action == 'add':
+            self._admin_result(self.server.admin.add, data, status=201)
+        else:
+            self._admin_result(getattr(self.server.admin, action), identity, data)
 
     def _read_only(self):
         self._reply(405, {"error": "read_only"})

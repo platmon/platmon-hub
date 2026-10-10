@@ -188,3 +188,94 @@ class WebRegistrationTests(unittest.TestCase):
                 self.assertEqual(response.status, 201)
                 response.read()
             finally: connection.close()
+
+    def test_management_list_requires_authentication_and_local_origin(self):
+        self.assertEqual(self.request()[0], 201)
+        for headers, code in (({'Authorization': None}, 401), ({'Origin': 'http://evil.example'}, 403),
+                              ({'Sec-Fetch-Site': 'cross-site'}, 403)):
+            with self.subTest(headers=headers):
+                result = self.request(method='GET', headers=headers)
+                self.assertEqual(result[0], code)
+                self.assertNotIn('192.0.2.10', json.dumps(result[2]))
+        # Same-origin browser GET does not send Origin; bearer authorization is required.
+        status, _, result = self.request(method='GET', headers={'Origin': None})
+        self.assertEqual(status, 200)
+        self.assertEqual(result['nodes'][0]['endpoint'], 'http://192.0.2.10:9797')
+        self.assertEqual(set(result['nodes'][0]), {'node_id', 'name', 'endpoint', 'enabled'})
+
+    def test_edit_disable_enable_remove_preserves_identity_and_history(self):
+        identity = self.request()[2]['node_id']
+        history = self.registry.with_name('history.db')
+        history.write_bytes(b'preserved history')
+        def loaded(): return self.request(method='GET')[2]['nodes'][0]
+        node = loaded()
+        changed = dict(name='Updated', host='192.0.2.11', port=12345, enabled=False, expected=node)
+        status, _, result = self.request(changed, path='/api/admin/nodes/' + identity + '/update')
+        self.assertEqual(status, 200)
+        self.assertEqual(result['node_id'], identity)
+        self.assertEqual(result['action'], 'update')
+        self.assertEqual(load_registry(str(self.registry) + '.bak')[0].name, 'Lab')
+        node = loaded()
+        self.assertFalse(node['enabled'])
+        self.assertEqual(node['endpoint'], 'http://192.0.2.11:12345')
+        changed.update(enabled=True, expected=node)
+        self.assertEqual(self.request(changed, path='/api/admin/nodes/' + identity + '/update')[0], 200)
+        node = loaded()
+        self.assertTrue(node['enabled'])
+        self.assertEqual(self.request({'expected':node, 'confirm_node_id':identity}, path='/api/admin/nodes/' + identity + '/remove')[0], 200)
+        self.assertEqual(load_registry(self.registry), ())
+        self.assertEqual(history.read_bytes(), b'preserved history')
+        self.fleet.watcher.check_once(); self.fleet.watcher._seen_at -= 1; self.fleet.watcher.check_once()
+        self.assertEqual(self.fleet.list_nodes(), [])
+
+    def test_stale_edit_and_remove_never_overwrite_newer_record(self):
+        from hub.nodes_cli import update_registry
+        identity = self.request()[2]['node_id']
+        node = self.request(method='GET')[2]['nodes'][0]
+        update_registry(self.registry, 'rename', node_id=identity, name='Changed by CLI')
+        original = self.registry.read_bytes()
+        update = dict(name='Stale browser', host='192.0.2.12', port=9797, enabled=True, expected=node)
+        for path, body in (('/update', update), ('/remove', dict(expected=node, confirm_node_id=identity))):
+            result = self.request(body, path='/api/admin/nodes/' + identity + path)
+            self.assertEqual(result[0], 409)
+            self.assertEqual(result[2]['error'], 'device_changed')
+            self.assertEqual(self.registry.read_bytes(), original)
+
+    def test_edit_and_remove_authorization_confirmation_and_validation(self):
+        identity = self.request()[2]['node_id']
+        node = self.request(method='GET')[2]['nodes'][0]
+        original = self.registry.read_bytes()
+        update = dict(name='Changed', host='192.0.2.12', port=9797, enabled=True, expected=node)
+        for suffix, body in (('/update', update), ('/remove', dict(expected=node, confirm_node_id=identity))):
+            for headers, code in (({'Authorization': None}, 401), ({'Origin': None}, 403)):
+                self.assertEqual(self.request(body, headers=headers, path='/api/admin/nodes/' + identity + suffix)[0], code)
+        for body in ({'expected': node}, {'expected': node, 'confirm_node_id': 'wrong'},
+                     {'expected':node, 'confirm_node_id':identity, 'delete_history':True}):
+            self.assertEqual(self.request(body, path='/api/admin/nodes/' + identity + '/remove')[0], 400)
+        broken = dict(update); broken['expected'] = dict(node, enabled='yes')
+        self.assertEqual(self.request(broken, path='/api/admin/nodes/' + identity + '/update')[0], 400)
+        self.assertEqual(self.registry.read_bytes(), original)
+        self.assertEqual(self.request(update, path='/api/admin/nodes/unknown/update')[0], 400)
+
+    def test_edit_duplicate_endpoint_does_not_partially_rename(self):
+        first = self.request()[2]['node_id']
+        self.assertEqual(self.request({'name': 'Second', 'host': '192.0.2.11'})[0], 201)
+        node = next(n for n in self.request(method='GET')[2]['nodes'] if n['node_id'] == first)
+        original = self.registry.read_bytes()
+        self.assertEqual(self.request(dict(name='Lost name', host='192.0.2.11', port=9797, enabled=False, expected=node),
+            path='/api/admin/nodes/' + first + '/update')[0], 409)
+        self.assertEqual(self.registry.read_bytes(), original)
+
+    def test_concurrent_edit_has_one_winner_and_stale_retry_is_rejected(self):
+        from concurrent.futures import ThreadPoolExecutor
+        identity = self.request()[2]['node_id']
+        node = self.request(method='GET')[2]['nodes'][0]
+        path = '/api/admin/nodes/' + identity + '/update'
+        def edit(name):
+            return self.request(dict(name=name, host='192.0.2.10', port=9797, enabled=True, expected=node), path=path)[0]
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(edit, ('First edit', 'Second edit')))
+        self.assertEqual(results.count(200), 1)
+        self.assertIn(next(code for code in results if code != 200), (409, 503))
+        self.assertEqual(edit('Stale retry'), 409)
+        self.assertIn(load_registry(self.registry)[0].name, ('First edit', 'Second edit'))

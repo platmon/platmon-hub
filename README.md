@@ -27,7 +27,7 @@ changes preserve it. Without installation, use `python -m hub` in place of
 `platmon-hub`. See [build and installation](docs/operations.md) to create the wheel.
 Open `http://127.0.0.1:9787/`. The example registry contains no active targets.
 
-Use **Add device** in the Dashboard after enabling [local web registration](docs/web-registration.md), or add an approved device from a local terminal:
+Use the **Devices** tab in the Dashboard after enabling [local web registration](docs/web-registration.md), or add an approved device from a local terminal:
 
 ```sh
 python -m hub nodes --file nodes.json add --interactive
@@ -47,7 +47,7 @@ History API and local Canvas graphs preserve missing values and restart boundari
 
 Keep Hub loopback-only and Agents on a trusted management network. The optional
 [TLS/authentication proxy](docs/security.md) is a separate, explicitly configured
-component. HTTP is read-only by default. Opt-in [local web device registration](docs/web-registration.md) uses a protected administrator token.
+component. HTTP is read-only by default. Opt-in [local web device management](docs/web-registration.md) uses a protected administrator token.
 
 ## Documentation
 

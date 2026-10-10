@@ -59,7 +59,7 @@ Rules and restoration behavior are defined in [alerts](alerts.md).
 ## Access and limits
 
 POST, PUT, PATCH and DELETE return 405 by default. The opt-in authenticated local
-`POST /api/admin/nodes` exception and `GET /api/admin/status` are documented in
+registry POST exceptions and authenticated listing are documented in
 [web registration](web-registration.md). Static assets use exact paths without query
 strings. Requests must use an accepted loopback Host header. Limits include 32
 connections, five-second socket inactivity, 4 KiB request targets, 16 KiB parsed

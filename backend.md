@@ -1,6 +1,6 @@
 # Backend behavior
 
-This is a **read-only, explicitly registered Fleet backend and Dashboard** for platmon agents, with optional SQLite history, events and internal alerts. Registry administration is available through the local CLI and an opt-in authenticated local web addition route. It never installs or controls Agents.
+This is a **read-only, explicitly registered Fleet backend and Dashboard** for platmon agents, with optional SQLite history, events and internal alerts. Registry administration is available through the local CLI and opt-in authenticated local web management routes. It never installs or controls Agents.
 
 ## Setup
 
@@ -24,7 +24,7 @@ Requires Python **3.9+** on a Linux or Windows Hub host with direct, operator-ap
 
 The Hub listens on **TCP 9787** by default (Agent listens on **TCP 9797**). Use `--port 9798` to select a different fixed port if needed; no automatic port selection or fallback is performed. Startup reports an actionable error if the listener cannot bind, including port-in-use and permission/reservation failures. See [port policy and conflict diagnosis](docs/ports.md) for Windows and Linux commands.
 
-No automatic network scanning, browser-supplied agent URLs, writable registry API, outbound Push, or agent control is implemented. No agent-side modifications are required.
+No automatic network scanning, arbitrary URL-fetch API, outbound Push, or agent control is implemented. Registry writes require explicitly enabled local administration. No agent-side modifications are required.
 
 ## Read-only Fleet Dashboard
 
@@ -44,7 +44,7 @@ History and internal alerts are opt-in. Authenticated remote viewing requires th
 | `GET /api/nodes` | All registered nodes and status/age diagnostics, no full metric payloads. |
 | `GET /api/nodes/<node_id>` | Single node with last-known agent stats/observations and explicit `data_current`. |
 
-Writes return HTTP 405 by default; the sole opt-in local addition route is documented in [web registration](docs/web-registration.md). Unknown resources return 404. All supported responses are JSON with `Cache-Control: no-store`; there is no arbitrary URL-fetch/proxy endpoint. The hub's own API schema is **independent** of the agent's endpoint schemas.
+Writes return HTTP 405 by default; the opt-in local management routes are documented in [web management](docs/web-registration.md). Unknown resources return 404. All supported responses are JSON with `Cache-Control: no-store`; there is no arbitrary URL-fetch/proxy endpoint. The hub's own API schema is **independent** of the agent's endpoint schemas.
 
 ## Agent consumption
 
@@ -215,7 +215,7 @@ atomically replace the registry. Invalid input or replace failure leaves the
 original intact. Cooperative CLI writers cannot overwrite each other; manual
 editors must coordinate with the operator. The latest backup is a recovery copy,
 not an indefinite audit log. Protect the registry, backup and directory with OS
-permissions/ACLs; [web addition](docs/web-registration.md) requires explicit local token configuration. The running Hub watches this file by default; `--no-registry-reload` retains startup-only behavior.
+permissions/ACLs; [web management](docs/web-registration.md) requires explicit local token configuration. The running Hub watches this file by default; `--no-registry-reload` retains startup-only behavior.
 
 
 ## Registry hot reload

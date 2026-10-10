@@ -32,7 +32,7 @@ def atomic_write(path, data, mode=0o600):
             temporary.unlink()
 
 
-def update_registry(path, action, *, node_id=None, name=None, endpoint=None, enabled=True):
+def update_registry(path, action, *, node_id=None, name=None, endpoint=None, enabled=True, expected=None):
     path = Path(path).resolve()
     with FileLock(str(path) + '.lock'):
         original = path.read_bytes() if path.exists() else None
@@ -47,7 +47,10 @@ def update_registry(path, action, *, node_id=None, name=None, endpoint=None, ena
             item = next((r for r in records if r['node_id'] == node_id), None)
             if item is None:
                 raise ValueError('unknown node_id')
-            if action == 'rename': item['name'] = name
+            if expected is not None and item != expected:
+                raise ValueError('node changed since it was loaded; refresh before retrying')
+            if action == 'update': item.update(name=name, endpoint=endpoint, enabled=enabled)
+            elif action == 'rename': item['name'] = name
             elif action == 'set-endpoint': item['endpoint'] = endpoint
             elif action in ('enable', 'disable'): item['enabled'] = action == 'enable'
             elif action == 'remove': records.remove(item)
@@ -136,6 +139,7 @@ def failure_message(exc):
         'node name must be nonempty and at most 100 characters': 'Use a nonempty device name of at most 100 characters.',
         'agent endpoint must be a plain HTTP origin without credentials or path': 'Use a plain http://host:port origin without credentials, path, query or fragment.',
         'invalid agent port': 'Use an agent port from 1 to 65535.',
+        'node changed since it was loaded; refresh before retrying': 'This device changed since it was loaded. Refresh Devices before retrying.',
         'unknown node_id': 'Unknown node_id. Use nodes list to obtain the existing UUID.',
         'registry does not exist': 'Registry does not exist. Use add to create it in an existing directory.',
         'registry changed during update; retry from the latest file': 'Registry changed during update. Retry from the latest file.',
