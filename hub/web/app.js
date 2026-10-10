@@ -227,6 +227,9 @@
       if (!nodes.some(n => n.node_id === selected)) selected = nodes[0] ? nodes[0].node_id : null;
       renderSummary();
       renderCards();
+      if (savedDevice && deviceDialog.open && nodes.some(n => n.node_id === savedDevice)) {
+        deviceStatus.textContent = "Device registered and visible in the Fleet. Its status shows whether the Agent is reachable.";
+      }
       updated.textContent = "Hub updated " + lastSuccess.toLocaleTimeString();
       await loadDetail();
       loadHistory(false);
@@ -443,6 +446,84 @@
   });
   setInterval(refreshAlerts, 5000);
   refreshAlerts();
+
+  const deviceDialog = document.getElementById("device-dialog");
+  const deviceForm = document.getElementById("device-form");
+  const deviceFields = document.getElementById("device-fields");
+  const deviceStatus = document.getElementById("device-form-status");
+  const deviceToken = document.getElementById("device-token");
+  const deviceSave = document.getElementById("device-save");
+  const deviceCancel = document.getElementById("device-cancel");
+  let deviceBusy = false;
+  let savedDevice = null;
+  let deviceDialogTicket = 0;
+
+  document.getElementById("add-device").addEventListener("click", async () => {
+    if (deviceDialog.open) return;
+    const ticket = ++deviceDialogTicket;
+    deviceForm.reset();
+    savedDevice = null;
+    deviceFields.disabled = true;
+    deviceSave.disabled = true;
+    deviceCancel.textContent = "Cancel";
+    deviceStatus.textContent = "Checking device registration…";
+    deviceDialog.showModal();
+    try {
+      const data = await getJSON("/api/admin/status");
+      if (!deviceDialog.open || ticket !== deviceDialogTicket) return;
+      const local = location.protocol === "http:" && ["127.0.0.1", "localhost"].includes(location.hostname) && Number(location.port || 80) === data.local_port;
+      const enabled = data.enabled && local;
+      deviceFields.disabled = !enabled;
+      deviceSave.disabled = !enabled;
+      deviceStatus.textContent = data.enabled && !local ? "Device registration is available only on the local Hub page." : enabled ? "Enter the device details and administrator token." :
+        "Web registration is disabled. Ask your administrator to enable local device management, or use the local registry CLI.";
+      if (enabled) document.getElementById("device-name").focus();
+    } catch (_err) {
+      if (deviceDialog.open && ticket === deviceDialogTicket) deviceStatus.textContent = "Cannot check registration. Close and try again.";
+    }
+  });
+  deviceCancel.addEventListener("click", () => { if (!deviceBusy) { deviceToken.value = ""; deviceDialog.close(); } });
+  deviceDialog.addEventListener("cancel", event => { if (deviceBusy) event.preventDefault(); else deviceToken.value = ""; });
+  deviceDialog.addEventListener("close", () => { deviceDialogTicket++; deviceToken.value = ""; });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) deviceToken.value = ""; });
+  deviceForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (deviceBusy || savedDevice || deviceFields.disabled || !deviceForm.reportValidity()) return;
+    deviceBusy = true;
+    deviceFields.disabled = true;
+    deviceSave.disabled = true;
+    deviceCancel.disabled = true;
+    deviceStatus.textContent = "Saving device…";
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch("/api/admin/nodes", {
+        method:"POST", cache:"no-store", credentials:"omit", signal:controller.signal,
+        headers:{"Content-Type":"application/json", "Authorization":"Bearer " + deviceToken.value},
+        body:JSON.stringify({name:document.getElementById("device-name").value,
+          host:document.getElementById("device-host").value.trim(),
+          port:Number(document.getElementById("device-port").value),
+          enabled:document.getElementById("device-enabled").checked})
+      });
+      deviceToken.value = "";
+      const data = await response.json();
+      if (!response.ok) throw new Error(typeof data.message === "string" ? data.message : "Device registration failed.");
+      if (data.schema_version !== 1 || data.saved !== true || typeof data.node_id !== "string") throw new Error("Cannot confirm registration. Refresh the Fleet before retrying.");
+      savedDevice = data.node_id;
+      deviceCancel.textContent = "Close";
+      deviceStatus.textContent = "Saved. Waiting for the Fleet to apply this device…";
+      await refreshFleet();
+    } catch (error) {
+      deviceStatus.textContent = error.name === "AbortError" ? "Save response timed out. Refresh the Fleet before retrying; the device may already be saved." : error.message;
+    } finally {
+      clearTimeout(timer);
+      deviceToken.value = "";
+      deviceBusy = false;
+      deviceCancel.disabled = false;
+      deviceFields.disabled = Boolean(savedDevice);
+      deviceSave.disabled = Boolean(savedDevice);
+    }
+  });
 
   refreshButton.addEventListener("click", refreshFleet);
   document.addEventListener("visibilitychange", function () {

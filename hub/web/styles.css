@@ -88,3 +88,14 @@ table tr:last-child td {border-bottom:0;}
 .alerts-list li { padding: .6rem; border-left: 3px solid currentColor; overflow-wrap: anywhere; }
 .alerts-list .critical { color: var(--error); }
 .alerts-list .warning { color: var(--warn); }
+
+#device-dialog {width:min(460px,calc(100% - 24px));max-height:90vh;overflow:auto;background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:12px;padding:24px;}
+#device-dialog::backdrop {background:rgba(0,0,0,.45);}
+#device-fields {border:0;padding:0;margin:18px 0;display:grid;gap:14px;min-width:0;}
+#device-fields label {display:grid;gap:6px;font-size:13px;}
+#device-fields input:not([type="checkbox"]) {width:100%;font:inherit;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:10px;}
+#device-fields input:focus-visible {outline:2px solid var(--brand);outline-offset:2px;}
+#device-fields .device-checkbox {display:flex;align-items:center;gap:8px;}
+.device-actions {display:flex;justify-content:flex-end;gap:10px;}
+#device-form-status {overflow-wrap:anywhere;min-height:2em;}
+@media(max-width:600px){.topbar-right{gap:6px;}.topbar-right .refresh-button{padding:8px;}}

@@ -21,6 +21,7 @@
     </div>
     <div class="topbar-right">
       <span class="topbar-caption" id="last-updated">Not connected</span>
+      <button type="button" class="refresh-button" id="add-device">Add device</button>
       <button type="button" class="refresh-button" id="refresh" aria-label="Refresh fleet data">Refresh</button>
     </div>
   </header>
@@ -31,7 +32,7 @@
         <h1>Devices at a glance</h1>
         <p class="subtle">Live readings, status and last-known metrics from registered platmon agents.</p>
       </div>
-      <span class="scope-chip">Read-only · Trusted network</span>
+      <span class="scope-chip">Agent readings · Trusted network</span>
     </div>
     <div role="alert" id="connection-error" class="error-banner" hidden></div>
     <section class="summary" id="fleet-summary" aria-label="Fleet status summary"></section>
@@ -79,6 +80,25 @@
       </section>
     </div>
   </main>
+  <dialog id="device-dialog" aria-labelledby="device-dialog-title">
+    <form id="device-form">
+      <h2 id="device-dialog-title">Add device</h2>
+      <p class="subtle">Register an Agent address. The Hub will collect its readings automatically.</p>
+      <p id="device-form-status" class="subtle" role="status" aria-live="polite"></p>
+      <fieldset id="device-fields" disabled>
+        <label>Device name <input id="device-name" name="device-name" maxlength="100" required autocomplete="off"></label>
+        <label>Agent IP or hostname <input id="device-host" name="device-host" maxlength="253" required placeholder="192.0.2.1" autocomplete="off"></label>
+        <label>Agent port <input id="device-port" name="device-port" type="number" min="1" max="65535" value="9797" required></label>
+        <label class="device-checkbox"><input id="device-enabled" type="checkbox" checked> Start monitoring after registration</label>
+        <label>Administrator token <input id="device-token" name="device-token" type="password" minlength="64" maxlength="64" pattern="[0-9a-f]{64}" required autocomplete="off" spellcheck="false"></label>
+        <p class="subtle">The token authorizes this registration and is not saved in the browser.</p>
+      </fieldset>
+      <div class="device-actions">
+        <button type="button" id="device-cancel" class="refresh-button">Cancel</button>
+        <button type="submit" id="device-save" class="refresh-button" disabled>Save device</button>
+      </div>
+    </form>
+  </dialog>
   <footer class="footer">Cached fleet view · Data ages are estimates based on the agent clock and Hub receive time.</footer>
 </body>
 </html>

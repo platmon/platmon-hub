@@ -25,10 +25,12 @@ def tcp_port(value):
     return port
 
 
-def bind_hub(bind, port, fleet):
+def bind_hub(bind, port, fleet, admin=None):
     """Fail closed and explain local bind conflicts; never select another port."""
     try:
-        return HubServer((bind, port), fleet)
+        if admin is None:
+            return HubServer((bind, port), fleet)
+        return HubServer((bind, port), fleet, admin=admin)
     except OSError as exc:
         if exc.errno in (errno.EADDRINUSE, 10048):
             reason = "address/port is already in use"
@@ -68,12 +70,22 @@ def main(argv=None):
     parser.add_argument("--nodes", required=True, help="path to explicitly managed node registry JSON")
     parser.add_argument("--bind", default="127.0.0.1", help="Hub bind address; loopback by default")
     parser.add_argument("--port", type=tcp_port, default=9787, help="Hub TCP listen port (default: 9787)")
+    parser.add_argument("--admin-token-file", help="opt-in local web device registration with a protected token file")
     parser.add_argument("--alerts", help="local alert rules JSON (requires history)")
     parser.add_argument("--history-db", help="explicit local SQLite history path (disabled by default)")
     parser.add_argument("--event-retention-days", type=positive_days, default=30)
     parser.add_argument("--history-retention-days", type=positive_days, default=7)
     parser.add_argument("--no-registry-reload", action="store_true", help="disable automatic registry reload")
     args = parser.parse_args(argv)
+    admin = None
+    if args.admin_token_file:
+        if args.bind != '127.0.0.1' or args.no_registry_reload:
+            parser.error('--admin-token-file requires --bind 127.0.0.1 and registry reload')
+        from .admin import RegistryAdmin
+        try:
+            admin = RegistryAdmin(args.nodes, args.admin_token_file)
+        except (OSError, ValueError):
+            parser.error('admin token file must be readable, owner-only on POSIX, and contain 64 lowercase hex characters')
     handlers = [RotatingFileHandler(args.log_file, maxBytes=2*1024*1024, backupCount=3, encoding="utf-8")] if args.log_file else None
     logging.basicConfig(level=logging.INFO, handlers=handlers, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     nodes = load_registry(args.nodes)
@@ -87,7 +99,7 @@ def main(argv=None):
     history = HistoryWriter(args.history_db, retention_days=args.history_retention_days, event_retention_days=args.event_retention_days) if args.history_db else None
     fleet = Fleet(nodes, history=history, registry_path=None if args.no_registry_reload else args.nodes, alert_rules=alert_rules)
     try:
-        server = bind_hub(args.bind, args.port, fleet)
+        server = bind_hub(args.bind, args.port, fleet, admin=admin)
     except BaseException:
         # A failed bind must not strand an unstarted thread pool.
         fleet.close()

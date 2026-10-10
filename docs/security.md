@@ -1,6 +1,8 @@
 # Access boundaries
 
-The Hub has no public authentication endpoint and no HTTP administration role.
+The Hub has no public authentication endpoint. HTTP is read-only by default;
+[local web registration](web-registration.md) is an explicit token-authenticated
+exception for adding devices from the Hub host.
 Keep its default `127.0.0.1:9787` listener. Agent endpoints remain private, explicit
 GET-only origins. Do not publish either Hub or Agent ports directly to the internet.
 A local process with access to loopback can read fleet data; the host is a trust
@@ -9,14 +11,15 @@ boundary. Loopback binding is not user authentication on a shared host.
 | Identity | Permitted operations | Enforcement |
 | --- | --- | --- |
 | Authenticated proxy viewer | Dashboard and read-only APIs | TLS proxy authentication |
+| Local web administrator | Add registered devices only, when explicitly enabled | Protected token, loopback listener, exact Origin/Host and JSON request checks |
 | OS administrator | Local registry CLI, rules, service configuration | OS login, filesystem ACLs, approved sudo/task permissions |
 | Hub service account | Read registry/rules; write its DB/log directories | Dedicated account and directory permissions |
 | Anonymous remote client | No fleet access | Authenticated proxy and firewall |
 
-`POST`, `PUT`, `PATCH`, `DELETE` remain 405, including requests with forged admin
-headers. The Hub ignores forwarded user identities. There is no URL-fetch proxy,
-network discovery, web device editor or agent control path. A future web management
-API requires a separate authorization/CSRF design and review.
+`POST`, `PUT`, `PATCH`, `DELETE` remain 405 except opt-in `POST /api/admin/nodes`.
+Forged forwarded user identities grant no access. There is no URL-fetch proxy,
+network discovery, web device editor/removal or Agent control path. The existing
+TLS proxy is for read-only viewers; local web registration is not enabled through it.
 
 ## Optional TLS proxy
 
@@ -42,7 +45,9 @@ Browsers may cache credentials, so there is no reliable application logout or id
 session timeout in this example. Removing a viewer's password entry revokes future
 requests. If timed sessions, MFA or centrally managed logout are required, use the
 organization's identity-aware gateway before deployment. Do not claim those features
-for this Basic-auth example. No Hub cookies or access tokens are persisted.
+for this Basic-auth example. No Hub session cookies are issued. The optional local admin token is held in a
+protected file and loaded at startup; it is never returned by the API or persisted
+in the Dashboard.
 
 Official configuration references: [nginx Basic authentication](https://nginx.org/en/docs/http/ngx_http_auth_basic_module.html),
 [HTTPS configuration](https://nginx.org/en/docs/http/configuring_https_servers.html),
@@ -51,7 +56,7 @@ and [request limiting](https://nginx.org/en/docs/http/ngx_http_limit_req_module.
 ## Input, resource and audit controls
 
 Hub HTTP admission is capped at 32 concurrent connections, with a 5-second socket
-inactivity timeout. GET requests share a 100 requests/second token budget with a
+inactivity timeout. GET and enabled admin requests share a 100 requests/second token budget with a
 200-request burst; exhausted budget returns 429. Exhausted connection slots return
 503 for a complete bounded request; clients that do not finish headers within
 100ms may instead be disconnected. The proxy example applies an additional per-IP 10 requests/second, burst 20.
@@ -63,8 +68,8 @@ not hardened as an internet-facing HTTP server; the proxy supplies the outer bou
 SQL inputs are parameterized, metric names allowlisted, responses bounded and missing
 metrics preserved as null. HTTP APIs remain same-origin with no permissive CORS.
 All application responses carry no-store/nosniff, restrictive CSP and frame denial;
-static files retain their exact allowlist. Read-only operations have no CSRF-sensitive
-mutation. The proxy must not add permissive CORS or relax these headers.
+static files retain their exact allowlist. Read-only operations have no CSRF-sensitive mutation; the opt-in local write
+route enforces exact Origin/Host, bearer authorization and non-simple JSON requests. The proxy must not add permissive CORS or relax these headers.
 
 Hub access logs record method/status only, excluding URLs, query strings, headers,
 credentials and arbitrary strings. Use `--log-file` for rotation. The proxy's

@@ -103,8 +103,10 @@ limits; forced termination may lose queued records. An Agent remains independent
 ## Operations and limits
 
 OS-authenticated local administrators manage config/services. Proxy viewers receive
-read-only access; there is no web admin role, writable Registry API, arbitrary URL
-proxy, discovery, external notification delivery or Agent control. Default loopback
+read-only access. Opt-in [local web registration](web-registration.md) authorizes
+one Registry addition route with a protected administrator token and strict Origin
+checks. There is no arbitrary URL proxy, discovery, external notification delivery
+or Agent control. Default loopback
 and canonical brand assets remain unchanged. See [security](security.md).
 
 Installation/backup/restore are documented in [operations](operations.md).

@@ -8,6 +8,7 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from .access import RequestBudget
+from .admin import AdminError, unique_object
 from .history.query import QueryError, parameters, query_history
 from .history.events import query_events
 
@@ -30,7 +31,12 @@ class HubServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address, fleet):
+    def __init__(self, address, fleet, admin=None):
+        if admin is not None and (address[0] != '127.0.0.1' or fleet.watcher is None or
+                fleet.watcher.path.resolve() != admin.registry_path):
+            raise ValueError('web registry administration requires loopback and the same active registry watcher')
+        self.admin = admin
+        self.admin_budget = RequestBudget(rate=0.2, burst=5)
         self.fleet = fleet
         self.request_budget = RequestBudget()
         self._requests = threading.BoundedSemaphore(32)
@@ -101,25 +107,31 @@ class HubHandler(BaseHTTPRequestHandler):
         self.send_header('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
         super().end_headers()
 
-    def do_GET(self):
+    def _request_path(self):
         if len(self.path) > 4096 or sum(len(k)+len(v) for k,v in self.headers.items()) > 16384:
             self._reply(431, {'error': 'request_too_large'})
-            return
+            return None
         try:
             host = urlsplit('http://' + self.headers.get('Host', '')).hostname
             path = urlsplit(self.path)
         except ValueError:
             self._reply(400, {'error': 'invalid_request'})
-            return
+            return None
         # A loopback listener must not answer a browser rebinding an arbitrary domain.
         if self.server.server_address[0] in ('127.0.0.1', '::1') and host not in ('127.0.0.1', 'localhost', '::1'):
             self._reply(403, {'error': 'untrusted_host'})
-            return
+            return None
         if path.scheme or path.netloc:
             self._reply(400, {'error': 'invalid_request'})
-            return
+            return None
         if not self.server.request_budget.take():
             self._reply(429, {'error': 'rate_limited'})
+            return None
+        return path
+
+    def do_GET(self):
+        path = self._request_path()
+        if path is None:
             return
         if path.path == '/api/events' and not path.fragment:
             self._events(path.query)
@@ -137,6 +149,8 @@ class HubHandler(BaseHTTPRequestHandler):
         elif path.path == "/api/history/status":
             history = self.server.fleet.history
             self._reply(200, {"schema_version": 1, "history": history.snapshot() if history else {"enabled": False, "state": "disabled"}})
+        elif path.path == "/api/admin/status":
+            self._reply(200, {"schema_version": 1, "enabled": self.server.admin is not None, "local_port": self.server.server_port})
         elif path.path == "/api/alerts":
             alerts = self.server.fleet.alerts
             self._reply(200, dict(schema_version=1, **(alerts.snapshot() if alerts else {"enabled": False, "alerts": []})))
@@ -175,9 +189,56 @@ class HubHandler(BaseHTTPRequestHandler):
             self._reply(exc.status, {'schema_version': 1, 'error': exc.code})
 
     def do_POST(self):
+        if self.server.admin is None or self.path != '/api/admin/nodes':
+            self._read_only()
+            return
+        if self._request_path() is None:
+            return
+        # Strict local Origin/Host matching protects against CSRF and rebinding.
+        host = self.headers.get('Host', '').lower()
+        allowed = ('127.0.0.1:' + str(self.server.server_port), 'localhost:' + str(self.server.server_port))
+        if (len(self.headers.get_all('Host', [])) != 1 or host not in allowed or
+                len(self.headers.get_all('Origin', [])) != 1 or self.headers.get('Origin') != 'http://' + host or
+                self.headers.get('Sec-Fetch-Site', 'same-origin') != 'same-origin'):
+            self._reply(403, {'error': 'untrusted_origin', 'message': 'Use the local Hub page to add devices.'})
+            return
+        if not self.server.admin_budget.take():
+            self._reply(429, {'error': 'rate_limited', 'message': 'Wait a few seconds before retrying.'})
+            return
+        if (len(self.headers.get_all('Authorization', [])) != 1 or
+                not self.server.admin.authorized(self.headers.get('Authorization'))):
+            self._reply(401, {'error': 'unauthorized', 'message': 'Enter the correct administrator token.'})
+            return
+        if self.headers.get('Transfer-Encoding') or len(self.headers.get_all('Content-Length', [])) != 1:
+            self._reply(400, {'error': 'invalid_body', 'message': 'A bounded JSON body is required.'})
+            return
+        try:
+            length = int(self.headers.get('Content-Length'))
+        except ValueError:
+            length = -1
+        if not 1 <= length <= 4096:
+            self._reply(413, {'error': 'invalid_body', 'message': 'Device registration body must be at most 4 KiB.'})
+            return
+        if self.headers.get('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
+            self._reply(415, {'error': 'invalid_body', 'message': 'JSON content is required.'})
+            return
+        try:
+            raw = self.rfile.read(length)
+            if len(raw) != length:
+                raise ValueError('incomplete body')
+            data = json.loads(raw.decode('utf-8'), object_pairs_hook=unique_object)
+        except (ValueError, UnicodeError):
+            self._reply(400, {'error': 'invalid_body', 'message': 'Invalid JSON body.'})
+            return
+        try:
+            self._reply(201, self.server.admin.add(data))
+        except AdminError as exc:
+            self._reply(exc.status, {'schema_version': 1, 'error': exc.code, 'message': exc.message})
+
+    def _read_only(self):
         self._reply(405, {"error": "read_only"})
 
-    do_PUT = do_PATCH = do_DELETE = do_POST
+    do_PUT = do_PATCH = do_DELETE = _read_only
 
     def _static(self, filename, media_type):
         # Exact route-to-file mapping: no user-selected paths or directory traversal.
