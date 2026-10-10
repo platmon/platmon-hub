@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Read-only fleet overview for platmon devices">
+  <title>platmon hub — fleet monitoring</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">p_</span>
+      <span class="brand-label">platmon <strong>hub</strong></span>
+      <span class="product-tag">Fleet monitoring</span>
+    </div>
+    <div class="topbar-right">
+      <span class="topbar-caption" id="last-updated">Not connected</span>
+      <button type="button" class="refresh-button" id="refresh" aria-label="Refresh fleet data">Refresh</button>
+    </div>
+  </header>
+  <main class="shell">
+    <div class="intro">
+      <div>
+        <p class="eyebrow">Fleet overview</p>
+        <h1>Devices at a glance</h1>
+        <p class="subtle">Live readings, status and last-known metrics from registered platmon agents.</p>
+      </div>
+      <span class="scope-chip">Read-only · Trusted network</span>
+    </div>
+    <div role="alert" id="connection-error" class="error-banner" hidden></div>
+    <section class="summary" id="fleet-summary" aria-label="Fleet status summary"></section>
+    <div class="split">
+      <section class="fleet-panel" aria-labelledby="devices-heading">
+        <div class="section-title">
+          <h2 id="devices-heading">Registered devices</h2>
+          <span id="fleet-note" class="subtle" role="status" aria-live="polite">Loading…</span>
+        </div>
+        <div class="node-grid" id="node-list" aria-label="Choose a device"></div>
+      </section>
+      <section class="detail-panel" aria-labelledby="details-heading">
+        <div class="section-title">
+          <h2 id="details-heading">Device details</h2>
+          <span id="detail-status" class="subtle" role="status"></span>
+        </div>
+        <div id="detail-body" class="detail-body"><p class="empty">Select a device to view its latest snapshot.</p></div>
+      </section>
+    </div>
+  </main>
+  <footer class="footer">platmon-hub · Cached fleet view · Data ages are estimates based on the agent clock and Hub receive time.</footer>
+</body>
+</html>
