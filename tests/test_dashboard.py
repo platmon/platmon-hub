@@ -177,6 +177,15 @@ class DashboardHttpTests(unittest.TestCase):
         self.assertNotIn("platmon-hub · Cached fleet view", document)
         self.assertIn('<span class="product-tag">Fleet monitoring</span>', document)
 
+    def test_fleet_monitoring_is_prominent_and_visible_on_mobile(self):
+        status, headers, data = self.request("GET", "/assets/styles.css")
+        self.assertEqual(status, 200)
+        css = data.decode("utf-8")
+        self.assertIn(".product-tag {color:var(--fg);font-size:24px;font-weight:700;", css)
+        self.assertIn(".product-tag{font-size:17px;", css)
+        self.assertNotIn(".product-tag,.topbar-caption{display:none;}", css)
+        self.assertIn(".topbar-caption{display:none;}", css)
+
     def test_fleet_summary_is_compact_and_detail_is_cached(self):
         status, headers, data = self.request("GET", "/api/nodes")
         self.assertEqual(status, 200)
