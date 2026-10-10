@@ -2,7 +2,7 @@
 
 Centralized, read-only fleet monitoring for Linux devices running [platmon](https://github.com/platmon/platmon).
 
-> **Project status:** Fleet Dashboard preview implemented; no release package, production authentication, or long-term metrics database yet. Not production validated.
+> **Project status:** Fleet Dashboard preview implemented; no release package, production authentication, or long-term metrics database yet. Windows two-device fault isolation manually validated; 30-minute stability and capacity not yet measured.
 
 `platmon` v1.0.0 is the independently deployed device agent. Each agent owns local hardware collection, CLI/Web UI, HTTP API and bounded in-memory history. The Hub reads existing published agent responses from an explicit registry, keeping per-node state, age and errors. It does not install/control agents, read their host files, or scan networks.
 
@@ -19,6 +19,7 @@ The example contains **no active targets**. See [backend setup, API and security
 
 ## Documents
 
+- [Windows CI and 30-minute soak validation](docs/windows-soak.md) — cross-platform CI, Windows process CPU/RSS, poll duration and fleet status sampling.
 - [Backend foundation operations](backend.md) — registry, runtime defaults, HTTP routes and known limitations.
 - [Architecture and boundaries](docs/architecture.md) — components, polling, lifecycle, failure isolation, security, and milestones.
 - [Agent API consumption contract](docs/agent-contract.md) — v1.0.0 HTTP schemas, identities and freshness.
