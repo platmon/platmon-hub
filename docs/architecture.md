@@ -103,7 +103,6 @@ sequenceDiagram
                 Agent-->>Poller: instance_id, sequence, data_age_ms, stale_after_ms
                 Poller->>Hub: Project core state, receipt age, and sample identity
             else 503 / unsupported schema / timeout / invalid response
-                Agent-->>Poller: No current data or failure
                 Poller->>Hub: Apply stale, incompatible, error, or transport-failure policy
             end
         else Valid schema 1, ready=false
