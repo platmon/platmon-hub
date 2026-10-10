@@ -17,6 +17,7 @@ import urllib.error
 import urllib.request
 import uuid
 from collections import deque
+from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -37,21 +38,32 @@ def distribution(values):
         for name, q in (('p50', .5), ('p95', .95), ('p99', .99))})
 
 
-def rss_mib():
-    if os.name == 'nt':
-        from ctypes import wintypes
-        class Counters(ctypes.Structure):
-            _fields_ = [('cb', wintypes.DWORD), ('PageFaultCount', wintypes.DWORD)] + [(name, ctypes.c_size_t) for name in
-                ('PeakWorkingSetSize', 'WorkingSetSize', 'QuotaPeakPagedPoolUsage', 'QuotaPagedPoolUsage',
-                 'QuotaPeakNonPagedPoolUsage', 'QuotaNonPagedPoolUsage', 'PagefileUsage', 'PeakPagefileUsage')]
-        counters = Counters(); counters.cb = ctypes.sizeof(counters)
-        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
-        kernel.GetCurrentProcess.restype = wintypes.HANDLE
-        psapi = ctypes.WinDLL('psapi', use_last_error=True)
-        psapi.GetProcessMemoryInfo.argtypes = (wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD)
+@lru_cache(maxsize=1)
+def _windows_rss_reader():
+    # ctypes caches POINTER classes globally. Recreating this Structure for every
+    # sample retains each unique type and makes the measurement itself leak.
+    from ctypes import wintypes
+    class Counters(ctypes.Structure):
+        _fields_ = [('cb', wintypes.DWORD), ('PageFaultCount', wintypes.DWORD)] + [(name, ctypes.c_size_t) for name in
+            ('PeakWorkingSetSize', 'WorkingSetSize', 'QuotaPeakPagedPoolUsage', 'QuotaPagedPoolUsage',
+             'QuotaPeakNonPagedPoolUsage', 'QuotaNonPagedPoolUsage', 'PagefileUsage', 'PeakPagefileUsage')]
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    psapi = ctypes.WinDLL('psapi', use_last_error=True)
+    psapi.GetProcessMemoryInfo.argtypes = (wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD)
+
+    def read():
+        counters = Counters()
+        counters.cb = ctypes.sizeof(counters)
         if not psapi.GetProcessMemoryInfo(kernel.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
             raise ctypes.WinError(ctypes.get_last_error())
-        return counters.WorkingSetSize/1048576
+        return counters.WorkingSetSize / 1048576
+    return read
+
+
+def rss_mib():
+    if os.name == 'nt':
+        return _windows_rss_reader()()
     # Benchmark self-observation only, never Agent hardware collection.
     return int(Path('/proc/self/statm').read_text(encoding='utf-8').split()[1])*os.sysconf('SC_PAGE_SIZE')/1048576
 
@@ -105,8 +117,11 @@ def agents(connection, count, scenario):
         connection.close()
 
 
-def measure_hub(connection, nodes, path, seconds, scenario):
+def measure_hub(connection, nodes, path, seconds, scenario, progress_seconds=0, profile=False):
     random.seed(42)
+    if profile:
+        import tracemalloc
+        tracemalloc.start(10)
     measures = {key:deque(maxlen=20000) for key in ('core_ms', 'healthy_core_ms', 'optional_ms', 'interval_ms', 'healthy_interval_ms', 'worker_wait_ms', 'insert_ms', 'retention_ms')}
     previous = {}
     lock = threading.Lock()
@@ -116,11 +131,13 @@ def measure_hub(connection, nodes, path, seconds, scenario):
             began = time.monotonic()
             if scenario in ('slow_writer', 'overflow'): time.sleep(.5 if scenario == 'slow_writer' else 1)
             try: return super().insert_batch(records)
-            finally: measures['insert_ms'].append((time.monotonic()-began)*1000)
+            finally:
+                with lock: measures['insert_ms'].append((time.monotonic()-began)*1000)
         def prune(self, *args, **kwargs):
             began = time.monotonic()
             try: return super().prune(*args, **kwargs)
-            finally: measures['retention_ms'].append((time.monotonic()-began)*1000)
+            finally:
+                with lock: measures['retention_ms'].append((time.monotonic()-began)*1000)
     class Pool(ThreadPoolExecutor):
         def submit(self, fn, *args, **kwargs):
             queued = time.monotonic()
@@ -158,14 +175,45 @@ def measure_hub(connection, nodes, path, seconds, scenario):
     fleet.start()
     connection.send(server.server_port)
     began, cpu = time.monotonic(), time.process_time()
-    memory, depth = [], []
+    memory = deque(maxlen=1)
+    first_rss = peak_rss = rss_mib()
+    warmup_rss = None
+    queue_peak = 0
+    next_progress = progress_seconds
+    window_start, window_cpu = began, cpu
+    profile_initial = None
     locker = None
     injected = False
     try:
         while time.monotonic()-began < seconds:
             elapsed = time.monotonic()-began
-            memory.append((elapsed, rss_mib()))
-            depth.append(writer.snapshot()['queue_depth'])
+            current_rss = rss_mib()
+            memory.append((elapsed, current_rss))
+            peak_rss = max(peak_rss, current_rss)
+            if warmup_rss is None and elapsed >= min(10, seconds/2): warmup_rss = current_rss
+            queue_peak = max(queue_peak, writer.snapshot()['queue_depth'])
+            if progress_seconds and elapsed >= next_progress:
+                tick, used_cpu = time.monotonic(), time.process_time()
+                with lock:
+                    timing = {key: distribution(list(values)) for key, values in measures.items()}
+                    for values in measures.values(): values.clear()
+                states = fleet.list_nodes()
+                progress = dict(kind='progress', elapsed_seconds=round(elapsed,3),
+                    cpu_percent_one_core=round(100*(used_cpu-window_cpu)/(tick-window_start),3),
+                    rss_mib=round(current_rss,3), rss_peak_mib=round(peak_rss,3),
+                    queue_peak=queue_peak, live_nodes=sum(n['data_current'] for n in states),
+                    writer=writer.snapshot(), distributions=timing,
+                    db_bytes=Path(path).stat().st_size,
+                    wal_bytes=Path(str(path)+'-wal').stat().st_size if Path(str(path)+'-wal').exists() else 0)
+                if profile:
+                    snapshot=tracemalloc.take_snapshot()
+                    if profile_initial is None: profile_initial=snapshot
+                    progress['python_allocations_bytes']=tracemalloc.get_traced_memory()[0]
+                    progress['allocation_growth']=[dict(location=str(item.traceback),bytes=item.size_diff,count=item.count_diff)
+                        for item in snapshot.compare_to(profile_initial,'lineno')[:12]]
+                connection.send(progress)
+                window_start, window_cpu = tick, used_cpu
+                next_progress += progress_seconds
             if scenario == 'db_lock' and not injected and elapsed >= seconds/3 and writer.snapshot()['schema_version'] is not None:
                 locker = sqlite3.connect(str(path), isolation_level=None)
                 locker.execute('BEGIN IMMEDIATE')
@@ -177,9 +225,9 @@ def measure_hub(connection, nodes, path, seconds, scenario):
         snapshots = fleet.list_nodes()
         elapsed = time.monotonic()-began
         result = dict(cpu_percent_one_core=round(100*(time.process_time()-cpu)/elapsed,3), elapsed_seconds=round(elapsed,3),
-            rss_first_mib=round(memory[0][1],3), rss_last_mib=round(memory[-1][1],3), rss_peak_mib=round(max(v for _,v in memory),3),
-            rss_growth_after_warmup_mib=round(memory[-1][1]-next((v for t,v in memory if t>=min(10,seconds/2)),memory[0][1]),3),
-            queue_peak=max(depth), live_nodes=sum(n['data_current'] for n in snapshots), nodes=len(nodes))
+            rss_first_mib=round(first_rss,3), rss_last_mib=round(memory[-1][1],3), rss_peak_mib=round(peak_rss,3),
+            rss_growth_after_warmup_mib=round(memory[-1][1]-(warmup_rss if warmup_rss is not None else first_rss),3),
+            queue_peak=queue_peak, live_nodes=sum(n['data_current'] for n in snapshots), nodes=len(nodes))
     finally:
         if locker is not None: locker.execute('ROLLBACK'); locker.close()
         stopping = time.monotonic()
@@ -214,7 +262,7 @@ def run(args):
                 workers.append(process); process.start()
                 if not reader.poll(30): raise RuntimeError('benchmark Hub did not start')
                 port = reader.recv()
-                latencies = {'api_ms':[], 'history_ms':[]}
+                latencies = {key:deque(maxlen=20000) for key in ('api_ms','history_ms')}
                 failures = {}
                 deadline = time.monotonic()+args.seconds+20
                 next_request = time.monotonic()+1

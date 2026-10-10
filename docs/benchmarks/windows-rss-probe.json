@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "platform": "Windows",
+  "python": "3.13.14",
+  "probe_calls": 1000,
+  "before": {
+    "rss_first_mib": 37.5390625,
+    "rss_last_mib": 49.08203125,
+    "pointer_cache_growth": 1001,
+    "counter_types": 1002,
+    "python_allocations_bytes": 7632012
+  },
+  "after": {
+    "rss_first_mib": 38.5859375,
+    "rss_last_mib": 38.5859375,
+    "pointer_cache_growth": 0,
+    "counter_types": 1,
+    "python_allocations_bytes": 119118
+  },
+  "notes": "Independent native Windows processes; no Hub or Agent involved. Type-cache stability is authoritative; exact RSS equality is an observation, not a portable assertion."
+}
