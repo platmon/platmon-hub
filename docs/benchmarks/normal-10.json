@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "scenario": "normal",
+  "nodes": 10,
+  "requested_seconds": 45.0,
+  "python": "3.12.3",
+  "platform": "Linux",
+  "architecture": "x86_64",
+  "cpu_count": 20,
+  "runs": [
+    {
+      "cpu_percent_one_core": 0.733,
+      "elapsed_seconds": 45.046,
+      "rss_first_mib": 30.469,
+      "rss_last_mib": 33.32,
+      "rss_peak_mib": 33.32,
+      "rss_growth_after_warmup_mib": 0.0,
+      "queue_peak": 4,
+      "live_nodes": 10,
+      "nodes": 10,
+      "shutdown_seconds": 0.434,
+      "writer": {
+        "enabled": true,
+        "state": "stopped",
+        "schema_version": 4,
+        "submitted": 380,
+        "persisted": 380,
+        "duplicates": 0,
+        "dropped_regression": 0,
+        "dropped_queue_full": 0,
+        "dropped_storage_error": 0,
+        "dropped_invalid": 0,
+        "dropped_closed": 0,
+        "dropped_expired": 0,
+        "in_flight": 0,
+        "last_commit_ms": 1791644254989,
+        "last_error": null,
+        "last_error_ms": null,
+        "retention_deleted": 0,
+        "last_retention_ms": 1791644212051,
+        "clock_discontinuity": false,
+        "last_checkpoint_ms": 1791644212051,
+        "checkpoint_duration_ms": 2.3355430021183565,
+        "wal_bytes": 78312,
+        "queue_depth": 0,
+        "queue_capacity": 2048,
+        "pending_events": 0
+      },
+      "distributions": {
+        "core_ms": {
+          "count": 90,
+          "p50": 1.355,
+          "p95": 7.889,
+          "p99": 9.483
+        },
+        "healthy_core_ms": {
+          "count": 90,
+          "p50": 1.355,
+          "p95": 7.889,
+          "p99": 9.483
+        },
+        "optional_ms": {
+          "count": 50,
+          "p50": 1.061,
+          "p95": 3.598,
+          "p99": 4.951
+        },
+        "interval_ms": {
+          "count": 80,
+          "p50": 5268.708,
+          "p95": 5521.027,
+          "p99": 5568.411
+        },
+        "healthy_interval_ms": {
+          "count": 80,
+          "p50": 5268.708,
+          "p95": 5521.027,
+          "p99": 5568.411
+        },
+        "worker_wait_ms": {
+          "count": 140,
+          "p50": 0.077,
+          "p95": 0.772,
+          "p99": 2.148
+        },
+        "insert_ms": {
+          "count": 109,
+          "p50": 4.761,
+          "p95": 15.388,
+          "p99": 21.062
+        },
+        "retention_ms": {
+          "count": 1,
+          "p50": 0.112,
+          "p95": 0.112,
+          "p99": 0.112
+        }
+      },
+      "core_rows": 90,
+      "observation_rows": 50,
+      "integrity": "ok",
+      "db_bytes": 118784,
+      "client_distributions": {
+        "api_ms": {
+          "count": 215,
+          "p50": 0.794,
+          "p95": 1.058,
+          "p99": 2.451
+        },
+        "history_ms": {
+          "count": 215,
+          "p50": 0.819,
+          "p95": 0.99,
+          "p99": 1.66
+        }
+      },
+      "request_failures": {},
+      "restart_generation": 0
+    }
+  ],
+  "checks": {
+    "integrity": true,
+    "healthy_nodes_current": true,
+    "no_normal_drops": true,
+    "restart_rows_preserved": null
+  }
+}

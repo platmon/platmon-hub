@@ -53,6 +53,14 @@ class AccessTests(unittest.TestCase):
         from test_history import wait_for
         wait_for(lambda: self.server._requests._value == 32)
         for _ in range(32): self.assertTrue(self.server._requests.acquire(False))
-        try: self.assertEqual(self.request()[0], 503)
+        try:
+            self.assertEqual(self.request()[0], 503)
+            import socket
+            import time
+            began = time.monotonic()
+            with socket.create_connection(('127.0.0.1', self.server.server_port), timeout=2) as slow:
+                slow.sendall(b'GET /api/nodes HTTP/1.1\r\nHost: localhost\r\n')
+                self.assertEqual(slow.recv(1024), b'')
+            self.assertLess(time.monotonic()-began, 2)
         finally:
             for _ in range(32): self.server._requests.release()

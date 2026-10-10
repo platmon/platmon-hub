@@ -3,6 +3,7 @@
 import json
 import logging
 import threading
+import time
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
@@ -43,6 +44,18 @@ class HubServer(ThreadingHTTPServer):
     def process_request(self, request, address):
         if not self._requests.acquire(blocking=False):
             try:
+                # Read the bounded GET headers before closing: unread inbound bytes
+                # can turn a delivered 503 into a TCP reset on Windows.
+                deadline = time.monotonic()+0.1
+                header = bytearray()
+                while b'\r\n\r\n' not in header and len(header) < 16384:
+                    remaining = deadline-time.monotonic()
+                    if remaining <= 0: break
+                    request.settimeout(remaining)
+                    chunk = request.recv(min(4096, 16384-len(header)))
+                    if not chunk: break
+                    header.extend(chunk)
+                request.settimeout(0.1)
                 request.sendall(b'HTTP/1.0 503 Service Unavailable\r\nContent-Length: 0\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nConnection: close\r\n\r\n')
             except OSError:
                 pass
