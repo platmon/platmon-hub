@@ -46,6 +46,11 @@ class EventTests(unittest.TestCase):
         self.store.prune(2000, event_cutoff_ms=2000)
         self.assertEqual(query_events(self.path, 'from_ms=0&to_ms=2000')['events'], [])
 
+    def test_empty_query_uses_default_window(self):
+        result = query_events(self.path, '')
+        self.assertEqual(result['events'], [])
+        self.assertEqual(result['to_ms']-result['from_ms'], 86400000)
+
     def test_reject_bad_filters(self):
         for query in ('type=arbitrary', 'limit=0', 'node_id=bad', 'from_ms=1&to_ms=0', 'cursor=bad', 'unknown=1'):
             with self.subTest(query=query), self.assertRaises(QueryError): query_events(self.path, query)

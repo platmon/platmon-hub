@@ -12,7 +12,8 @@ from .store import read_connection
 
 def query_events(path, query):
     try:
-        params = parse_qs(query, keep_blank_values=True, strict_parsing=True, max_num_fields=6)
+        # Python 3.9 treats an empty strict query as an invalid field.
+        params = parse_qs(query, keep_blank_values=True, strict_parsing=True, max_num_fields=6) if query else {}
         if set(params) - {'from_ms', 'to_ms', 'node_id', 'type', 'limit', 'cursor'} or any(len(v) != 1 for v in params.values()):
             raise ValueError()
         args = {key: value[0] for key, value in params.items()}
