@@ -44,6 +44,65 @@ requests normal Hub shutdown and writer drain; a stuck OS DNS/filesystem call
 may exceed this and force termination, losing queued but uncommitted history.
 See [systemd's directory/permission model](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html).
 
+## Windows quick start and login startup
+
+For a source checkout, stop any existing Hub using this Registry/DB before changing
+preview versions or starting the launcher. From PowerShell in the checkout:
+
+```powershell
+# One-time setup; use your existing private Registry, preserving its UUIDs.
+.\start-hub.cmd -Registry 'C:\platmon-config\nodes.json' -SaveSettings
+# Later launches from this checkout need no path arguments.
+.\start-hub.cmd
+```
+
+The launcher uses the Python resolved on the first setup, loopback port 9787,
+`--web-admin`, and `%LOCALAPPDATA%\platmon-hub\history.db` / `hub.log`.
+It stores only local paths, port and read-only preference in that directory's
+`launcher.json`; it never copies/deletes the Registry or stores a token. Keep
+this file private and outside Git. Pass `-Python 'C:\venv\Scripts\python.exe'`,
+`-StateDirectory PATH`, `-Port PORT`, or `-ReadOnly` to override a saved value;
+`-SaveSettings` persists overrides with a `.bak` copy. `-Check` validates/resolves
+settings without starting Hub; combine it with `-SaveSettings` to configure only.
+A missing Registry is an error; the launcher does not discover or register Agents.
+Ctrl+C requests graceful shutdown. Logs rotate using the existing Hub settings.
+
+If PowerShell blocks a downloaded script, review it first, then use
+`Unblock-File` on the two scripts in `deploy`; no execution-policy bypass is used.
+An enforced organizational policy needs the organization's supported signing or
+execution route. For a wheel install, invoke the installed
+`share/platmon-hub/deploy/start-windows.ps1` directly instead of `start-hub.cmd`.
+
+Register automatic start **at current-user login**, without administrator rights:
+
+```powershell
+.\deploy\install-windows-startup.ps1 -WhatIf
+.\deploy\install-windows-startup.ps1
+# Optional manual-launch shortcut on your Desktop:
+.\deploy\install-windows-startup.ps1 -Desktop
+# Remove automatic start; this does not stop an already running Hub:
+.\deploy\install-windows-startup.ps1 -Remove
+# Remove the optional Desktop shortcut:
+.\deploy\install-windows-startup.ps1 -Desktop -Remove
+```
+
+Setup creates `platmon-hub.lnk` in the user's Startup folder and points at the
+reviewed launcher and settings paths. It does not start Hub immediately, overwrite
+an existing shortcut, elevate privileges, store passwords or register a system
+service. The launcher window starts minimized, remains available for Ctrl+C,
+and uses the same log/History paths. To change settings, stop Hub and rerun the
+launcher with overrides plus `-SaveSettings`; no shortcut recreation is needed.
+If the checkout moves, remove/recreate its shortcut. Keep the preview checkout
+until its shortcut is removed. Avoid starting another foreground instance while
+the login instance is running: fixed-port binding rejects the duplicate.
+
+Startup-folder launch requires login and is not a service/watchdog; it does not
+restart after failure. Open `shell:startup` to inspect the shortcut. Use the
+Task Scheduler deployment below when startup before login is required; it uses
+a separate account/permission model and remains read-only by default. Do not
+register both mechanisms for the same Hub. Login/reboot verification must be
+performed on the target host; these scripts are not installed or registered by CI.
+
 ## Windows Task Scheduler example
 
 Install Python/venv in a machine-accessible directory such as

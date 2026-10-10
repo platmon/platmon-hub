@@ -42,14 +42,10 @@ jobs:
           dpkg-deb -x ./*.deb extracted
           popd
           python scripts/check-proxy.py --nginx "$RUNNER_TEMP/nginx-check/extracted/usr/sbin/nginx"
-      - name: Validate Windows task script syntax
+      - name: Validate Windows launch and startup scripts
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          $tokens = $null
-          $parseErrors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path deploy/install-windows-task.ps1), [ref]$tokens, [ref]$parseErrors) | Out-Null
-          if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+        run: ./scripts/check-windows-launcher.ps1
       - name: Windows loopback soak harness smoke (no device targets)
         if: runner.os == 'Windows'
         shell: pwsh

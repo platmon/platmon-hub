@@ -48,7 +48,8 @@ def main():
             assert any(name.endswith('/docs/operations.md') for name in files)
             assert all(any(name.endswith('/docs/benchmarks/'+plot.name) for name in files)
                        for plot in (root/'docs'/'benchmarks').glob('*.png'))
-            assert any(name.endswith('/deploy/nginx.conf.example') for name in files)
+            assert all(any(name.endswith('/deploy/'+script) for name in files)
+                       for script in ('nginx.conf.example', 'start-windows.ps1', 'install-windows-startup.ps1'))
             assert not any(name.endswith('nodes.json') or 'soak-results' in name for name in files)
             metadata=package.read(next(name for name in files if name.endswith('/METADATA'))).decode('utf-8')
             assert 'Requires-Dist:' not in metadata

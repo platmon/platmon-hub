@@ -27,6 +27,9 @@ changes preserve it. Without installation, use `python -m hub` in place of
 `platmon-hub`. See [build and installation](docs/operations.md) to create the wheel.
 Open `http://127.0.0.1:9787/`. The example registry contains no active targets.
 
+On Windows, the [quick launcher and login startup](docs/operations.md#windows-quick-start-and-login-startup)
+can save your paths once; subsequent launches use `start-hub.cmd`.
+
 Use the **Devices** tab in the Dashboard after enabling [local web registration](docs/web-registration.md), or add an approved device from a local terminal:
 
 ```sh
