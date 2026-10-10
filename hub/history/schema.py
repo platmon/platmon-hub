@@ -24,3 +24,32 @@ CREATE INDEX core_samples_node_time
 CREATE INDEX core_samples_retention ON core_samples (received_at_ms);
 PRAGMA user_version = 1;
 """
+
+MIGRATION_2 = """
+CREATE TABLE observations (
+    node_id TEXT NOT NULL, instance_id TEXT NOT NULL, group_name TEXT NOT NULL,
+    observation_id INTEGER NOT NULL, received_at_ms INTEGER NOT NULL,
+    data_age_ms REAL NOT NULL, stale_after_ms REAL NOT NULL,
+    state TEXT NOT NULL, data_json TEXT NOT NULL,
+    PRIMARY KEY (node_id, instance_id, group_name, observation_id)
+);
+CREATE INDEX observations_time ON observations (node_id, received_at_ms);
+CREATE INDEX observations_retention ON observations (received_at_ms);
+CREATE TABLE gaps (
+    id INTEGER PRIMARY KEY, node_id TEXT NOT NULL, scope TEXT NOT NULL,
+    instance_id TEXT, start_ms INTEGER NOT NULL, end_ms INTEGER,
+    reason TEXT NOT NULL, approximate INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX gaps_time ON gaps (node_id, scope, start_ms);
+CREATE TABLE continuity (
+    node_id TEXT NOT NULL, scope TEXT NOT NULL, instance_id TEXT,
+    received_at_ms INTEGER NOT NULL, reason TEXT, gap_id INTEGER,
+    PRIMARY KEY (node_id, scope)
+);
+CREATE TABLE hub_sessions (
+    session_id TEXT PRIMARY KEY, started_at_ms INTEGER NOT NULL,
+    last_seen_ms INTEGER NOT NULL, closed_at_ms INTEGER
+);
+PRAGMA user_version=2;
+"""
+VERSION = 2

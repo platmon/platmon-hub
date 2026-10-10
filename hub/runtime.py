@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import protocol
 from .state import NodeState
+from .history.projector import ContinuityRecord, project_observation
 
 LOG = logging.getLogger(__name__)
 
@@ -37,6 +38,25 @@ class Fleet:
                      for node_id in self.nodes}
         self._started = False
 
+    def _history_submit(self, record):
+        if self.history is not None and record is not None:
+            try:
+                self.history.submit(record)
+            except Exception:
+                LOG.exception("history submission failed node_id=%s", record.node_id)
+
+    def _history_core_state(self, state):
+        if self.history is None:
+            return
+        snapshot = state.snapshot(include_details=False)
+        reason = None if snapshot['data_current'] else snapshot['headline']
+        if reason == 'unknown':
+            reason = 'transport' if snapshot['core_error'] == 'transport' else 'unobserved'
+        elif snapshot['core_error'] == 'transport' and reason != 'offline':
+            reason = 'transport'
+        self._history_submit(ContinuityRecord(state.node.node_id, 'core', snapshot['instance_id'],
+                                             int(time.time() * 1000), reason, state.grace_ms + 6000))
+
     def core_once(self, node_id):
         state = self.nodes[node_id]
         started = self.clock()
@@ -49,11 +69,7 @@ class Fleet:
                     stats = self.client.get(state.node.endpoint, "/api/stats", self.deadlines[1])
                     received_at_ms = int(time.time() * 1000)
                     accepted = state.accept_core(status, stats, received_at_ms=received_at_ms)
-                    if self.history is not None and accepted.record is not None:
-                        try:
-                            self.history.submit(accepted.record)
-                        except Exception:
-                            LOG.exception("history submission failed node_id=%s", node_id)
+                    self._history_submit(accepted.record)
                 except protocol.AgentFailure as exc:
                     # Status succeeded; stats failure is a distinct transport or protocol event.
                     state.fail_core(exc)
@@ -64,6 +80,7 @@ class Fleet:
             state.fail_core(protocol.ProtocolFailure("unexpected core poll error"))
         finally:
             state.record_poll_duration("core", max(0.0, (self.clock() - started) * 1000))
+            self._history_core_state(state)
 
     def observations_once(self, node_id):
         state = self.nodes[node_id]
@@ -72,9 +89,27 @@ class Fleet:
         started = self.clock()
         try:
             raw = self.client.get(state.node.endpoint, "/api/observations", self.deadlines[2])
-            state.accept_observations(raw)
+            received = int(time.time() * 1000)
+            if state.accept_observations(raw) and self.history is not None:
+                for name in ('storage', 'wifi', 'probe'):
+                    group = raw['groups'].get(name)
+                    reason = 'absent'
+                    threshold = 30000
+                    if group is not None:
+                        threshold = max(1, group['stale_after_ms'])
+                        publication = group.get('observation')
+                        reason = group['state'] if group['state'] != 'ok' else None
+                        if publication and (publication.get('stale') is True or publication['data_age_ms'] > threshold):
+                            reason = 'stale'
+                        if reason != 'stale':
+                            self._history_submit(project_observation(node_id, raw['instance_id'], name, group, received))
+                    self._history_submit(ContinuityRecord(node_id, name, raw['instance_id'], received,
+                                                         reason, threshold + 13000))
         except protocol.AgentFailure as exc:
             state.fail_observations(exc)
+            for name in ('storage', 'wifi', 'probe'):
+                self._history_submit(ContinuityRecord(node_id, name, state.snapshot(include_details=False)['instance_id'],
+                                                     int(time.time() * 1000), 'error'))
         except Exception:
             LOG.exception("unexpected observations poll error node_id=%s", node_id)
             state.fail_observations(protocol.ProtocolFailure("unexpected optional poll error"))

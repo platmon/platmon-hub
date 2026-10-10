@@ -90,3 +90,27 @@ writer drain; queued/uncommitted data is not crash-durable. Do not share a DB
 between Hub processes or place it on a network share. Back up with SQLite's backup
 API or after clean shutdown, not by copying an active DB without its WAL.
 See [the storage contract](docs/adr/0002-hub-history-storage.md).
+
+### Observations and discontinuities (history schema 2)
+
+Storage, Wi-Fi and TCP-probe publications are deduplicated independently by node,
+instance, group and observation ID. Only fresh, actually received publications are
+stored; unavailable values stay null. The selected payload is limited to 16 KiB:
+filesystem device numbers and byte capacities; Wi-Fi interface identity, tri-state
+connection and signal/quality values in their original units; probe target,
+handshake milliseconds and attempt/failure statistics. Unknown fields are omitted.
+No probe is configured or triggered by Hub. Core sequence is never an optional ID.
+
+Schema 1 upgrades transactionally to schema 2 after a verified adjacent
+`.v1-backup-<unique-id>` snapshot. Keep that backup for rollback with Hub stopped;
+older software cannot open schema 2. New tables record group publications,
+continuity evidence, gaps and Hub sessions. Core and optional history share the
+configured retention period (default seven days). Diagnostic persisted/submitted
+counts include continuity records as well as metric records.
+
+Gaps distinguish observed transport failure, Offline, stale data, group absence,
+instance changes and storage loss. Restarted Hub marks unobserved time without
+asserting network failure. Evidence boundaries are approximate. Storage-loss
+summaries are memory-bounded and persisted on recovery; crash during DB failure
+can lose the reason, leaving an unobserved gap. Repeated Offline polls extend one
+open gap, not new synthetic samples. A group failure never changes Core health.
