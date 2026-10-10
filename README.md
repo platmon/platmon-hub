@@ -128,3 +128,9 @@ Application version, Hub HTTP schema 1, SQLite schema 4 and Agent API schemas ar
 independent contracts. See the release policy before upgrading or downgrading.
 
 [Apache License 2.0](LICENSE).
+
+## Export collected data
+
+Export persisted measurements, events and gaps as CSV files in a versioned ZIP
+using `python -m hub export`. See [History data exports](docs/data-export.md)
+for commands, UTC time selection, limits and missing-data semantics.
