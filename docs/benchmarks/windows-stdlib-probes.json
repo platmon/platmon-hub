@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "platform": "Windows",
+  "python": "3.13.14",
+  "tuple_probe": {
+    "samples": [
+      {
+        "calls": 1000,
+        "dataclass_bytes": 136000,
+        "dataclass_count": 1000
+      },
+      {
+        "calls": 2000,
+        "dataclass_bytes": 272000,
+        "dataclass_count": 2000
+      },
+      {
+        "calls": 4000,
+        "dataclass_bytes": 272000,
+        "dataclass_count": 2000
+      },
+      {
+        "calls": 8000,
+        "dataclass_bytes": 272000,
+        "dataclass_count": 2000
+      }
+    ],
+    "after_gc_bytes": 0,
+    "after_gc_count": 0
+  },
+  "empty_hub_http_probe": [
+    {
+      "direct_proxy_bypass": false,
+      "tcp_nodelay": false,
+      "p50": 1.6715999227017164,
+      "p95": 19.01830011047423,
+      "p99": 25.051600066944957
+    },
+    {
+      "direct_proxy_bypass": false,
+      "tcp_nodelay": true,
+      "p50": 2.264800015836954,
+      "p95": 23.142100078985095,
+      "p99": 25.814799824729562
+    },
+    {
+      "direct_proxy_bypass": true,
+      "tcp_nodelay": false,
+      "p50": 2.0381000358611345,
+      "p95": 21.44589996896684,
+      "p99": 25.158500066027045
+    },
+    {
+      "direct_proxy_bypass": true,
+      "tcp_nodelay": true,
+      "p50": 1.860600197687745,
+      "p95": 22.617100039497018,
+      "p99": 25.53570014424622
+    },
+    {
+      "direct_proxy_bypass": false,
+      "tcp_nodelay": false,
+      "p50": 1.865800004452467,
+      "p95": 21.338799968361855,
+      "p99": 22.378700086846948
+    },
+    {
+      "direct_proxy_bypass": false,
+      "tcp_nodelay": true,
+      "p50": 1.921399962157011,
+      "p95": 21.04320004582405,
+      "p99": 23.497400106862187
+    }
+  ],
+  "profile_summary": {
+    "seconds": 900.179,
+    "passed": true,
+    "traced_first_mib": 0.6757917404174805,
+    "traced_last_mib": 1.0719194412231445,
+    "rss_first_mib": 36.418,
+    "rss_last_mib": 43.207,
+    "integrity": "ok",
+    "shutdown_seconds": 0.415
+  },
+  "notes": "Aggregate diagnostics only; profiling has overhead. The tuple-only probe contains no Hub/Agent and validates bounded retained allocations on this Python build. TCP_NODELAY/proxy comparisons did not justify a runtime change; exact Windows latency cause remains unisolated."
+}

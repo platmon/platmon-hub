@@ -56,8 +56,9 @@ Before production acceptance, verify on the actual target hosts:
 
 - Windows 11 scheduled startup without login, Linux systemd boot, service ACLs and
   installed-service upgrade/rollback. CI configuration parsing is not a reboot test.
-- A longer profiled soak: the 10-minute 100-node run showed rising RSS and API latency;
-  memory plateau and leak-free behavior have not been established.
+- A longer deployment-specific pilot: the [90-minute follow-up](benchmarks/long-soak.md)
+  passed absolute budgets and fixed instrumentation/cancellation defects. Some real
+  working-set growth remains; an indefinite memory plateau is not established.
 - Representative retained datasets, concurrent viewers and real storage capacity.
   The measured 150,000-row storage fixture is not a full 7-day 100-node database.
 - Approved real-device communication failure/recovery. Fault injection so far used

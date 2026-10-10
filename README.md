@@ -7,7 +7,7 @@
 
 Centralized, read-only Fleet monitoring for independent [platmon](https://github.com/platmon/platmon) agents, with a Windows/Linux Hub and Python 3.9+ standard-library runtime.
 
-> **Status: 0.2.0rc1 candidate.** History, registry management, events, internal alerts and packaging are implemented. Three real devices passed short read-only collection/restart checks on Linux and native Windows. Synthetic 100-node results are documented with limits. Service reboot/ACL acceptance and a longer profiled soak remain before production rollout; no release tag or deployment is implied.
+> **Status: 0.2.0rc1 candidate.** History, registry management, events, internal alerts and packaging are implemented. Three real devices passed short read-only collection/restart checks on Linux and native Windows. Synthetic 100-node and actual three-device Windows/Linux 90-minute runs passed collection and absolute resource budgets. Working-set limits and remaining growth are documented. Service reboot/ACL acceptance and a longer operational pilot remain before production rollout; no release tag or deployment is implied.
 
 Agents own hardware collection and remain independent when the Hub stops. The Hub
 uses explicit registry entries and fixed GET paths. It never imports Agent code,

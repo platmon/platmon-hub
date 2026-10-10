@@ -46,6 +46,8 @@ def main():
             assert 'hub/web/app.js' in files and 'hub/web/assets/brand/favicon.svg' in files
             assert any(name.endswith('/share/platmon-hub/nodes.example.json') for name in files)
             assert any(name.endswith('/docs/operations.md') for name in files)
+            assert all(any(name.endswith('/docs/benchmarks/'+plot.name) for name in files)
+                       for plot in (root/'docs'/'benchmarks').glob('*.png'))
             assert any(name.endswith('/deploy/nginx.conf.example') for name in files)
             assert not any(name.endswith('nodes.json') or 'soak-results' in name for name in files)
             metadata=package.read(next(name for name in files if name.endswith('/METADATA'))).decode('utf-8')

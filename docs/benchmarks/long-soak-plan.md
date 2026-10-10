@@ -54,3 +54,11 @@ ctypes cache. A Hub-free 1,000-read reproduction grew the cache by 1,001 entries
 and RSS by 11.543 MiB; the cached-reader fix held one structure/pointer type and
 showed zero cache/RSS growth in the same probe. All acceptance runs restart with
 this fix. Diagnostic profiles and aborted runs are not reported as completed soaks.
+
+At about 50 minutes, real Linux RSS rose from 30.812 MiB at 30 minutes to
+33.332 MiB, while the synthetic process remained near 40 MiB. Reassess with an
+additional bounded 20-minute Linux field allocation probe, same 3-node GET-only
+load plus the same Dashboard view pattern. The target is to attribute retained
+Python objects; tracing timings are excluded from baseline comparisons. This
+diagnostic completes before the original 90-minute acceptance run and remains
+inside the user deadline. No runtime change is justified without attribution.

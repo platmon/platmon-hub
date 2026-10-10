@@ -144,6 +144,16 @@ These short runs validate actual collection/persistence and process restart, not
 hardware safety, service boot, long-term resource use or fault injection. No Agent
 process was stopped, restarted or reconfigured.
 
+## Extended 90-minute follow-up
+
+The [extended soak](benchmarks/long-soak.md) adds 90-minute 100-node and actual
+three-device Windows/Linux evidence, per-minute timelines, allocation diagnostics,
+and real Dashboard checks. All collection/integrity/absolute budget checks passed.
+It fixes a Windows RSS instrumentation type-cache leak and normal canceled-request
+tracebacks. Synthetic RSS growth after the first hour was near-flat, while some
+real working-set growth remains; the report records that analysis trigger and does
+not claim a leak-free service or indefinite memory plateau.
+
 ## Remaining evidence
 
 Before treating a candidate as production-ready, complete Windows/Linux
