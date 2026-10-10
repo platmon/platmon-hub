@@ -38,6 +38,9 @@ class HubHandler(BaseHTTPRequestHandler):
             self._static(*ASSETS[path.path])
         elif path.path == "/healthz":
             self._reply(200, {"status": "ok"})
+        elif path.path == "/api/history/status":
+            history = self.server.fleet.history
+            self._reply(200, {"schema_version": 1, "history": history.snapshot() if history else {"enabled": False, "state": "disabled"}})
         elif path.path == "/api/nodes":
             self._reply(200, {"schema_version": 1, "nodes": self.server.fleet.list_nodes()})
         elif path.path.startswith("/api/nodes/") and path.path.count("/") == 3:

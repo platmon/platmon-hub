@@ -15,9 +15,10 @@ LOG = logging.getLogger(__name__)
 class Fleet:
     def __init__(self, nodes, *, client=None, core_interval=5.0, observations_interval=10.0,
                  status_deadline=2.0, stats_deadline=2.0, observations_deadline=3.0,
-                 max_concurrency=16, clock=time.monotonic):
+                 max_concurrency=16, clock=time.monotonic, history=None):
         if not (0 < core_interval and 0 < observations_interval and max_concurrency >= 1):
             raise ValueError("invalid polling configuration")
+        self.history = history
         self.client = client or protocol.HttpAgentClient()
         self.clock = clock
         self.core_interval = core_interval
@@ -46,7 +47,13 @@ class Fleet:
             if status["ready"]:
                 try:
                     stats = self.client.get(state.node.endpoint, "/api/stats", self.deadlines[1])
-                    state.accept_core(status, stats)
+                    received_at_ms = int(time.time() * 1000)
+                    accepted = state.accept_core(status, stats, received_at_ms=received_at_ms)
+                    if self.history is not None and accepted.record is not None:
+                        try:
+                            self.history.submit(accepted.record)
+                        except Exception:
+                            LOG.exception("history submission failed node_id=%s", node_id)
                 except protocol.AgentFailure as exc:
                     # Status succeeded; stats failure is a distinct transport or protocol event.
                     state.fail_core(exc)
@@ -115,6 +122,8 @@ class Fleet:
         if self._started:
             raise RuntimeError("Fleet already started")
         self._started = True
+        if self.history is not None:
+            self.history.start()
         self._scheduler = threading.Thread(target=self._schedule, name="hub-scheduler", daemon=True)
         self._scheduler.start()
 
@@ -123,6 +132,8 @@ class Fleet:
         if self._scheduler is not None:
             self._scheduler.join()
         self._pool.shutdown(wait=True, cancel_futures=True)
+        if self.history is not None:
+            self.history.close()
 
     def list_nodes(self):
         return [node.snapshot(include_details=False) for node in self.nodes.values()]
