@@ -74,3 +74,11 @@ table tr:last-child td {border-bottom:0;}
 @media(prefers-color-scheme:dark) {
   :root {--bg:#101919;--surface:#182424;--muted-bg:#263635;--fg:#ecf4f1;--muted:#a2b8b4;--line:#354744;--brand:#4fb286;--brand-bg:#1d3b30;--warn:#efd19a;--warn-bg:#473b27;--error:#f6aca2;--error-bg:#442b29;--shadow:none;}
 }
+
+.history-panel {margin-top:18px;padding:21px;border:1px solid var(--line);border-radius:12px;background:var(--surface);}
+.history-controls {display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin:16px 0;}
+.history-controls label {font-size:12px;color:var(--muted);display:grid;gap:5px;}
+.history-controls select {font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:8px;max-width:100%;}
+#history-chart {display:block;width:100%;height:240px;touch-action:pan-y;}
+#history-chart:focus-visible {outline:2px solid var(--brand);outline-offset:2px;}
+.history-value {font-size:12px;min-height:3em;color:var(--fg);overflow-wrap:anywhere;font-variant-numeric:tabular-nums;}

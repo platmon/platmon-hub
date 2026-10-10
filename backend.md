@@ -135,3 +135,23 @@ would exceed the requested point budget, 422 `history_range_too_dense` asks the
 caller to narrow the time range. Queries stream over a separate read connection
 with a two-second deadline and bounded result memory; they never trigger polls.
 Query parameters remain forbidden on static assets and other existing routes.
+
+### Browser history
+
+Device details now include a separate History panel for CPU, memory, GPU, highest
+temperature and root-disk usage. Select a metric and 1h/6h/24h/7d range. Canvas
+renders average lines and min/max bars, approximate shaded gaps and dashed agent
+restart boundaries. Missing values are N/A, never zero. Hover or use arrow keys
+on the focused chart for UTC time, extrema, count and agent instance.
+
+Only the selected node/metric/range is retained in browser memory. History refreshes
+at most every 30 seconds during the existing visible-tab refresh cycle; switching
+selection cancels the old request. Hidden tabs cancel and pause History. Query
+failures stay within this panel. No CDN, external font or chart library is used.
+
+Optional browser verification: with Playwright available in the development
+Node module path and an empty Hub listening on a loopback test port, run
+`node scripts/check-history-ui.cjs http://127.0.0.1:PORT`. It supplies synthetic
+API responses and checks nulls, selection cancellation, hidden-tab pause, failure
+isolation and light/dark mobile layout. Playwright is verification tooling only,
+not a Hub dependency. Screenshots are written to the OS temporary directory.

@@ -49,6 +49,28 @@
           <span id="detail-status" class="subtle" role="status"></span>
         </div>
         <div id="detail-body" class="detail-body"><p class="empty">Select a device to view its latest snapshot.</p></div>
+        <section class="history-panel" aria-labelledby="history-heading">
+          <h3 id="history-heading">History</h3>
+          <p class="subtle">Observed values · UTC receipt time · Lines break at missing data and restarts.</p>
+          <div class="history-controls">
+            <label>Metric <select id="history-metric">
+              <option value="cpu_percent">CPU usage</option>
+              <option value="memory_percent">Memory usage</option>
+              <option value="gpu_percent">GPU usage</option>
+              <option value="hottest_c">Highest temperature</option>
+              <option value="disk_percent">Disk usage</option>
+            </select></label>
+            <label>Range <select id="history-range">
+              <option value="1">1h</option><option value="6">6h</option>
+              <option value="24">24h</option><option value="168">7d</option>
+            </select></label>
+            <button type="button" id="history-refresh" class="refresh-button">Refresh history</button>
+          </div>
+          <p id="history-status" class="subtle" role="status" aria-live="polite">Select a device.</p>
+          <canvas id="history-chart" height="240" tabindex="0" aria-label="History chart. Use left and right arrows to inspect points."></canvas>
+          <p id="history-value" class="history-value">Hover over the chart or use arrow keys to inspect values.</p>
+          <p id="history-gaps" class="subtle">Average line · Min/max bars · Shaded gaps · Dashed restart boundaries</p>
+        </section>
       </section>
     </div>
   </main>
