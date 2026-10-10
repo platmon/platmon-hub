@@ -222,7 +222,18 @@ class NodeState:
                         if obs["data_age_ms"] > group["stale_after_ms"]:
                             group["state"] = "stale"
                             obs["stale"] = True
+            optional_alert_error = None
+            if self._optional_error is not None:
+                optional_alert_error = True
+            elif self._last_observations is not None:
+                observed = list(self._last_observations['groups'].values())
+                current_groups = [g for g in observed if g['state'] not in ('unsupported', 'unavailable') and
+                    (g.get('observation', {}).get('data_age_ms', 0) if g.get('observation') else 0) +
+                    max(0, now-self._last_obs_tick)*1000 <= g['stale_after_ms']]
+                if current_groups:
+                    optional_alert_error = any(g['state'] in ('error', 'partial') for g in current_groups)
             return {
+                "optional_alert_error": optional_alert_error,
                 "node_id": self.node.node_id,
                 "name": self.node.name,
                 "enabled": self.node.enabled,

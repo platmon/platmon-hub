@@ -405,6 +405,45 @@
   new ResizeObserver(drawHistory).observe(canvas);
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawHistory);
 
+  const alertsStatus = document.getElementById("alerts-status");
+  const alertsList = document.getElementById("alerts-list");
+  let alertsController = null;
+  async function refreshAlerts() {
+    if (document.hidden || alertsController) return;
+    const controller = new AbortController();
+    alertsController = controller;
+    const timer = setTimeout(() => controller.abort(), 4000);
+    try {
+      const response = await fetch("/api/alerts", {cache:"no-store", credentials:"same-origin", signal:controller.signal});
+      if (!response.ok) throw new Error("alerts unavailable");
+      const doc = await response.json();
+      if (doc.schema_version !== 1 || !Array.isArray(doc.alerts) || doc.alerts.length > 500) throw new Error("invalid alerts");
+      if (document.hidden || controller.signal.aborted) return;
+      alertsList.replaceChildren();
+      alertsStatus.textContent = !doc.enabled ? "Alerts are not enabled on this Hub." : doc.error ? "Alert evaluation unavailable." : !doc.ready ? "Waiting for alert history." :
+        doc.total + " alerts · " + (doc.pending_persistence || 0) + " awaiting queue admission · " + (doc.lost_transitions || 0) + " transitions lost before admission";
+      for (const alert of doc.alerts) {
+        const node = nodes.find(item => item.node_id === alert.node_id);
+        const name = node ? node.name : alert.node_id;
+        const severity = ["warning", "critical"].includes(alert.severity) ? alert.severity : "";
+        alertsList.append(element("li", severity, name + " · " + alert.rule_id + " · " + alert.state +
+          (severity ? " · " + severity : "") + (alert.known ? " · " + String(alert.value) : " · awaiting current evidence") +
+          " · " + new Date(alert.changed_at_ms).toISOString()));
+      }
+    } catch (error) {
+      if (!document.hidden) alertsStatus.textContent = "Alerts unavailable; displayed alerts may be outdated. Live monitoring continues.";
+    } finally {
+      clearTimeout(timer);
+      if (alertsController === controller) alertsController = null;
+    }
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { if (alertsController) alertsController.abort(); }
+    else refreshAlerts();
+  });
+  setInterval(refreshAlerts, 5000);
+  refreshAlerts();
+
   refreshButton.addEventListener("click", refreshFleet);
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) { refreshFleet(); loadHistory(true); }

@@ -19,12 +19,16 @@ LOG = logging.getLogger(__name__)
 class Fleet:
     def __init__(self, nodes, *, client=None, core_interval=5.0, observations_interval=10.0,
                  status_deadline=2.0, stats_deadline=2.0, observations_deadline=3.0,
-                 max_concurrency=16, clock=time.monotonic, history=None, registry_path=None):
+                 max_concurrency=16, clock=time.monotonic, history=None, registry_path=None, alert_rules=None):
         if not (0 < core_interval and 0 < observations_interval and max_concurrency >= 1):
             raise ValueError("invalid polling configuration")
         self._registry_lock = threading.RLock()
         self.watcher = RegistryWatcher(registry_path, self.apply_registry) if registry_path else None
+        if alert_rules is not None and history is None:
+            raise ValueError('alerts require history')
         self.history = history
+        from .alerts import AlertEngine
+        self.alerts = AlertEngine(alert_rules, history, clock=clock) if alert_rules is not None else None
         self.client = client or protocol.HttpAgentClient()
         self.clock = clock
         self.core_interval = core_interval
@@ -211,9 +215,13 @@ class Fleet:
         self._scheduler.start()
         if self.watcher is not None:
             self.watcher.start()
+        if self.alerts is not None:
+            self.alerts.start(self.list_nodes)
 
     def close(self):
         self._stop.set()
+        if self.alerts is not None:
+            self.alerts.close()
         if self.watcher is not None:
             self.watcher.close()
         if self._scheduler is not None:

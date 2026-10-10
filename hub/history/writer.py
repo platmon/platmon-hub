@@ -36,6 +36,7 @@ class HistoryWriter:
         self._accepting = True
         self._losses = {}
         self._pending_events = {}
+        self._alert_state = None
         self._last_overflow_event = float("-inf")
         self._stats = dict(enabled=True, state='starting', schema_version=None, submitted=0,
                            persisted=0, duplicates=0, dropped_regression=0, dropped_queue_full=0,
@@ -87,6 +88,10 @@ class HistoryWriter:
         with self._lock:
             return dict(self._stats, queue_depth=self.queue.qsize(), queue_capacity=self.queue.maxsize, pending_events=len(self._pending_events))
 
+    def alert_state(self):
+        with self._lock:
+            return None if self._alert_state is None else list(self._alert_state)
+
     def start(self):
         if self._thread is not None:
             raise RuntimeError('history writer already started')
@@ -121,12 +126,18 @@ class HistoryWriter:
                     candidate = self.store_factory(self.path)
                     try:
                         store = candidate.open()
+                        restored = store.connection.execute('SELECT node_id,rule_id,config_json,state_json FROM alert_states LIMIT 8193').fetchall()
+                        if len(restored) > 8192:
+                            self._update(alert_restore_error='alert_state_limit_exceeded')
+                        with self._lock:
+                            self._alert_state = restored if len(restored) <= 8192 else None
                         if self.snapshot()['last_error'] is not None:
                             with self._lock:
                                 self._pending_events['history_writer_recovered'] = EventRecord.create(None, 'history_writer_recovered', int(self.wall()*1000), 'degraded', 'healthy', 'opened')
                         self._update(state='healthy', schema_version=VERSION)
                     except Exception as exc:
                         candidate.close()
+                        store = None
                         self._error(exc)
                         fatal = isinstance(exc, SchemaError)
                         next_open = now + 5
