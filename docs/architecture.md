@@ -127,7 +127,7 @@ sequenceDiagram
     Hub-->>Viewer: Current projections (no direct Agent access)
 ```
 
-Per-node tasks may run concurrently, but no node's slow request may block another node's schedule. Respect finite response size, per-request deadlines and caps on background tasks. Retry with bounded backoff; successful replies reset the consecutive transport failure counter. Avoid automatic retry loops at subsecond rates. Status and metrics should carry separate error information so optional endpoint failures cannot masquerade as transport offline.
+Per-node tasks may run concurrently, but no node's slow request may block another node's schedule. Respect finite response size, per-request deadlines and caps on background tasks. Retry with bounded backoff; a successful valid status response resets the consecutive transport failure counter. Avoid automatic retry loops at subsecond rates. Status and metrics should carry separate error information so optional endpoint failures cannot masquerade as transport offline.
 
 ## 5. State and freshness model
 
