@@ -5,15 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <meta name="description" content="Read-only fleet overview for platmon devices">
-  <title>platmon hub — fleet monitoring</title>
+  <title>Fleet monitoring</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/assets/styles.css">
   <script src="/assets/app.js" defer></script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true">p_</span>
-      <span class="brand-label">platmon <strong>hub</strong></span>
+      <picture class="brand-mark">
+        <source srcset="/assets/brand/platmon-icon-dark.svg" media="(prefers-color-scheme: dark)">
+        <img src="/assets/brand/platmon-icon-light.svg" alt="platmon" width="38" height="38">
+      </picture>
       <span class="product-tag">Fleet monitoring</span>
     </div>
     <div class="topbar-right">
@@ -49,6 +52,6 @@
       </section>
     </div>
   </main>
-  <footer class="footer">platmon-hub · Cached fleet view · Data ages are estimates based on the agent clock and Hub receive time.</footer>
+  <footer class="footer">Cached fleet view · Data ages are estimates based on the agent clock and Hub receive time.</footer>
 </body>
 </html>

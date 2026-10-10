@@ -1,17 +1,28 @@
 """Fleet dashboard contract checks. HTTP tests use loopback only (no device access)."""
 
+import hashlib
 import json
 import threading
 import unittest
 import uuid
 from http.client import HTTPConnection
+from pathlib import Path
 
-from hub.http import HubServer
+from hub.http import ASSET_ROOT, HubServer
 from hub.registry import Node
 from hub.runtime import Fleet
 from hub.state import NodeState
 
 NODE_ID = str(uuid.UUID(int=1))
+# Exact Git blob hashes of platmon's canonical C / Terminal P assets.
+CANONICAL_SVG_BLOBS = {
+    "platmon-icon-light.svg": "23c7ea4163fbce524b9886fdc56d6b4edf4fa501",
+    "platmon-icon-dark.svg": "52a3b33fadb3b3e22b7e795d9631b9406578763c",
+    "platmon-logo-light.svg": "1da0ba8c2e466129a359f3f4b6c2178e13cd06bc",
+    "platmon-logo-dark.svg": "333a1fb418491adf344539f2b5b46ea937a194c5",
+    "favicon.svg": "1537abf9eca4460600edbec91e037748fbdfb5a2",
+}
+
 
 
 class Clock:
@@ -113,7 +124,12 @@ class DashboardHttpTests(unittest.TestCase):
     def test_static_allowlist_mime_csp_and_no_query(self):
         for path, mime in [("/", "text/html"), ("/index.html", "text/html"),
                            ("/assets/styles.css", "text/css"),
-                           ("/assets/app.js", "text/javascript")]:
+                           ("/assets/app.js", "text/javascript"),
+                           ("/favicon.svg", "image/svg+xml"),
+                           ("/assets/brand/platmon-icon-light.svg", "image/svg+xml"),
+                           ("/assets/brand/platmon-icon-dark.svg", "image/svg+xml"),
+                           ("/assets/brand/platmon-logo-light.svg", "image/svg+xml"),
+                           ("/assets/brand/platmon-logo-dark.svg", "image/svg+xml")]:
             with self.subTest(path=path):
                 status, headers, data = self.request("GET", path)
                 self.assertEqual(status, 200)
@@ -122,10 +138,53 @@ class DashboardHttpTests(unittest.TestCase):
                 self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
                 self.assertTrue(data)
                 self.assertIn("default-src 'none'", headers["Content-Security-Policy"])
+                self.assertIn("img-src 'self'", headers["Content-Security-Policy"])
         self.assertEqual(self.request("GET", "/assets/../registry.py")[0], 404)
+        self.assertEqual(self.request("GET", "/assets/brand/brand-colors.json")[0], 404)
+        self.assertEqual(self.request("GET", "/assets/brand/README.md")[0], 404)
+        self.assertEqual(self.request("GET", "/assets/brand/missing.svg")[0], 404)
+        self.assertEqual(self.request("GET", "/favicon.svg?x=1")[0], 404)
         self.assertEqual(self.request("GET", "/assets/app.js?target=x")[0], 404)
         self.assertEqual(self.request("GET", "/api/proxy?url=http://example.com")[0], 404)
         self.assertEqual(self.request("POST", "/")[0], 405)
+
+    def test_brand_svg_assets_are_exact_canonical_blobs(self):
+        for filename, expected_git_sha in CANONICAL_SVG_BLOBS.items():
+            with self.subTest(filename=filename):
+                original = (ASSET_ROOT / "assets" / "brand" / filename).read_bytes()
+                sha = hashlib.sha1(b"blob " + str(len(original)).encode("ascii") +
+                                   b"\x00" + original).hexdigest()
+                self.assertEqual(sha, expected_git_sha)
+                route = "/favicon.svg" if filename == "favicon.svg" else "/assets/brand/" + filename
+                status, headers, served = self.request("GET", route)
+                self.assertEqual(status, 200)
+                self.assertEqual(served, original)
+                self.assertEqual(headers["Content-Type"], "image/svg+xml")
+
+    def test_document_references_light_dark_assets_not_text_logo(self):
+        status, headers, data = self.request("GET", "/")
+        self.assertEqual(status, 200)
+        document = data.decode("utf-8")
+        self.assertIn('rel="icon" type="image/svg+xml" href="/favicon.svg"', document)
+        self.assertIn('/assets/brand/platmon-icon-light.svg', document)
+        self.assertIn('/assets/brand/platmon-icon-dark.svg', document)
+        self.assertIn('prefers-color-scheme: dark', document)
+        self.assertNotIn('class="brand-mark" aria-hidden="true">p_', document)
+        self.assertNotIn('class="brand-label"', document)
+        self.assertNotIn('platmon <strong>hub</strong>', document)
+        self.assertIn('<img src="/assets/brand/platmon-icon-light.svg" alt="platmon"', document)
+        self.assertIn('<title>Fleet monitoring</title>', document)
+        self.assertNotIn("platmon-hub · Cached fleet view", document)
+        self.assertIn('<span class="product-tag">Fleet monitoring</span>', document)
+
+    def test_fleet_monitoring_is_prominent_and_visible_on_mobile(self):
+        status, headers, data = self.request("GET", "/assets/styles.css")
+        self.assertEqual(status, 200)
+        css = data.decode("utf-8")
+        self.assertIn(".product-tag {color:var(--fg);font-size:24px;font-weight:700;", css)
+        self.assertIn(".product-tag{font-size:17px;", css)
+        self.assertNotIn(".product-tag,.topbar-caption{display:none;}", css)
+        self.assertIn(".topbar-caption{display:none;}", css)
 
     def test_fleet_summary_is_compact_and_detail_is_cached(self):
         status, headers, data = self.request("GET", "/api/nodes")

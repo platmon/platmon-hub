@@ -1,0 +1,4 @@
+# The approved platmon brand SVGs must remain byte-for-byte identical on Windows.
+# Disable Git's CRLF conversion even when core.autocrlf=true.
+hub/web/assets/brand/*.svg -text
+hub/web/assets/brand/brand-colors.json -text

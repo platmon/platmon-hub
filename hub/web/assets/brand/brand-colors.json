@@ -1,0 +1,24 @@
+{
+  "name": "platmon",
+  "identity": "C / Terminal P",
+  "version": "1.0",
+  "approved_on": "2026-10-07",
+  "descriptor": "Lightweight platform monitor",
+  "color_space": "sRGB",
+  "colors": {
+    "light": {
+      "symbol": "#2F7D5B",
+      "cursor": "#1D2127",
+      "wordmark": "#1D2127",
+      "background": "#F6F7F9",
+      "description": "#6B7280"
+    },
+    "dark": {
+      "symbol": "#4FB286",
+      "cursor": "#4FB286",
+      "wordmark": "#E6E8EB",
+      "background": "#121417",
+      "description": "#9AA1AB"
+    }
+  }
+}
