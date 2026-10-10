@@ -233,3 +233,12 @@ updates, gap changes and their derived events share the writer transaction.
 schema 1. `alert_transition` is available through the Events API. SQLite schema 4
 stores current alert configuration/state atomically with transitions. See
 [alert evaluation and restoration policy](docs/alerts.md).
+
+## Access boundary
+
+HTTP remains read-only. Local loopback requests must use Host `localhost`,
+`127.0.0.1` or `::1`; a proxy must rewrite its upstream Host accordingly.
+Admission limits are 32 connections and a shared 100 GET/s budget (burst 200),
+with 5-second socket inactivity timeout. Oversized targets/headers are rejected.
+See [security and optional TLS authentication](docs/security.md) for roles,
+credentials, audit limitations and the opt-in nginx example.

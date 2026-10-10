@@ -1,0 +1,33 @@
+# Include inside nginx's http {}. Replace certificate/password paths and host.
+# Keep Hub loopback-only; externally expose only this reviewed TLS proxy.
+limit_req_zone $binary_remote_addr zone=platmon_read:10m rate=10r/s;
+log_format platmon_audit '$time_iso8601 $remote_addr $request_method $status';
+server {
+    listen 127.0.0.1:8443 ssl;
+    server_name hub.example.com;
+    ssl_certificate /etc/platmon-proxy/server.crt;
+    ssl_certificate_key /etc/platmon-proxy/server.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    server_tokens off;
+    client_max_body_size 1k;
+    client_header_timeout 5s;
+    client_body_timeout 5s;
+    access_log /var/log/nginx/platmon-access.log platmon_audit;
+    # nginx error logs may include an unredacted URI; use the status-only access log.
+    error_log /dev/null crit;
+    auth_basic "Fleet monitoring";
+    auth_basic_user_file /etc/platmon-proxy/viewers.htpasswd;
+    limit_req zone=platmon_read burst=20 nodelay;
+    limit_req_status 429;
+    location / {
+        proxy_pass http://127.0.0.1:9787;
+        proxy_set_header Host 127.0.0.1:9787;
+        proxy_set_header Authorization "";
+        proxy_set_header Cookie "";
+        proxy_set_header X-Forwarded-User "";
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 5s;
+        proxy_send_timeout 5s;
+        proxy_buffering on;
+    }
+}
