@@ -54,7 +54,7 @@ class OverviewTests(unittest.TestCase):
             "cpu_percent": 30.0, "gpu_percent": None, "memory_percent": 25.0,
             "disk_percent": 50.0, "hottest_c": 52.2
         })
-        self.assertNotIn("stats", snap) if False else self.assertIsNone(snap["stats"])
+        self.assertIsNone(snap["stats"])
         self.assertTrue(snap["data_current"])
 
     def test_expired_last_known_and_bad_numbers(self):
@@ -83,6 +83,7 @@ class OverviewTests(unittest.TestCase):
         snap = disabled.snapshot()
         self.assertEqual(snap["headline"], "disabled")
         self.assertFalse(snap["data_current"])
+        self.assertFalse(snap["ready"])
 
 
 class DashboardHttpTests(unittest.TestCase):

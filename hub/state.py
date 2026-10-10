@@ -198,7 +198,7 @@ class NodeState:
                 "enabled": self.node.enabled,
                 "headline": headline if self.node.enabled else "disabled",
                 "agent_state": self._agent_state,
-                "ready": self._ready if headline in ("live", "partial") else False,
+                "ready": self._ready if headline in ("live", "partial") and self.node.enabled else False,
                 "instance_id": self._instance_id,
                 "sample_sequence": self._sample_key[1] if self._sample_key else None,
                 "data_age_ms": round(data_age, 2) if data_age is not None else None,
