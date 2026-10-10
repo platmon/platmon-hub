@@ -175,3 +175,16 @@ class WebRegistrationTests(unittest.TestCase):
         self.server.request_budget = RequestBudget(rate=0, burst=0)
         self.assertEqual(self.request()[0], 429)
         self.assertEqual(load_registry(self.registry), ())
+
+    def test_standard_http_port_origin_uses_bare_host(self):
+        # Exercise browser serialization for port 80 without binding a privileged port.
+        actual_port = self.server.server_port
+        with patch.object(self.server, 'server_port', 80):
+            connection = http.client.HTTPConnection('127.0.0.1', actual_port, timeout=2)
+            try:
+                connection.request('POST', '/api/admin/nodes', body=json.dumps({'name': 'Lab', 'host': '192.0.2.10'}),
+                    headers={'Host': 'localhost', 'Origin': 'http://localhost', 'Authorization': 'Bearer ' + 'a' * 64, 'Content-Type': 'application/json'})
+                response = connection.getresponse()
+                self.assertEqual(response.status, 201)
+                response.read()
+            finally: connection.close()

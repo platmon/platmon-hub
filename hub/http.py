@@ -196,7 +196,8 @@ class HubHandler(BaseHTTPRequestHandler):
             return
         # Strict local Origin/Host matching protects against CSRF and rebinding.
         host = self.headers.get('Host', '').lower()
-        allowed = ('127.0.0.1:' + str(self.server.server_port), 'localhost:' + str(self.server.server_port))
+        suffix = '' if self.server.server_port == 80 else ':' + str(self.server.server_port)
+        allowed = ('127.0.0.1' + suffix, 'localhost' + suffix)
         if (len(self.headers.get_all('Host', [])) != 1 or host not in allowed or
                 len(self.headers.get_all('Origin', [])) != 1 or self.headers.get('Origin') != 'http://' + host or
                 self.headers.get('Sec-Fetch-Site', 'same-origin') != 'same-origin'):
