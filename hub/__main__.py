@@ -62,11 +62,12 @@ def main(argv=None):
     parser.add_argument("--port", type=tcp_port, default=9787, help="Hub TCP listen port (default: 9787)")
     parser.add_argument("--history-db", help="explicit local SQLite history path (disabled by default)")
     parser.add_argument("--history-retention-days", type=positive_days, default=7)
+    parser.add_argument("--no-registry-reload", action="store_true", help="disable automatic registry reload")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO)
     nodes = load_registry(args.nodes)
     history = HistoryWriter(args.history_db, retention_days=args.history_retention_days) if args.history_db else None
-    fleet = Fleet(nodes, history=history)
+    fleet = Fleet(nodes, history=history, registry_path=None if args.no_registry_reload else args.nodes)
     try:
         server = bind_hub(args.bind, args.port, fleet)
     except BaseException:

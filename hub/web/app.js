@@ -87,7 +87,7 @@
     list.replaceChildren();
     fleetNote.textContent = nodes.length + (nodes.length === 1 ? " device" : " devices");
     if (!nodes.length) {
-      list.append(element("p", "empty", "No nodes are registered. Add approved endpoints to the Hub registry and restart the service."));
+      list.append(element("p", "empty", "No nodes are registered. Add approved endpoints using the local registry CLI."));
       return;
     }
     for (const n of nodes) {

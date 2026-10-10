@@ -222,3 +222,15 @@ A scaling target of tens to hundreds of devices is an **architectural aspiration
 ## 8. Review checklist
 
 Before accepting this proposal, reviewers should confirm the [contract interpretation](agent-contract.md), two-device [verification plan](mvp-acceptance.md) and [ADR](adr/0001-http-pull-and-device-identity.md). No compatibility guarantees are introduced by this documentation until a tested Hub implementation exists.
+
+
+## Implemented registry reload boundary
+
+The runtime now supports validated local file reload (see [backend operation](../backend.md#registry-hot-reload)).
+A separate debounced watcher submits complete inventories. Scheduler/API access
+uses one registry lock; network and file I/O take place outside it. Active work
+retains the state generation it started with. Endpoint/enabled changes replace
+that generation, and late replies cannot populate the replacement. Active slots
+remain reserved until requests finish, including across removal/re-addition, so
+one in-flight operation per node remains an invariant. History retains canonical
+UUIDs and prior data; invalid registry updates preserve the previous fleet.
