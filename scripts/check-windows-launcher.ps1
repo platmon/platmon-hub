@@ -59,10 +59,17 @@ try {
     } finally {
         # Force termination is restricted to this temporary empty-registry test.
         Get-CimInstance Win32_Process -Filter ("ParentProcessId = {0}" -f $process.Id) | ForEach-Object {
-            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+            $child = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
+            if ($null -ne $child) {
+                try {
+                    Stop-Process -InputObject $child -Force -ErrorAction SilentlyContinue
+                    if (-not $child.WaitForExit(5000)) { throw 'Temporary Hub child did not exit.' }
+                } finally { $child.Dispose() }
+            }
         }
         if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
-        $process.WaitForExit()
+        if (-not $process.WaitForExit(5000)) { throw 'Temporary launcher did not exit.' }
+        $process.Dispose()
     }
     [IO.File]::WriteAllText($settings, '{"Port":0}')
     $rejected = $false
