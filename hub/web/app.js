@@ -107,6 +107,7 @@
         selected = n.node_id;
         renderCards();
         loadDetail();
+        loadHistory(true);
       });
       list.append(card);
     }
@@ -228,6 +229,7 @@
       renderCards();
       updated.textContent = "Hub updated " + lastSuccess.toLocaleTimeString();
       await loadDetail();
+      loadHistory(false);
     } catch (_err) {
       // Hub reachability is independent of agent health. Never keep cached
       // browser readings marked current after losing the Hub connection.
@@ -251,9 +253,162 @@
       refreshButton.disabled = false;
     }
   }
+  const historyMetric = document.getElementById("history-metric");
+  const historyRange = document.getElementById("history-range");
+  const historyStatus = document.getElementById("history-status");
+  const historyValue = document.getElementById("history-value");
+  const historyGaps = document.getElementById("history-gaps");
+  const canvas = document.getElementById("history-chart");
+  let historyController = null;
+  let historyTicket = 0;
+  let historyData = null;
+  let historyKey = "";
+  let historyLoaded = 0;
+  let hoverIndex = 0;
+
+  function cancelHistory() {
+    historyTicket++;
+    if (historyController) historyController.abort();
+    historyController = null;
+  }
+  function drawHistory() {
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    const width = Math.max(160, canvas.getBoundingClientRect().width);
+    const height = 240;
+    canvas.width = Math.round(width * ratio);
+    canvas.height = height * ratio;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(ratio, ratio);
+    const colors = getComputedStyle(document.documentElement);
+    const color = name => colors.getPropertyValue(name).trim();
+    ctx.font = "11px system-ui";
+    ctx.fillStyle = color("--muted");
+    if (!historyData || !historyData.points.length) {
+      ctx.fillText("No observed history in this range", 12, 32);
+      return;
+    }
+    const data = historyData;
+    const values = data.points.flatMap(p => [p.minimum, p.maximum]).filter(numeric);
+    const low = historyMetric.value === "hottest_c" ? Math.min(0, ...values) : 0;
+    const high = historyMetric.value === "hottest_c" ? Math.max(1, ...values) : 100;
+    const left = 38, right = width - 10, top = 12, bottom = height - 30;
+    const x = time => left + (right-left) * (time-data.from_ms)/(data.to_ms-data.from_ms);
+    const y = value => bottom - (bottom-top) * (value-low)/(high-low);
+    ctx.strokeStyle = color("--line");
+    for (let i = 0; i <= 4; i++) {
+      const value = low + (high-low)*i/4;
+      ctx.beginPath(); ctx.moveTo(left,y(value)); ctx.lineTo(right,y(value)); ctx.stroke();
+      ctx.fillText(value.toFixed(0), 2, y(value)+4);
+    }
+    for (const gap of data.gaps) {
+      const a = x(Math.max(data.from_ms, gap.start_ms));
+      const b = x(Math.min(data.to_ms, gap.end_ms ?? data.to_ms));
+      ctx.fillStyle = color(gap.reason === "offline" ? "--error-bg" : "--muted-bg");
+      ctx.fillRect(a, top, Math.max(1,b-a), bottom-top);
+      if (gap.reason === "agent_restart") {
+        ctx.strokeStyle = color("--warn"); ctx.setLineDash([4,3]);
+        ctx.beginPath(); ctx.moveTo(b,top); ctx.lineTo(b,bottom); ctx.stroke(); ctx.setLineDash([]);
+      }
+    }
+    ctx.strokeStyle = color("--brand");
+    for (const p of data.points) {
+      if (!numeric(p.average)) continue;
+      ctx.globalAlpha = 0.35;
+      ctx.beginPath(); ctx.moveTo(x(p.timestamp_ms),y(p.minimum)); ctx.lineTo(x(p.timestamp_ms),y(p.maximum)); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    let previous = null;
+    ctx.beginPath();
+    for (const p of data.points) {
+      if (!numeric(p.average)) { previous = null; continue; }
+      if (!previous || previous.segment !== p.segment || previous.instance_id !== p.instance_id) ctx.moveTo(x(p.timestamp_ms),y(p.average));
+      else ctx.lineTo(x(p.timestamp_ms),y(p.average));
+      previous = p;
+    }
+    ctx.stroke();
+    ctx.fillStyle = color("--brand");
+    for (const p of data.points) {
+      if (numeric(p.average)) { ctx.beginPath(); ctx.arc(x(p.timestamp_ms),y(p.average),1.5,0,Math.PI*2); ctx.fill(); }
+    }
+    ctx.fillStyle = color("--muted");
+    ctx.fillText(new Date(data.from_ms).toISOString().slice(5,16).replace("T"," "), left, height-8);
+    ctx.textAlign = "right";
+    ctx.fillText(new Date(data.to_ms).toISOString().slice(5,16).replace("T"," ") + " UTC", right, height-8);
+  }
+  function inspectHistory(index) {
+    if (!historyData || !historyData.points.length) return;
+    hoverIndex = Math.max(0, Math.min(index, historyData.points.length-1));
+    const p = historyData.points[hoverIndex];
+    const format = historyMetric.value === "hottest_c" ? degree : percent;
+    historyValue.textContent = new Date(p.timestamp_ms).toISOString() + " · Average " + format(p.average) +
+      " · Min " + format(p.minimum) + " · Max " + format(p.maximum) + " · " + p.count + " samples · Instance " + p.instance_id;
+  }
+  async function loadHistory(force) {
+    if (document.hidden) return;
+    const key = [selected, historyMetric.value, historyRange.value].join(":");
+    if (!force && key === historyKey && (historyController || Date.now()-historyLoaded < 30000)) return;
+    cancelHistory();
+    const ticket = historyTicket;
+    historyKey = key;
+    historyData = null;
+    historyValue.textContent = "Hover over the chart or use arrow keys to inspect values.";
+    drawHistory();
+    if (!selected) { historyStatus.textContent = "Select a device."; return; }
+    historyStatus.textContent = "Loading history…";
+    const controller = new AbortController();
+    historyController = controller;
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const end = Date.now();
+    const query = new URLSearchParams({metric:historyMetric.value, from_ms:String(end-Number(historyRange.value)*3600000), to_ms:String(end), max_points:"1200"});
+    try {
+      const response = await fetch("/api/nodes/" + encodeURIComponent(selected) + "/history?" + query,
+        {cache:"no-store", credentials:"same-origin", signal:controller.signal});
+      const doc = await response.json();
+      if (!response.ok) throw new Error(doc.error || "History unavailable");
+      if (doc.schema_version !== 1 || !Array.isArray(doc.points) || doc.points.length > 1200 || !Array.isArray(doc.gaps)) throw new Error("Invalid history response");
+      if (ticket !== historyTicket || document.hidden) return;
+      historyData = doc;
+      historyLoaded = Date.now();
+      historyStatus.textContent = doc.points.length + " history points · Updated " + new Date(historyLoaded).toLocaleTimeString();
+      const reasons = Array.from(new Set(doc.gaps.map(g => g.reason))).join(", ");
+      historyGaps.textContent = "Average line · Min/max bars · Shaded gaps · Dashed restart boundaries" + (reasons ? " · " + reasons : "");
+      drawHistory();
+    } catch (err) {
+      if (ticket === historyTicket && !document.hidden) {
+        historyStatus.textContent = err.message === "history_disabled" ? "History is not enabled on this Hub." :
+          err.message === "history_range_too_dense" ? "Too many discontinuities. Select a shorter time range." : "History unavailable. Live monitoring continues.";
+      }
+    } finally {
+      clearTimeout(timer);
+      if (ticket === historyTicket) historyController = null;
+    }
+  }
+  canvas.addEventListener("pointermove", event => {
+    if (!historyData || !historyData.points.length) return;
+    const box = canvas.getBoundingClientRect();
+    const fraction = Math.max(0, Math.min(1, (event.clientX-box.left-38)/(box.width-48)));
+    const timestamp = historyData.from_ms + fraction*(historyData.to_ms-historyData.from_ms);
+    let nearest = 0;
+    for (let i = 1; i < historyData.points.length; i++) {
+      if (Math.abs(historyData.points[i].timestamp_ms-timestamp) < Math.abs(historyData.points[nearest].timestamp_ms-timestamp)) nearest = i;
+    }
+    inspectHistory(nearest);
+  });
+  canvas.addEventListener("keydown", event => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault(); inspectHistory(hoverIndex + (event.key === "ArrowRight" ? 1 : -1));
+    }
+  });
+  historyMetric.addEventListener("change", () => loadHistory(true));
+  historyRange.addEventListener("change", () => loadHistory(true));
+  document.getElementById("history-refresh").addEventListener("click", () => loadHistory(true));
+  new ResizeObserver(drawHistory).observe(canvas);
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawHistory);
+
   refreshButton.addEventListener("click", refreshFleet);
   document.addEventListener("visibilitychange", function () {
-    if (!document.hidden) refreshFleet();
+    if (!document.hidden) { refreshFleet(); loadHistory(true); }
+    else { cancelHistory(); historyStatus.textContent = "History paused while tab is hidden."; }
   });
   setInterval(refreshFleet, 5000);
   renderSummary();
