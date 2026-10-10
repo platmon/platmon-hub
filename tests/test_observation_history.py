@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from hub.history.projector import ContinuityRecord, project_observation
-from hub.history.schema import SQL
+from hub.history.schema import SQL, VERSION
 from hub.history.store import HistoryStore
 from test_backend import NODE_ID
 from test_history import record
@@ -66,7 +66,7 @@ class ObservationHistoryTests(unittest.TestCase):
         c.close()
         migrated = HistoryStore(old).open()
         try:
-            self.assertEqual(migrated.connection.execute('PRAGMA user_version').fetchone()[0], 2)
+            self.assertEqual(migrated.connection.execute('PRAGMA user_version').fetchone()[0], VERSION)
             self.assertEqual(migrated.connection.execute('SELECT count(*) FROM core_samples').fetchone()[0], 1)
         finally:
             migrated.close()

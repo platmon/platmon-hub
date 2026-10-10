@@ -5,6 +5,7 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from .history.query import QueryError, parameters, query_history
+from .history.events import query_events
 
 
 ASSET_ROOT = Path(__file__).resolve().parent / "web"
@@ -33,7 +34,9 @@ class HubServer(ThreadingHTTPServer):
 class HubHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlsplit(self.path)
-        if path.path.startswith('/api/nodes/') and path.path.endswith('/history') and path.path.count('/') == 4 and not path.fragment:
+        if path.path == '/api/events' and not path.fragment:
+            self._events(path.query)
+        elif path.path.startswith('/api/nodes/') and path.path.endswith('/history') and path.path.count('/') == 4 and not path.fragment:
             self._history(path)
         elif path.query or path.fragment:
             self._reply(404, {"error": "not_found"})
@@ -54,6 +57,15 @@ class HubHandler(BaseHTTPRequestHandler):
             self._reply(200, {"schema_version": 1, "node": node}) if node is not None else self._reply(404, {"error": "not_found"})
         else:
             self._reply(404, {"error": "not_found"})
+
+    def _events(self, query):
+        try:
+            history = self.server.fleet.history
+            if history is None: raise QueryError('history_disabled', 503)
+            if history.snapshot()['schema_version'] is None: raise QueryError('events_unavailable', 503)
+            self._reply(200, query_events(history.path, query))
+        except QueryError as exc:
+            self._reply(exc.status, {'schema_version': 1, 'error': exc.code})
 
     def _history(self, path):
         fleet = self.server.fleet

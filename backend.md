@@ -201,3 +201,27 @@ node with the same UUID waits for that old request to finish: it cannot overlap
 another request for the same node. Other nodes continue independently. The
 existing OS DNS timeout limitation still applies. The watcher stops on shutdown;
 no Hub or agent restart is needed to apply registry changes.
+
+## Events (history schema 3)
+
+With History enabled, Hub records transitions rather than repeated state polls:
+core headline changes (including error/recovery), agent instance changes,
+optional error/recovery by group, registry changes, writer failure/recovery and
+queue overflow. Events carry UUID identity, optional node ID, Hub UTC receipt
+milliseconds, previous/current state and a reason code. Queue-overflow event
+notifications are coalesced to at most one per minute; drop counters retain the
+actual count. Writer error events are best effort during an unavailable DB and
+may be lost with the process before recovery. No alert is sent externally.
+
+`GET /api/events` defaults to the past 24 hours. Optional `from_ms`, `to_ms`,
+`node_id`, `type`, `limit` and `cursor` filter the result. Time ranges are half-open,
+limited to 30 days; limit defaults to 100 and cannot exceed 500. The schema-1
+response contains `events` and `next_cursor`; reuse the same range/filters with
+the returned cursor to page backward without duplicate equal-timestamp entries.
+Malformed filters return 400; disabled/unavailable persistence returns 503.
+Removed-node events remain queryable by UUID. All routes are GET-only.
+
+Event retention defaults to 30 days and is configurable with
+`--event-retention-days`; it is independent of core/optional retention. Schema 2
+upgrades to 3 with a verified backup and transactional migration. Repeated status
+updates, gap changes and their derived events share the writer transaction.

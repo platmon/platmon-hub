@@ -69,13 +69,14 @@ def main(argv=None):
     parser.add_argument("--bind", default="127.0.0.1", help="Hub bind address; loopback by default")
     parser.add_argument("--port", type=tcp_port, default=9787, help="Hub TCP listen port (default: 9787)")
     parser.add_argument("--history-db", help="explicit local SQLite history path (disabled by default)")
+    parser.add_argument("--event-retention-days", type=positive_days, default=30)
     parser.add_argument("--history-retention-days", type=positive_days, default=7)
     parser.add_argument("--no-registry-reload", action="store_true", help="disable automatic registry reload")
     args = parser.parse_args(argv)
     handlers = [RotatingFileHandler(args.log_file, maxBytes=2*1024*1024, backupCount=3, encoding="utf-8")] if args.log_file else None
     logging.basicConfig(level=logging.INFO, handlers=handlers, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     nodes = load_registry(args.nodes)
-    history = HistoryWriter(args.history_db, retention_days=args.history_retention_days) if args.history_db else None
+    history = HistoryWriter(args.history_db, retention_days=args.history_retention_days, event_retention_days=args.event_retention_days) if args.history_db else None
     fleet = Fleet(nodes, history=history, registry_path=None if args.no_registry_reload else args.nodes)
     try:
         server = bind_hub(args.bind, args.port, fleet)
