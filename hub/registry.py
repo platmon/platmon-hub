@@ -18,6 +18,11 @@ class Node:
 def load_registry(path):
     """Read explicit node inventory; no scanning or remote registration."""
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    return validate_registry(raw)
+
+
+def validate_registry(raw):
+    """Validate without writing; shared by loader and local CLI."""
     if not isinstance(raw, dict) or set(raw) != {"nodes"} or not isinstance(raw["nodes"], list):
         raise ValueError("registry must be an object with one nodes list")
     nodes, ids, endpoints = [], set(), set()

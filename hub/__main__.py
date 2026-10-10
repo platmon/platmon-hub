@@ -4,6 +4,7 @@ import argparse
 import errno
 import logging
 import math
+import sys
 from .http import HubServer
 from .registry import load_registry
 from .runtime import Fleet
@@ -51,6 +52,10 @@ def positive_days(value):
 
 
 def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "nodes":
+        from .nodes_cli import main as nodes_main
+        return nodes_main(argv[1:])
     parser = argparse.ArgumentParser(description="platmon-hub read-only backend")
     parser.add_argument("--nodes", required=True, help="path to explicitly managed node registry JSON")
     parser.add_argument("--bind", default="127.0.0.1", help="Hub bind address; loopback by default")
