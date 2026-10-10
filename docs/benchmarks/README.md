@@ -37,3 +37,14 @@ It measures aggregation, bounded retention transactions and checkpoint time. Its
 bytes/sample estimate depends on these exact payloads/indexes and must not be used
 for arbitrary optional payloads. Retention reuses pages; it does not promise that
 the database file shrinks on disk.
+
+## Explicit real-device validation
+
+`python scripts/check-field.py --nodes /private/nodes.json --output /private/field-report.json`
+uses only enabled entries in a supplied registry, starts temporary loopback Hub
+processes and verifies collection/history/UUID continuity across their restart.
+It never modifies agents, registry, installed services or an existing Hub. Default
+workload is 60 seconds plus 15 seconds after process restart. It contacts real
+registered agents with the normal fixed GET paths, so run only with authorization.
+Keep field reports and screenshots outside the repository; publish a reviewed
+aggregate summary, not private configuration or operational logs.
