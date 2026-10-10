@@ -23,10 +23,11 @@ def selection(query):
     return start, end, node
 
 
-def generate(database, output, start, end, node=None):
+def generate(database, output, start, end, node=None, report=False):
     command = [sys.executable, '-m', 'hub', 'export', '--db', str(Path(database).resolve()),
                '--output', str(output), '--from-ms', str(start), '--to-ms', str(end),
                '--timeout', '10', '--max-rows', '200000', '--max-bytes', str(32 * 1024 * 1024)]
+    if report: command.extend(("--reports", "--summary-only"))
     if node:
         command.extend(('--node-id', node))
     # subprocess.run kills and waits for only this owned child on timeout.
@@ -36,7 +37,7 @@ def generate(database, output, start, end, node=None):
         raise ExportError('export failed; reduce range or use the local CLI')
 
 
-def download(handler, query):
+def download(handler, query, report=False):
     try:
         start, end, node = selection(query)
     except ValueError:
@@ -53,7 +54,7 @@ def download(handler, query):
         with tempfile.TemporaryDirectory(prefix='platmon-download-') as directory:
             output = Path(directory) / 'measurements.zip'
             try:
-                generate(history.path, output, start, end, node)
+                generate(history.path, output, start, end, node, report)
             except (OSError, ExportError, subprocess.TimeoutExpired):
                 handler._reply(422, {'error': 'export_failed', 'message': 'Reduce the range or use the local export CLI.'})
                 return
@@ -70,5 +71,8 @@ def download(handler, query):
                     if not data:
                         break
                     handler.wfile.write(data)
+    except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, TimeoutError):
+        # Selection changes and slow peers must release admission and scratch files.
+        pass
     finally:
         handler.server.export_slot.release()

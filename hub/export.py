@@ -54,9 +54,8 @@ def validate_range(start, end):
 def spreadsheet_cell(value):
     # CSV quoting alone does not prevent spreadsheet formula execution. Prefix
     # risky text, including leading whitespace/control characters, with apostrophe.
-    if isinstance(value, str) and (value.startswith("'") or
-            value.lstrip(' \t\r\n').startswith(('=', '+', '-', '@')) or
-            value.startswith(('\t', '\r', '\n'))):
+    if isinstance(value, str) and value and (value[0] in "'=+-@" or
+            value[0].isspace() or ord(value[0]) < 32):
         return "'" + value
     return value
 
@@ -106,7 +105,7 @@ class CsvMember:
 
 
 def export_history(database, output, start, end, node_ids=(), observations=False,
-                   timeout=30, max_rows=5000000, max_bytes=512 * 1024 * 1024):
+                   timeout=30, max_rows=5000000, max_bytes=512 * 1024 * 1024, reports=False, summary_only=False):
     """Stream one consistent SQLite read transaction into an exclusive ZIP file."""
     validate_range(start, end)
     nodes = tuple(dict.fromkeys(identity(n) for n in node_ids))
@@ -128,9 +127,10 @@ def export_history(database, output, start, end, node_ids=(), observations=False
                 'from_ms': start, 'to_ms': end, 'range': '[from_ms,to_ms)',
                 'timestamp': 'Hub receipt UTC; not Agent collection time',
                 'null': 'empty CSV cell; numeric zero remains 0',
-                'text_escape': 'apostrophe prefixed to risky spreadsheet text and leading apostrophes',
+                'text_escape': 'apostrophe prefixed to text starting with formula markers, whitespace/control characters or an apostrophe',
                 'units': {m: ('degrees Celsius' if m == 'hottest_c' else 'percent') for m in METRICS},
-                'observations_included': bool(observations), 'node_filter': list(nodes),
+                'observations_included': bool(observations and not summary_only), 'node_filter': list(nodes),
+                'reports_included': bool(reports or summary_only), 'summary_only': bool(summary_only),
                 'completeness': 'Persisted observations only; missing or expired data is not reconstructed. Open gaps may extend beyond the range.',
                 'files': []}
     try:
@@ -158,7 +158,7 @@ def export_history(database, output, start, end, node_ids=(), observations=False
             if nodes:
                 condition += ' AND node_id IN (' + ','.join('?' for _ in nodes) + ')'
                 params += nodes
-            selected = connection.execute('SELECT DISTINCT node_id FROM core_samples WHERE ' + condition, params)
+            selected = () if summary_only else connection.execute('SELECT DISTINCT node_id FROM core_samples WHERE ' + condition, params)
             for (node,) in selected:
                 identity(node)
                 member = None
@@ -188,8 +188,11 @@ def export_history(database, output, start, end, node_ids=(), observations=False
                 gap_condition += ' AND node_id IN (' + ','.join('?' for _ in nodes) + ')'
                 gap_params += nodes
             write_query('gaps.csv', GAPS, 'SELECT ' + ','.join(GAPS) + ' FROM gaps WHERE ' + gap_condition + ' ORDER BY start_ms,id', gap_params)
-            if observations:
+            if observations and not summary_only:
                 write_query('observations.csv', OBSERVATIONS, 'SELECT ' + ','.join(OBSERVATIONS) + ' FROM observations WHERE ' + condition + ' ORDER BY received_at_ms,node_id,group_name,observation_id', params)
+            if reports or summary_only:
+                from .reports import write_reports
+                write_reports(connection, archive, manifest, budget, start, end, nodes, check, int(time.time() * 1000))
             check()
             archive.writestr('manifest.json', json.dumps(manifest, ensure_ascii=True, allow_nan=False, indent=2).encode('utf-8'))
         connection.rollback()
@@ -213,20 +216,22 @@ def export_history(database, output, start, end, node_ids=(), observations=False
             temp_path.unlink()
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(prog='platmon-hub export')
+def main(argv=None, report=False):
+    parser = argparse.ArgumentParser(prog='platmon-hub report' if report else 'platmon-hub export')
     parser.add_argument('--db', required=True)
     parser.add_argument('--output', required=True, help='new ZIP file; never overwritten')
     parser.add_argument('--from-ms', required=True, type=int)
     parser.add_argument('--to-ms', required=True, type=int)
     parser.add_argument('--node-id', action='append', default=[])
     parser.add_argument('--observations', action='store_true', help='include selected optional data, potentially containing private probe addresses')
+    parser.add_argument('--reports', action='store_true', help='include daily/monthly observed-data summaries')
+    parser.add_argument('--summary-only', action='store_true', help='omit raw Core rows')
     parser.add_argument('--timeout', type=float, default=30)
     parser.add_argument('--max-rows', type=int, default=5000000)
     parser.add_argument('--max-bytes', type=int, default=512 * 1024 * 1024)
     args = parser.parse_args(argv)
     try:
-        result = export_history(args.db, args.output, args.from_ms, args.to_ms, args.node_id, args.observations, args.timeout, args.max_rows, args.max_bytes)
+        result = export_history(args.db, args.output, args.from_ms, args.to_ms, args.node_id, args.observations, args.timeout, args.max_rows, args.max_bytes, args.reports or report, args.summary_only or report)
     except (OSError, sqlite3.Error, ExportError) as exc:
         parser.exit(2, 'Export failed: ' + type(exc).__name__ + '\n')
     print(json.dumps({'output': str(Path(args.output).resolve()), 'format_version': FORMAT_VERSION,

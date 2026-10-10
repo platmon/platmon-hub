@@ -58,6 +58,12 @@ def positive_days(value):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "report" and any(arg.split("=", 1)[0] == "--archive-dir" for arg in argv):
+        from .report_cli import main as report_main
+        return report_main(argv[1:])
+    if argv and argv[0] == "report":
+        from .export import main as report_main
+        return report_main(argv[1:], report=True)
     if argv and argv[0] == "archive":
         from .archive import main as archive_main
         return archive_main(argv[1:])
@@ -81,12 +87,13 @@ def main(argv=None):
     parser.add_argument("--history-db", help="explicit local SQLite history path (disabled by default)")
     parser.add_argument("--archive-dir", help="opt-in dedicated daily CSV ZIP archive directory (requires history)")
     parser.add_argument("--archive-retention-days", type=int, default=90)
+    parser.add_argument("--archive-summary-retention-days", type=int, default=365)
     parser.add_argument("--archive-quota-mib", type=int, default=10240)
     parser.add_argument("--event-retention-days", type=positive_days, default=30)
     parser.add_argument("--history-retention-days", type=positive_days, default=7)
     parser.add_argument("--no-registry-reload", action="store_true", help="disable automatic registry reload")
     args = parser.parse_args(argv)
-    if args.archive_dir and (not args.history_db or not 1 <= args.archive_retention_days <= 3650 or not 1 <= args.archive_quota_mib <= 1048576):
+    if args.archive_dir and (not args.history_db or not 1 <= args.archive_retention_days <= 3650 or not 1 <= args.archive_summary_retention_days <= 3650 or not 1 <= args.archive_quota_mib <= 1048576):
         parser.error("--archive-dir requires history and valid retention/quota bounds")
     archive = None
     admin = None
@@ -115,7 +122,7 @@ def main(argv=None):
         raise
     if args.archive_dir:
         from .archive import ArchiveScheduler
-        archive = ArchiveScheduler(args.history_db, args.archive_dir, args.archive_retention_days, args.archive_quota_mib * 1024 ** 2, min(31, max(1, math.ceil(args.history_retention_days))))
+        archive = ArchiveScheduler(args.history_db, args.archive_dir, args.archive_retention_days, args.archive_quota_mib * 1024 ** 2, min(31, max(1, math.ceil(args.history_retention_days))), args.archive_summary_retention_days)
     server.archive = archive
     previous_sigterm = signal.getsignal(signal.SIGTERM)
     def terminate(signum, frame):

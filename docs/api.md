@@ -75,3 +75,9 @@ CSV ZIP of persisted rows (not graph buckets). `node_id` is optional and may ref
 to a removed registration. See [data-export.md](data-export.md) for format 1,
 limits and errors. All other methods remain 405. Existing security headers and
 request admission apply. Archives are private operational material.
+
+`GET /api/data/report` accepts the same selection and limits as the export route
+and returns daily/monthly summaries of observed samples and recorded transitions.
+`GET /api/data/archive/status` exposes opt-in archival state, failures and the
+last successful generation time, without private directory paths. Neither route
+permits writes or accepts an Agent/network URL.
