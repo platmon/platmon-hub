@@ -33,7 +33,7 @@ The following cases describe **future implementation checks**, not results alrea
 | C12 | Observations 200 with schema **2**, groups `{}`; later Wi-Fi `connected=null` | Empty groups valid; null is unknown (not disconnected). |
 | C13 | Observations stale `storage` group with nonempty old `data`, or 404/mismatched optional schema | Group not current; optional problem isolated from core state. |
 | C14 | Pi without a GPU or agent collector `unavailable`; CPU warmup; missing metrics | Render N/A/unknown rather than zero or a false alert. |
-| C15 | Agent clock jumps, Hub clock changes, or Hub caches a response past `stale_after_ms` | Freshness uses elapsed age + Hub monotonic delta; never wall-clock difference to assert Live. |
+| C15 | Agent clock jumps, Hub clock changes, or Hub caches a response past `stale_after_ms` + poll interval + deadlines; a healthy node polled on schedule never flips to Stale between polls | Freshness uses elapsed age + Hub monotonic delta; never wall-clock difference to assert Live. |
 | C16 | Same display hostname or changed IP on two registered devices | Distinct permanent `node_id`s preserved; no implicit node merge. |
 | C17 | One node hangs or times out during polling | Other node continues within its own polling schedule; finite timeouts and no overlap. |
 | C18 | Malicious/oversized response, strange sensor label or arbitrary URL in a UI field | Bounded response handling; HTML escaped; no arbitrary agent/network fetch. |
