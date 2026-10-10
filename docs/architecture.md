@@ -16,20 +16,27 @@ Out of scope for the initial MVP: agent installation/FOTA/update orchestration, 
 
 ```mermaid
 flowchart LR
-    subgraph Fleet[Independent Linux devices]
-      A["Jetson Orin Nano / platmon :9797"]
-      B["Raspberry Pi / platmon :9797"]
+    Browser["Operator browser"]
+
+    subgraph Hub["platmon-hub: read-only central service (MVP)"]
+        Registry["Durable explicit node registry<br/>(Hub node_id, endpoint)"]
+        Scheduler["Bounded per-node scheduler"]
+        Client["Read-only Agent HTTP client"]
+        Projector["Per-endpoint schema checks<br/>+ freshness & status projection"]
+        Cache["Latest node state<br/>+ last-known values and errors"]
+        UI["Fleet read API / dashboard"]
+
+        Registry --> Scheduler --> Client --> Projector --> Cache --> UI
     end
-    subgraph Hub[platmon-hub service]
-      R[Persistent explicit node registry]
-      P[Bounded per-node HTTP poller]
-      N[Schema validation & state projection]
-      M[Latest-state cache]
-      UI[Read-only Fleet dashboard]
-      R --> P --> N --> M --> UI
+
+    subgraph Agents["Independent platmon v1.0.0 devices"]
+        Orin["Jetson Orin Nano<br/>platmon :9797"]
+        Pi["Raspberry Pi<br/>platmon :9797"]
     end
-    P -->|HTTP GET /api/status, /api/stats; observations less frequently| A
-    P -->|HTTP GET| B
+
+    Browser --> UI
+    Client <-->|"HTTP GET /api/status, /api/stats,<br/>/api/observations"| Orin
+    Client <-->|"HTTP GET"| Pi
 ```
 
 The browser talks **only to Hub**. Hub talks to each configured agent. The agents do not call Hub. The Hub UI must not expose an arbitrary URL-fetch/proxy endpoint.
@@ -72,6 +79,55 @@ Core processing per node:
 4. Independently, GET `/api/observations` on its own slower schedule. Validate schema 2, and keep per-group age and state; disabled/absent groups are not synthetic errors. Failures in observations never prevent a valid core snapshot from being displayed.
 5. Publish a new Hub observation atomically for that node, including Hub receipt timestamp, completion/deadline/result and any recorded error. Never synthesize zero for an absent measurement; never promote cached old values to current.
 
+### Polling sequence (proposed MVP)
+
+The diagram separates core polling from the independently scheduled low-frequency observations. The Hub serves cached projections to browsers; browser requests do **not** trigger device collection. Agent `/api/history` is **not** polled in the MVP.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Viewer as Fleet browser
+    participant Hub as Hub read API / cache
+    participant Poller as Per-node poll scheduler
+    participant Agent as Registered platmon agent
+
+    Viewer->>Hub: GET fleet view
+    Hub-->>Viewer: Last-known nodes, ages, and error reasons
+
+    loop Core schedule: 5 s per node (proposed)
+        Poller->>Agent: GET /api/status
+        alt Valid schema 1, ready=true
+            Agent-->>Poller: state, ready, instance_id, sample
+            Poller->>Agent: GET /api/stats
+            alt Valid schema 1 and current snapshot
+                Agent-->>Poller: instance_id, sequence, data_age_ms, stale_after_ms
+                Poller->>Hub: Project core state, receipt age, and sample identity
+            else 503 / unsupported schema / timeout / invalid response
+                Agent-->>Poller: No current data or failure
+                Poller->>Hub: Apply stale, incompatible, error, or transport-failure policy
+            end
+        else Valid schema 1, ready=false
+            Agent-->>Poller: starting or stale
+            Poller->>Hub: Retain old metrics as noncurrent; skip stats
+        else Transport / protocol / schema failure
+            Poller->>Hub: Record per-node failure; preserve other nodes
+        end
+    end
+
+    loop Independent observations schedule: 10 s per node (proposed)
+        Poller->>Agent: GET /api/observations
+        alt Valid schema 2
+            Agent-->>Poller: Group states, IDs, ages and optional data
+            Poller->>Hub: Update low-frequency groups independently
+        else 404 / incompatible schema / timeout
+            Poller->>Hub: Mark optional-endpoint issue only; keep core status
+        end
+    end
+
+    Viewer->>Hub: Refresh fleet view
+    Hub-->>Viewer: Current projections (no direct Agent access)
+```
+
 Per-node tasks may run concurrently, but no node's slow request may block another node's schedule. Respect finite response size, per-request deadlines and caps on background tasks. Retry with bounded backoff; successful replies reset the consecutive transport failure counter. Avoid automatic retry loops at subsecond rates. Status and metrics should carry separate error information so optional endpoint failures cannot masquerade as transport offline.
 
 ## 5. State and freshness model
@@ -88,6 +144,57 @@ There are **three independent dimensions**, all exposed in diagnostics: (1) Hub-
 | `incompatible` | Unknown/missing mandatory schema or unsupported version | Reachable if HTTP replied, but payload not compatible. |
 | `error` | Reachable HTTP endpoint returning invalid/error responses (e.g., non-200 status, invalid JSON) | Protocol/server error, not confirmed network outage. |
 | `unknown` | Device not yet polled or insufficient evidence after the first unreachable attempt | Checking or connection uncertain. |
+
+### Fleet headline decision flow (proposed)
+
+This flow derives the **Hub's headline state**, not platmon's internal collector state. `/api/status` is mandatory and `/api/stats` is requested only when `ready=true`. An optional `/api/observations` failure is intentionally outside this core decision path. `offline` requires repeated *core transport* failures, not an HTTP 503 or an unsupported sensor.
+
+```mermaid
+flowchart TD
+    Poll["Poll /api/status, then /api/stats only if ready=true"]
+    Transport{"Core transport failure<br/>(socket, DNS, timeout)?"}
+    Repeat{"At least 2 consecutive<br/>transport failures?"}
+    Prior{"Previously had usable node data?"}
+    Offline["OFFLINE<br/>Hub cannot reach agent"]
+    Unknown["UNKNOWN<br/>Not enough evidence yet"]
+    Stale["STALE<br/>Last-known values not current"]
+    NoCurrent{"Stats 503 after ready=true?"}
+    Protocol{"HTTP error, malformed JSON,<br/>or inconsistent ready/state?"}
+    Schema{"Supported required<br/>endpoint schema?"}
+    AgentState{"Agent status.state / ready?"}
+    Starting["STARTING<br/>Agent reachable, no current sample"]
+    Stats{"Stats sample valid and<br/>age within stale_after_ms?"}
+    Degraded{"Agent state is degraded?"}
+    Live["LIVE<br/>Current core sample"]
+    Partial["PARTIAL<br/>Current core, degraded collection"]
+    Incompatible["INCOMPATIBLE<br/>Required API contract unsupported"]
+    Error["ERROR<br/>Reachable protocol/server failure"]
+
+    Poll --> Transport
+    Transport -->|Yes| Repeat
+    Repeat -->|Yes| Offline
+    Repeat -->|No| Prior
+    Prior -->|No| Unknown
+    Prior -->|Yes| Stale
+    Transport -->|No| NoCurrent
+    NoCurrent -->|Yes| Stale
+    NoCurrent -->|No| Protocol
+    Protocol -->|Yes| Error
+    Protocol -->|No| Schema
+    Schema -->|No| Incompatible
+    Schema -->|Yes| AgentState
+    AgentState -->|"starting / false"| Starting
+    AgentState -->|"stale / false"| Stale
+    AgentState -->|"ready / true"| Stats
+    AgentState -->|"degraded / true"| Stats
+    AgentState -->|Other| Error
+    Stats -->|No| Stale
+    Stats -->|Yes| Degraded
+    Degraded -->|Yes| Partial
+    Degraded -->|No| Live
+```
+
+The transport-failure count resets on a successful **valid** status response. For a valid status with `ready=true`, the reported `sample.data_age_ms` is evaluated against `sample.stale_after_ms` from `/api/stats`, with cached age increasing by Hub monotonic elapsed time. A stats timeout uses the transport-failure policy; a stats 503 means the current sample disappeared, **not** that the host is offline. Malformed/unsupported low-frequency observations remain an independent optional diagnostic.
 
 On the **first** transport failure after valid data, the headline becomes `stale` (last-known, with poll error); if there has never been a valid response it remains `unknown` (with poll error). After the second consecutive transport failure, `offline`. A successful valid status response resets that counter, then uses the agent's own state. Response/schema errors are not counted as proof that the host is offline.
 
