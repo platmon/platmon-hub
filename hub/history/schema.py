@@ -66,3 +66,13 @@ ALTER TABLE continuity ADD COLUMN headline TEXT;
 PRAGMA user_version=3;
 """
 VERSION = 3
+
+MIGRATION_4 = """
+CREATE TABLE alert_states (
+    node_id TEXT NOT NULL, rule_id TEXT NOT NULL, received_at_ms INTEGER NOT NULL,
+    config_json TEXT NOT NULL, state_json TEXT NOT NULL,
+    PRIMARY KEY (node_id, rule_id)
+);
+PRAGMA user_version=4;
+"""
+VERSION = 4

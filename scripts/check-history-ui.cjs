@@ -33,7 +33,12 @@ const os = require('node:os');
       } else if (url.pathname === '/api/nodes') await route.fulfill({json:{schema_version:1,nodes}});
       else await route.fulfill({json:{schema_version:1,node:nodes.find(n=>url.pathname.endsWith(n.node_id))}});
     });
+    await page.route('**/api/alerts', route => route.fulfill({json:{schema_version:1,enabled:true,ready:true,total:1,
+      alerts:[{node_id:ids[0],rule_id:'<script>bad</script>',state:'Active',severity:'critical',known:false,changed_at_ms:Date.now()}]}}));
     await page.goto(base);
+    await page.waitForFunction(()=>document.getElementById('alerts-list').children.length === 1);
+    assert.equal(await page.locator('#alerts-list script').count(), 0);
+    assert.match(await page.locator('#alerts-list').textContent(), /awaiting current evidence/);
     await page.waitForFunction(()=>document.getElementById('history-status').textContent.includes('history points'));
     assert.equal(await page.locator('.node-card').count(), 2);
     assert.equal(await page.locator('.node-card img').count(), 0);

@@ -1,0 +1,11 @@
+{
+  "rules": [
+    {"id": "node-offline", "condition": "offline", "duration_seconds": 30, "recovery_seconds": 15, "cooldown_seconds": 300},
+    {"id": "core-stale", "condition": "stale", "duration_seconds": 30, "recovery_seconds": 15},
+    {"id": "cpu-high", "condition": "cpu_percent", "warning": 85, "critical": 95, "hysteresis": 5, "duration_seconds": 60},
+    {"id": "memory-high", "condition": "memory_percent", "warning": 85, "critical": 95},
+    {"id": "disk-high", "condition": "disk_percent", "warning": 85, "critical": 95},
+    {"id": "temperature-high", "condition": "hottest_c", "warning": 80, "critical": 90},
+    {"id": "optional-error", "condition": "optional_error", "duration_seconds": 30}
+  ]
+}

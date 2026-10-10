@@ -6,7 +6,8 @@ import uuid
 from pathlib import Path
 
 from ..filelock import FileLock
-from .schema import SQL, VERSION, MIGRATION_2, MIGRATION_3
+from ..alerts import AlertRecord
+from .schema import SQL, VERSION, MIGRATION_2, MIGRATION_3, MIGRATION_4
 from .projector import ObservationRecord, ContinuityRecord, EventRecord
 
 
@@ -32,7 +33,7 @@ class HistoryStore:
             if version == 0 and not tables:
                 self._migrate(SQL)
                 version = 1
-            elif version not in (1, 2, VERSION):
+            elif version not in (1, 2, 3, VERSION):
                 raise SchemaError('unsupported_history_schema')
             columns = [r[1] for r in c.execute('PRAGMA table_info(core_samples)')]
             if columns != ['node_id', 'instance_id', 'sequence', 'received_at_ms', 'data_age_ms',
@@ -44,10 +45,12 @@ class HistoryStore:
                 expected.update(('observations', 'gaps', 'continuity', 'hub_sessions'))
             if version >= 3:
                 expected.add('events')
+            if version >= 4:
+                expected.add('alert_states')
             tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if tables != expected:
                 raise SchemaError('invalid_history_layout')
-            for target, script in ((2, MIGRATION_2), (3, MIGRATION_3)):
+            for target, script in ((2, MIGRATION_2), (3, MIGRATION_3), (4, MIGRATION_4)):
                 if version >= target:
                     continue
                 backup_path = self.path.with_name(self.path.name + '.v' + str(version) + '-backup-' + uuid.uuid4().hex)
@@ -153,6 +156,16 @@ class HistoryStore:
         c.execute('BEGIN IMMEDIATE')
         try:
             for record in records:
+                if isinstance(record, AlertRecord):
+                    if record.delete:
+                        c.execute('DELETE FROM alert_states WHERE node_id=? AND rule_id=?', (record.node_id, record.rule_id))
+                    else:
+                        c.execute('INSERT INTO alert_states VALUES (?,?,?,?,?) ON CONFLICT(node_id,rule_id) DO UPDATE SET '
+                                  'received_at_ms=excluded.received_at_ms,config_json=excluded.config_json,state_json=excluded.state_json',
+                                  (record.node_id, record.rule_id, record.received_at_ms, record.config_json, record.state_json))
+                    self._insert_event(record.event)
+                    counts['persisted'] += 1
+                    continue
                 if isinstance(record, EventRecord):
                     inserted = self._insert_event(record)
                     counts['persisted'] += inserted

@@ -225,3 +225,11 @@ Event retention defaults to 30 days and is configurable with
 `--event-retention-days`; it is independent of core/optional retention. Schema 2
 upgrades to 3 with a verified backup and transactional migration. Repeated status
 updates, gap changes and their derived events share the writer transaction.
+
+## Alerts
+
+`--alerts FILE` enables local rules when `--history-db` is also configured.
+`GET /api/alerts` returns bounded, read-only alert state with independent Hub
+schema 1. `alert_transition` is available through the Events API. SQLite schema 4
+stores current alert configuration/state atomically with transitions. See
+[alert evaluation and restoration policy](docs/alerts.md).

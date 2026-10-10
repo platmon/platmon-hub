@@ -131,7 +131,7 @@ def project_observation(node_id, instance_id, name, group, received_at_ms):
 
 
 EVENT_TYPES = ('core_state', 'agent_restart', 'optional_error', 'optional_recovered',
-               'history_writer_error', 'history_writer_recovered', 'history_queue_overflow', 'registry_changed')
+               'history_writer_error', 'history_writer_recovered', 'history_queue_overflow', 'registry_changed', 'alert_transition')
 
 
 @dataclass(frozen=True)
