@@ -53,7 +53,7 @@ class NodesCliTests(unittest.TestCase):
         import os
         real = os.replace
         def fail(source, destination):
-            if str(destination) == str(self.path):
+            if Path(destination).resolve() == self.path.resolve():
                 raise PermissionError('injected file lock')
             return real(source, destination)
         with patch('hub.nodes_cli.os.replace', side_effect=fail):
