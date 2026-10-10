@@ -6,9 +6,11 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         python: ["3.9", "3.13"]
     steps:
       - uses: actions/checkout@v4
@@ -19,3 +21,25 @@ jobs:
       - run: python -m compileall -q hub tests
       - name: Check browser JavaScript syntax
         run: node --check hub/web/app.js
+      - name: Windows loopback soak harness smoke (no device targets)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $binary = (Get-Command python).Source
+          $server = Start-Process -FilePath $binary -ArgumentList @("-m", "hub", "--nodes", "nodes.example.json", "--port", "9787") -PassThru
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 40; $i++) {
+              if ($server.HasExited) { throw "Hub exited before healthy" }
+              try {
+                $result = Invoke-RestMethod "http://127.0.0.1:9787/healthz" -TimeoutSec 1
+                if ($result.status -eq "ok") { $ready = $true; break }
+              } catch { }
+              Start-Sleep -Milliseconds 250
+            }
+            if (-not $ready) { throw "Hub did not become healthy" }
+            ./scripts/soak-windows.ps1 -HubPid $server.Id -DurationSeconds 4 -SampleIntervalSeconds 1 -ExpectedNodeCount 0 -OutputDirectory (Join-Path $env:RUNNER_TEMP "soak-smoke")
+          } finally {
+            if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
+          }
