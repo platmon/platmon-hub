@@ -155,3 +155,30 @@ Node module path and an empty Hub listening on a loopback test port, run
 API responses and checks nulls, selection cancellation, hidden-tab pause, failure
 isolation and light/dark mobile layout. Playwright is verification tooling only,
 not a Hub dependency. Screenshots are written to the OS temporary directory.
+
+## Local registry CLI
+
+Manage the same explicit registry without editing JSON by hand:
+
+```sh
+python -m hub nodes --file /path/to/nodes.json list
+python -m hub nodes --file /path/to/nodes.json validate
+python -m hub nodes --file /path/to/nodes.json add --name "Lab node" --endpoint http://192.0.2.1:9797
+python -m hub nodes --file /path/to/nodes.json rename NODE_UUID "New name"
+python -m hub nodes --file /path/to/nodes.json set-endpoint NODE_UUID http://192.0.2.2:9797
+python -m hub nodes --file /path/to/nodes.json disable NODE_UUID
+python -m hub nodes --file /path/to/nodes.json enable NODE_UUID
+python -m hub nodes --file /path/to/nodes.json remove NODE_UUID
+```
+
+Add generates a UUID; all other changes retain it. `add --disabled` registers an
+inactive target. Remove only removes the registry entry; it never deletes history.
+All commands preserve existing limits and endpoint validation and never contact
+an agent. Writes take a nonblocking adjacent process lock, validate the entire
+result, save the previous bytes as `nodes.json.bak`, fsync a temporary file, then
+atomically replace the registry. Invalid input or replace failure leaves the
+original intact. Cooperative CLI writers cannot overwrite each other; manual
+editors must coordinate with the operator. The latest backup is a recovery copy,
+not an indefinite audit log. Protect the registry, backup and directory with OS
+permissions/ACLs; no web management API is provided. Runtime reload follows in
+the next stage; this CLI alone does not force running Hub to reload.
