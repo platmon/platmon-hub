@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
+from .history.query import QueryError, parameters, query_history
 
 
 ASSET_ROOT = Path(__file__).resolve().parent / "web"
@@ -32,7 +33,9 @@ class HubServer(ThreadingHTTPServer):
 class HubHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlsplit(self.path)
-        if path.query or path.fragment:
+        if path.path.startswith('/api/nodes/') and path.path.endswith('/history') and path.path.count('/') == 4 and not path.fragment:
+            self._history(path)
+        elif path.query or path.fragment:
             self._reply(404, {"error": "not_found"})
         elif path.path in ASSETS:
             self._static(*ASSETS[path.path])
@@ -48,6 +51,23 @@ class HubHandler(BaseHTTPRequestHandler):
             self._reply(200, {"schema_version": 1, "node": node}) if node is not None else self._reply(404, {"error": "not_found"})
         else:
             self._reply(404, {"error": "not_found"})
+
+    def _history(self, path):
+        fleet = self.server.fleet
+        node_id = path.path.split('/')[3]
+        if fleet.get_node(node_id) is None:
+            self._reply(404, {'error': 'not_found'})
+            return
+        try:
+            args = parameters(path.query)
+            if fleet.history is None:
+                raise QueryError('history_disabled', 503)
+            if fleet.history.snapshot()['schema_version'] is None:
+                raise QueryError('history_unavailable', 503)
+            result = query_history(fleet.history.path, node_id, *args)
+            self._reply(200, result)
+        except QueryError as exc:
+            self._reply(exc.status, {'schema_version': 1, 'error': exc.code})
 
     def do_POST(self):
         self._reply(405, {"error": "read_only"})

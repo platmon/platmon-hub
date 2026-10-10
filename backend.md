@@ -114,3 +114,24 @@ asserting network failure. Evidence boundaries are approximate. Storage-loss
 summaries are memory-bounded and persisted on recovery; crash during DB failure
 can lose the reason, leaving an unobserved gap. Repeated Offline polls extend one
 open gap, not new synthetic samples. A group failure never changes Core health.
+
+### History read API
+
+`GET /api/nodes/{node_id}/history?metric=cpu_percent&from_ms=0&to_ms=3600000&max_points=1200`
+queries Hub receipt UTC milliseconds in the half-open range `[from_ms,to_ms)`.
+Use actual epoch milliseconds for an operating installation. Metrics are a fixed
+allowlist: `cpu_percent`, `gpu_percent`, `memory_percent`, `disk_percent`,
+`hottest_c`. The maximum span is seven days and the maximum point count is 1,200.
+Unknown/duplicate parameters, invalid bounds and metrics return 400; unregistered
+nodes return 404; disabled/unavailable history returns 503.
+
+Schema 1 returns `node_id`, metric/range, `points` and approximate `gaps`. Points
+carry `timestamp_ms`, `instance_id`, `segment`, `average`, `minimum`, `maximum`
+and the count of non-null samples. Nulls, generation changes, observed gaps and
+silence above 15 seconds break segments. All-null buckets have count 0 and null
+aggregates. Average is accompanied by extrema so spikes remain visible. The
+first receipt in each bucket supplies its timestamp. If preserving boundaries
+would exceed the requested point budget, 422 `history_range_too_dense` asks the
+caller to narrow the time range. Queries stream over a separate read connection
+with a two-second deadline and bounded result memory; they never trigger polls.
+Query parameters remain forbidden on static assets and other existing routes.
