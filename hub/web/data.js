@@ -26,13 +26,15 @@
     controller = new AbortController();
     const timeout = setTimeout(() => { if (current === ticket && controller) controller.abort(); }, 5000);
     try {
-      const [nodes, history] = await Promise.all(["/api/nodes", "/api/history/status"].map(async path => {
+      const [nodes, history, archives] = await Promise.all(["/api/nodes", "/api/history/status", "/api/data/archive/status"].map(async path => {
         const response = await fetch(path, {cache:"no-store", credentials:"omit", signal:controller.signal});
         if (!response.ok) throw new Error("Could not load data options.");
         return response.json();
       }));
       if (current !== ticket) return;
       if (nodes.schema_version !== 1 || !Array.isArray(nodes.nodes)) throw new Error("Unsupported node response.");
+      const archive = archives.archive;
+      document.getElementById("data-archive-status").textContent = archive && archive.enabled ? "Automatic archives: " + archive.state + (archive.created ? " · " + archive.created : "") + " · failures: " + archive.failures : "Automatic archives are disabled. Enable --archive-dir to keep daily files.";
       const selected = select.value;
       select.replaceChildren(new Option("All stored devices", ""));
       for (const node of nodes.nodes) select.append(new Option(node.name, node.node_id));
