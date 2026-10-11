@@ -1,6 +1,6 @@
 # Local web device management
 
-[Documentation index](README.md)
+[Documentation index](../README.md) · [User guide](README.md)
 
 The Dashboard has separate **Monitoring** and **Devices** tabs. Devices lists the
 registry and supports add, edit, enable/disable and remove. The forms use name,

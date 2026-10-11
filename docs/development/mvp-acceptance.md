@@ -1,26 +1,26 @@
 # platmon-hub MVP acceptance and verification
 
-[Documentation index](README.md) · [Development checks](development.md)
+[Documentation index](../README.md) · [Development guide](README.md)
 
 **Status:** Regression and release checklist for the implemented preview. Automated tests are present; recorded manual evidence is linked below. This document does not certify a complete release acceptance pass.
 
 **Targets:** one Jetson Orin Nano and one Raspberry Pi running [platmon v1.0.0](https://github.com/platmon/platmon/releases/tag/v1.0.0).
 
-**Related:** [Architecture](architecture.md), [API contract](agent-contract.md), [ADR-0001](adr/0001-http-pull-and-device-identity.md).
+**Related:** [Architecture](../design/architecture.md), [API contract](../design/agent-contract.md), [ADR-0001](../design/adr/0001-http-pull-and-device-identity.md).
 
-This checklist covers the original Fleet contract. The implemented candidate also includes History, registry hot reload, events, internal alerts, packaging, and data exports/reports. For those features and current rollout gates, use the [release policy](release.md), [schema](history-schema.md), [API](api.md), and [export guide](data-export.md).
+This checklist covers the original Fleet contract. The implemented candidate also includes History, registry hot reload, events, internal alerts, packaging, and data exports/reports. For those features and current rollout gates, use the [release policy](release.md), [schema](../design/history-schema.md), [API](../design/api.md), and [export guide](../guides/data-export.md).
 
 ## 1. Verification sources
 
 | Area | Existing coverage or procedure | Evidence boundary |
 | --- | --- | --- |
-| Registry, protocol, state, scheduler, and HTTP client/API | [test_backend.py](../tests/test_backend.py) | Synthetic fixtures and local HTTP servers. |
-| Dashboard metrics, assets, and rendering safeguards | [test_dashboard.py](../tests/test_dashboard.py) | Projection and source/HTTP checks; also inspect the browser manually. |
-| Listener errors and CLI port validation | [test_ports.py](../tests/test_ports.py) | Controlled bind failures and CLI checks. |
-| Poll duration metadata | [test_poll_timing.py](../tests/test_poll_timing.py) | Fake-clock timing fixtures, not hardware performance. |
+| Registry, protocol, state, scheduler, and HTTP client/API | [test_backend.py](../../tests/test_backend.py) | Synthetic fixtures and local HTTP servers. |
+| Dashboard metrics, assets, and rendering safeguards | [test_dashboard.py](../../tests/test_dashboard.py) | Projection and source/HTTP checks; also inspect the browser manually. |
+| Listener errors and CLI port validation | [test_ports.py](../../tests/test_ports.py) | Controlled bind failures and CLI checks. |
+| Poll duration metadata | [test_poll_timing.py](../../tests/test_poll_timing.py) | Fake-clock timing fixtures, not hardware performance. |
 | Two-device hardware behavior | Hardware procedure below and [Windows soak](windows-soak.md) | Recorded evidence applies only to that equipment, build, and workload. |
 
-Run automated checks with the [development guide](development.md#local-checks). The scenarios below are regression and acceptance requirements, not a statement that every scenario has a current passing hardware result.
+Run automated checks with the [development guide](README.md#local-checks). The scenarios below are regression and acceptance requirements, not a statement that every scenario has a current passing hardware result.
 
 ## 2. Contract scenarios
 
@@ -64,7 +64,7 @@ Do not intentionally break a production device to satisfy tests. Use fixtures fo
 
 ## 4. Nonfunctional acceptance before an MVP release
 
-- **Isolation:** measure the operating bounds for slow/unreachable agents, saturation, and shutdown. Verify the concurrency cap and no-overlap behavior; the current socket timeouts do not provide strict DNS cancellation (see [runtime limits](architecture.md#default-polling-and-state-semantics)).
+- **Isolation:** measure the operating bounds for slow/unreachable agents, saturation, and shutdown. Verify the concurrency cap and no-overlap behavior; the current socket timeouts do not provide strict DNS cancellation (see [runtime limits](../design/architecture.md#default-polling-and-state-semantics)).
 - **Fidelity:** sample identity, elapsed freshness, nulls, data gaps, per-group state and schema mismatch are visible and not silently normalized away.
 - **Recovery:** static registry survives Hub restart; process `instance_id` changes do not create duplicate managed nodes.
 - **Read-only:** Hub only performs predeclared GETs to preconfigured agent endpoints; registration is an operator action, not a browser-side proxy.

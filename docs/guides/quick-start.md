@@ -1,6 +1,6 @@
 # Quick Start
 
-[Documentation index](README.md) · [Setup and operations](backend.md)
+[Documentation index](../README.md) · [User guide](README.md) · [Setup and operations](setup.md)
 
 Requires **Git and Python 3.9+** on the Windows or Linux computer that will run Hub. No third-party Python dependencies, package installation, or frontend build are required. This first run uses an empty registry, so you can check the dashboard without any agents.
 
@@ -63,8 +63,8 @@ The responses should be `{"status":"ok"}` and `{"schema_version":1,"nodes":[]}` 
 
 ## 4. Add your devices
 
-Follow [Register agents and start monitoring](backend.md#register-agents-and-start-monitoring) to create or reuse a private registry, register already-running agents with the local CLI, and start Hub using that file. Valid registry edits then reload automatically by default. The example registry stays empty; Hub does not discover or install agents.
+Follow [Register agents and start monitoring](setup.md#register-agents-and-start-monitoring) to create or reuse a private registry, register already-running agents with the local CLI, and start Hub using that file. Valid registry edits then reload automatically by default. The example registry stays empty; Hub does not discover or install agents.
 
-For file locations, see the [repository layout](development.md#repository-layout). If startup fails, use [first-run troubleshooting](troubleshooting.md).
+For file locations, see the [repository layout](../development/README.md#repository-layout). If startup fails, use [first-run troubleshooting](troubleshooting.md).
 
 For a saved Windows launcher with History and the Devices tab, see [Windows quick start and login startup](operations.md#windows-quick-start-and-login-startup). For an installed CLI or supervised service, follow [installation and operations](operations.md).

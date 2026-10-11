@@ -1,6 +1,6 @@
 # Fleet resource budget and measured limits
 
-[Documentation index](README.md)
+[Documentation index](../README.md) · [Development guide](README.md)
 
 Evidence: [predeclared experiment plan](benchmarks/plan.md) and committed
 [raw synthetic results](benchmarks/README.md), measured 2026-10-10 UTC.

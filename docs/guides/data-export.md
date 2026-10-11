@@ -1,6 +1,6 @@
 # History data exports
 
-[Documentation index](README.md)
+[Documentation index](../README.md) · [User guide](README.md)
 
 History is already persisted in SQLite when `--history-db` is enabled. Exports
 provide analysis material; they are not a replacement for SQLite backups.

@@ -1,10 +1,10 @@
 # platmon agent consumption contract for Hub
 
-[Documentation index](README.md) · [Architecture](architecture.md) · [Hub API](api.md)
+[Documentation index](../README.md) · [Design reference](README.md) · [Architecture](architecture.md) · [Hub API](api.md)
 
 **Status:** Agent contract baseline consumed by the current Hub preview. **Source of truth:** the published [platmon v1.0.0 HTTP API](https://github.com/platmon/platmon/blob/v1.0.0/docs/api.md), [observations](https://github.com/platmon/platmon/blob/v1.0.0/docs/observations.md) and [history](https://github.com/platmon/platmon/blob/v1.0.0/docs/history.md). All links are pinned to the agent release, not its evolving `main` branch. This document does **not** introduce or change endpoints in platmon.
 
-This document describes upstream semantics and the Hub consumption policy. The implemented health/freshness checks are in [hub/protocol.py](../hub/protocol.py) and [hub/state.py](../hub/state.py); it is not a claim that every optional upstream field is validated. Hub-facing response fields are documented separately in the [Hub API reference](api.md).
+This document describes upstream semantics and the Hub consumption policy. The implemented health/freshness checks are in [hub/protocol.py](../../hub/protocol.py) and [hub/state.py](../../hub/state.py); it is not a claim that every optional upstream field is validated. Hub-facing response fields are documented separately in the [Hub API reference](api.md).
 
 ## 1. Compatibility matrix
 

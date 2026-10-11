@@ -1,6 +1,6 @@
 # Reproducing synthetic measurements
 
-[Documentation index](../README.md)
+[Documentation index](../../README.md)
 
 These files contain generated loopback-only measurements, not private registry or
 operational logs. The [experiment plan](plan.md) defines targets and the time budget

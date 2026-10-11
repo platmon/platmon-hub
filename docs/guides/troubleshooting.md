@@ -1,6 +1,6 @@
 # Troubleshooting
 
-[Documentation index](README.md)
+[Documentation index](../README.md) · [User guide](README.md)
 
 Start with `/healthz`, `/api/history/status`, `/api/registry/status` and local logs.
 A responsive process can still have unavailable devices or storage. Keep registry,
@@ -11,7 +11,7 @@ sharing evidence.
 | --- | --- |
 | `python` missing or opens Microsoft Store | Use an installed Python 3.9+ interpreter; try `py -3` on Windows or `python3` on Linux. |
 | `No module named hub` | For a source run, return to the repository root containing `hub/`. For a wheel, check the active Python environment. |
-| Registry file not found | Check the current directory and exact `--nodes` path. Use [setup](backend.md#register-agents-and-start-monitoring) to create a new registry without replacing an existing one. |
+| Registry file not found | Check the current directory and exact `--nodes` path. Use [setup](setup.md#register-agents-and-start-monitoring) to create a new registry without replacing an existing one. |
 | Zero devices | The Quick Start example is intentionally empty. Add agents to your private registry and run Hub using that file. |
 | Bind fails | Check port ownership and permissions; choose an explicit free port. Hub never silently changes ports. |
 | 403 from Hub | Use localhost/loopback Host; configure the proxy's upstream Host as documented. |

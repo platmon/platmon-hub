@@ -1,6 +1,6 @@
 # Install and operate platmon-hub
 
-[Documentation index](README.md)
+[Documentation index](../README.md) · [User guide](README.md)
 
 Hub runs on Python 3.9+ using only its standard library. Build tooling uses
 setuptools/wheel; neither is a service dependency. A wheel is preferable to a
@@ -11,17 +11,52 @@ package-name collisions. The current `0.2.0rc1` candidate is not a release tag.
 
 ## Build and local install
 
-```sh
-python -m pip wheel --no-deps --wheel-dir /path/to/wheels .
-python -m venv /path/to/venv
-/path/to/venv/bin/python -m pip install --no-deps /path/to/wheels/platmon_hub-VERSION-py3-none-any.whl
-/path/to/venv/bin/platmon-hub --version
+Run from the **repository root** containing `pyproject.toml`. These examples use
+your user directory for the venv and a fresh temporary directory for each wheel
+build. The wheel filename is selected automatically, so no path or version
+placeholder needs replacing. Python needs `pip` and `venv` support; build tooling
+may be downloaded from the package index.
+
+**Windows PowerShell** (use `py -3` in place of `python` if needed):
+
+```powershell
+$wheelDir = Join-Path $env:TEMP ('platmon-hub-wheels-' + [guid]::NewGuid())
+$venvDir = Join-Path $env:LOCALAPPDATA 'platmon-hub\venv'
+python -m pip wheel --no-deps --wheel-dir "$wheelDir" .
+if ($LASTEXITCODE -ne 0) { throw 'Wheel build failed' }
+python -m venv "$venvDir"
+if ($LASTEXITCODE -ne 0) { throw 'Virtual environment creation failed' }
+$wheel = @(Get-ChildItem -LiteralPath $wheelDir -Filter 'platmon_hub-*.whl')
+if ($wheel.Count -ne 1) { throw 'Expected exactly one Hub wheel' }
+$venvPython = Join-Path $venvDir 'Scripts\python.exe'
+& $venvPython -m pip install --no-deps $wheel[0].FullName
+if ($LASTEXITCODE -ne 0) { throw 'Wheel installation failed' }
+& (Join-Path $venvDir 'Scripts\platmon-hub.exe') --version
 ```
 
-On Windows use `venv\Scripts\python.exe` and `venv\Scripts\platmon-hub.exe`.
+**Linux** (the parentheses keep variables and `set -e` local to this block):
+
+```sh
+(
+set -e
+wheel_dir="$(mktemp -d -t platmon-hub-wheels.XXXXXX)"
+venv_dir="$HOME/.local/share/platmon-hub/venv"
+python3 -m pip wheel --no-deps --wheel-dir "$wheel_dir" .
+python3 -m venv "$venv_dir"
+"$venv_dir/bin/python" -m pip install --no-deps "$wheel_dir"/platmon_hub-*.whl
+"$venv_dir/bin/platmon-hub" --version
+)
+```
+
+Change only `$venvDir` / `venv_dir` if you want another installation location.
+These defaults are for the current user. For systemd or the Local Service task
+below, use the machine-wide paths and account permissions in that section.
+The installed docs and deployment scripts are under the venv's
+`share/platmon-hub`; installing a wheel does not start Hub or register startup.
+
 Keep code/venv, registry, logs and database in separate directories. Start with an
 empty registry (`{"nodes": []}`), then add only approved endpoints using the
-[local CLI](backend.md#local-registry-cli). UUIDs live in the registry, not in
+[local CLI](setup.md#local-registry-cli). UUIDs live in the registry, not in
 code or the venv. Default binding remains `127.0.0.1:9787`; choose another fixed
 port explicitly with `--port`, never 0 or an automatic fallback.
 
@@ -171,5 +206,5 @@ with a local executable substitution. These are not reboot or account-permission
 tests. Short foreground collection and process restart with three real Agents passed on
 Linux and native Windows. Actual Windows 11/systemd installation, reboot startup,
 installed-service upgrades and machine-specific ACLs remain to be verified before
-operational rollout. See [candidate evidence](release.md).
+operational rollout. See [candidate evidence](../development/release.md).
 Release tagging and operational deployment require separate approval.

@@ -45,9 +45,14 @@ def main():
             files=package.namelist()
             assert 'hub/web/app.js' in files and 'hub/web/assets/brand/favicon.svg' in files
             assert any(name.endswith('/share/platmon-hub/nodes.example.json') for name in files)
-            assert any(name.endswith('/docs/operations.md') for name in files)
-            assert all(any(name.endswith('/docs/benchmarks/'+plot.name) for name in files)
-                       for plot in (root/'docs'/'benchmarks').glob('*.png'))
+            expected_docs={path.relative_to(root).as_posix()
+                           for path in (root/'docs').rglob('*')
+                           if path.is_file() and path.suffix in ('.md', '.json', '.png')}
+            packaged_docs={name.split('/share/platmon-hub/',1)[1] for name in files
+                           if '/share/platmon-hub/docs/' in name}
+            assert packaged_docs==expected_docs, (
+                f'packaged documentation mismatch: missing={sorted(expected_docs-packaged_docs)}, '
+                f'unexpected={sorted(packaged_docs-expected_docs)}')
             assert all(any(name.endswith('/deploy/'+script) for name in files)
                        for script in ('nginx.conf.example', 'start-windows.ps1', 'install-windows-startup.ps1'))
             assert not any(name.endswith('nodes.json') or 'soak-results' in name for name in files)

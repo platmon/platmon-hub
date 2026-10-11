@@ -1,6 +1,6 @@
 # platmon-hub architecture
 
-[Documentation index](README.md)
+[Documentation index](../README.md) · [Design reference](README.md)
 
 This describes the implemented `0.2.0rc1` candidate. Agent and Hub application/API
 versions are independent; [the consumption contract](agent-contract.md) pins the
@@ -105,13 +105,13 @@ limits; forced termination may lose queued records. An Agent remains independent
 ## Operations and limits
 
 OS-authenticated local administrators manage config/services. Proxy viewers receive
-read-only access. Opt-in [local web registration](web-registration.md) enables
+read-only access. Opt-in [local web registration](../guides/web-registration.md) enables
 explicit Registry management routes for trusted local users with strict Origin
 and non-simple request-header checks. There is no arbitrary URL proxy, discovery, external notification delivery
 or Agent control. Default loopback
-and canonical brand assets remain unchanged. See [security](security.md).
+and canonical brand assets remain unchanged. See [security](../guides/security.md).
 
-Installation/backup/restore are documented in [operations](operations.md).
+Installation/backup/restore are documented in [operations](../guides/operations.md).
 Cross-platform CI, actual three-device checks and synthetic experiments are evidence
 for the candidate, not proof of unattended production stability. See
-[resource budget](resource-budget.md) and [remaining release gates](release.md).
+[resource budget](../development/resource-budget.md) and [remaining release gates](../development/release.md).

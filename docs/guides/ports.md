@@ -1,6 +1,6 @@
 # Hub listener port policy and bind-failure diagnosis
 
-[Documentation index](README.md) · [Setup and operations](backend.md#access-boundary)
+[Documentation index](../README.md) · [User guide](README.md) · [Setup and operations](setup.md#access-boundary)
 
 ## Defaults and boundary
 
@@ -11,7 +11,7 @@
 
 Hub binds to **`127.0.0.1:9787`** by default. Open the dashboard using `http://127.0.0.1:9787/`. Do not expose the Hub directly to an untrusted network: this MVP has **no authentication or TLS**. A non-loopback bind needs an operator-managed authenticated, encrypted reverse proxy or other approved protection.
 
-Run Hub commands from the **repository root**, after creating your registry with the [setup guide](backend.md#register-agents-and-start-monitoring). Choose a different port explicitly:
+Run Hub commands from the **repository root**, after creating your registry with the [setup guide](setup.md#register-agents-and-start-monitoring). Choose a different port explicitly:
 
 ```powershell
 # Windows PowerShell (use py -3 instead of python if needed)

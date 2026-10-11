@@ -1,12 +1,12 @@
 # Hub setup and backend behavior
 
-[Documentation index](README.md)
+[Documentation index](../README.md) · [User guide](README.md)
 
 This is a **read-only, explicitly registered Fleet backend and Dashboard** for platmon agents, with optional SQLite history, events and internal alerts. Registry administration is available through the local CLI and opt-in local-only web management routes. It never installs or controls Agents.
 
 ## Setup
 
-Follow the [Quick Start](quick-start.md) for an empty dashboard. Source-checkout commands below run from the **repository root**, containing `hub/` and `nodes.example.json`, even though this document lives in `docs/`. An installed wheel provides `platmon-hub` in place of `python -m hub`; see [installation](operations.md).
+Follow the [Quick Start](quick-start.md) for an empty dashboard. Source-checkout commands below run from the **repository root**, containing `hub/` and `nodes.example.json`, even though this document lives in `docs/guides/`. An installed wheel provides `platmon-hub` in place of `python -m hub`; see [installation](operations.md).
 
 ## Register agents and start monitoring
 
@@ -57,7 +57,7 @@ The browser polls Hub `/api/nodes` every 5 s while visible and `/api/nodes/<node
 
 The Hub's `/api/nodes` summary adds an `overview` object with optional `cpu_percent`, `gpu_percent`, `memory_percent`, `disk_percent`, and `hottest_c` fields; unavailable readings are JSON null. This is an additive, Hub-owned schema-1 projection. It is computed only from the last accepted agent snapshot; callers must consult `data_current` and `headline` before calling the values live. The detail response includes the same `overview` and original cached `stats` / independent `observations`.
 
-History and internal alerts are opt-in. Authenticated remote viewing requires the separately configured proxy; see [security](security.md). Synthetic capacity and actual three-device evidence have explicit [limits](resource-budget.md). Default bind remains loopback.
+History and internal alerts are opt-in. Authenticated remote viewing requires the separately configured proxy; see [security](security.md). Synthetic capacity and actual three-device evidence have explicit [limits](../development/resource-budget.md). Default bind remains loopback.
 
 ## Hub endpoints (Hub schema 1)
 
@@ -85,11 +85,11 @@ The Hub calls only three fixed GET paths: `/api/status` (schema 1), `/api/stats`
 
 The scheduler rotates nodes fairly at capacity; time spent on a failed request does not block polling workers for other nodes while capacity is available. A success of `/api/status` followed by a `/api/stats` timeout is **not** treated as two consecutive unreachable cycles. Optional endpoint failures are reported separately from core health. Unknown schemas fail explicitly for required endpoints; unsupported `observations` never cause core Offline.
 
-**Runtime limitation:** `urllib` socket timeouts do not forcibly cancel a blocked operating-system DNS resolution. Poll work stays bounded to 16 workers; shutdown may block waiting on such a resolver. True end-to-end hard deadlines or process isolation require separate implementation/measurement before untrusted large-fleet deployment. The scheduler applies bounded exponential backoff to failed core transport polls, bounded retry delay to optional failures, and up to 0.5 s completion-time jitter. No polls overlap per node; precise cadences are not guaranteed under saturation. Actual three-device read-only collection and restart checks passed on Linux and Windows; see [measured limits](resource-budget.md). These are not production capacity guarantees.
+**Runtime limitation:** `urllib` socket timeouts do not forcibly cancel a blocked operating-system DNS resolution. Poll work stays bounded to 16 workers; shutdown may block waiting on such a resolver. True end-to-end hard deadlines or process isolation require separate implementation/measurement before untrusted large-fleet deployment. The scheduler applies bounded exponential backoff to failed core transport polls, bounded retry delay to optional failures, and up to 0.5 s completion-time jitter. No polls overlap per node; precise cadences are not guaranteed under saturation. Actual three-device read-only collection and restart checks passed on Linux and Windows; see [measured limits](../development/resource-budget.md). These are not production capacity guarantees.
 
 ## Development validation
 
-Local checks, package validation, CI, and browser test tooling are documented in the [development guide](development.md).
+Local checks, package validation, CI, and browser test tooling are documented in the [development guide](../development/README.md).
 
 ## Optional core history
 
@@ -107,7 +107,7 @@ error diagnostics; these counters reset with Hub. Shutdown attempts a five-secon
 writer drain; queued/uncommitted data is not crash-durable. Do not share a DB
 between Hub processes or place it on a network share. Back up with SQLite's backup
 API or after clean shutdown, not by copying an active DB without its WAL.
-See [the storage contract](adr/0002-hub-history-storage.md).
+See [the storage contract](../design/adr/0002-hub-history-storage.md).
 
 ### Observations and discontinuities (introduced in history schema 2)
 
@@ -121,7 +121,7 @@ No probe is configured or triggered by Hub. Core sequence is never an optional I
 
 Schema 1 upgrades transactionally to schema 2 after a verified adjacent
 `.v1-backup-<unique-id>` snapshot. Keep that backup for rollback with Hub stopped;
-older software cannot open newer schemas. The current schema is 4; see [migration history](history-schema.md). New tables record group publications,
+older software cannot open newer schemas. The current schema is 4; see [migration history](../design/history-schema.md). New tables record group publications,
 continuity evidence, gaps and Hub sessions. Core and optional history share the
 configured retention period (default seven days). Diagnostic persisted/submitted
 counts include continuity records as well as metric records.

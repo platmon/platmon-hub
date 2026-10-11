@@ -1,6 +1,6 @@
 # Internal alerts
 
-[Documentation index](README.md)
+[Documentation index](../README.md) · [User guide](README.md)
 
 Enable with `--history-db /path/history.db --alerts /path/alerts.json`.
 Review `alerts.example.json` against each device's safe operating temperatures;
