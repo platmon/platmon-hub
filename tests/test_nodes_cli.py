@@ -1,7 +1,9 @@
 import contextlib
 import io
 import json
+import os
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -46,6 +48,17 @@ class NodesCliTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 update_registry(self.path, 'add', name='busy', endpoint='http://192.0.2.2:9797')
         self.assertEqual(self.path.read_bytes(), original)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows sharing violation')
+    def test_registry_open_elsewhere_briefly_is_retried(self):
+        identity = self.add()
+        reader = self.path.open('rb')
+        release = threading.Timer(0.2, reader.close)
+        release.start()
+        self.addCleanup(release.join)
+        self.addCleanup(reader.close)
+        update_registry(self.path, 'rename', node_id=identity, name='Renamed while open')
+        self.assertEqual(load_registry(self.path)[0].name, 'Renamed while open')
 
     def test_atomic_replace_failure_preserves_original_and_backup(self):
         identity = self.add()
