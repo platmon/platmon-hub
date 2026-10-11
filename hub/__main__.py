@@ -93,7 +93,7 @@ def main(argv=None):
     if argv and argv[0] == "nodes":
         from .nodes_cli import main as nodes_main
         return nodes_main(argv[1:])
-    parser = argparse.ArgumentParser(description="platmon-hub read-only backend")
+    parser = argparse.ArgumentParser(prog="platmon-hub", description="platmon-hub read-only backend")
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("--log-file", help="optional UTF-8 rotating local log file")
     parser.add_argument("--nodes", required=True, help="path to explicitly managed node registry JSON")
