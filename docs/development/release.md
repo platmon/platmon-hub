@@ -1,6 +1,6 @@
 # Release candidate and upgrade policy
 
-[Documentation index](README.md)
+[Documentation index](../README.md) · [Development guide](README.md)
 
 `0.2.0rc1` is a candidate application version, not an assertion of production
 acceptance. Versions follow PEP 440; candidate increments precede a stable release.
@@ -40,7 +40,7 @@ examples and operational documentation under `share/platmon-hub`.
 The migration test starts with schema 1, preserves zero/null measurements through
 schema 4, makes an online backup, preserves UUID through CLI editing and restores
 a schema-1 backup independently. It does not simulate an installed OS service upgrade.
-See [operations](operations.md) for service-specific paths and commands.
+See [operations](../guides/operations.md) for service-specific paths and commands.
 
 ## Evidence and remaining acceptance gates
 

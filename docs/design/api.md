@@ -1,6 +1,6 @@
 # Hub read-only API
 
-[Documentation index](README.md)
+[Documentation index](../README.md) · [Design reference](README.md)
 
 Hub HTTP schema 1 is independent of Agent schemas and SQLite schema 4. JSON missing
 measurements are `null`, never synthetic zero. UTC timestamps use Unix milliseconds.
@@ -19,7 +19,7 @@ Responses disable caching. The browser contacts the Hub only.
 
 Node routes use the canonical registry UUID. Unknown nodes return 404. A removed
 node's stored data remains in SQLite, but the node History route requires a current
-registry entry. See [backend](backend.md) for live payload and freshness semantics.
+registry entry. See [backend](../guides/setup.md) for live payload and freshness semantics.
 
 ## History
 
@@ -56,25 +56,25 @@ unavailable persistence returns 503.
 
 Alerts expose at most 500 non-Normal records plus diagnostics, with no mutation or
 acknowledgement endpoint. Queue admission is not proof of a committed alert event.
-Rules and restoration behavior are defined in [alerts](alerts.md).
+Rules and restoration behavior are defined in [alerts](../guides/alerts.md).
 
 ## Access and limits
 
 POST, PUT, PATCH and DELETE return 405 by default. The opt-in local-only
 registry POST exceptions and local listing are documented in
-[web registration](web-registration.md). Static assets use exact paths without query
+[web registration](../guides/web-registration.md). Static assets use exact paths without query
 strings. Requests must use an accepted loopback Host header. Limits include 32
 connections, five-second socket inactivity, 4 KiB request targets, 16 KiB parsed
 headers and a shared GET budget of 100/second with burst 200. Excess load can return
 429 or 503; clients should back off. These controls do not replace TLS or user
-authentication. See [security](security.md) for the optional proxy and OS-local
+authentication. See [security](../guides/security.md) for the optional proxy and OS-local
 administration boundary.
 
 ## Data downloads
 
 `GET /api/data/export?from_ms=...&to_ms=...&node_id=...` downloads a bounded
 CSV ZIP of persisted rows (not graph buckets). `node_id` is optional and may refer
-to a removed registration. See [data-export.md](data-export.md) for format 1,
+to a removed registration. See [data-export.md](../guides/data-export.md) for format 1,
 limits and errors. All other methods remain 405. Existing security headers and
 request admission apply. Archives are private operational material.
 

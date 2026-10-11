@@ -1,11 +1,11 @@
 # ADR-0001: HTTP Pull from independent agents and Hub-owned node identity
 
-[Documentation index](../README.md)
+[Documentation index](../../README.md) · [Design reference](../README.md)
 
 - **Status:** Implemented in the current preview
 - **Date:** 2026-10-10
 - **Scope:** platmon-hub initial fleet MVP (Jetson Orin Nano and Raspberry Pi)
-- **Related:** [Architecture](../architecture.md), [Agent contract](../agent-contract.md), [MVP acceptance](../mvp-acceptance.md)
+- **Related:** [Architecture](../architecture.md), [Agent contract](../agent-contract.md), [MVP acceptance](../../development/mvp-acceptance.md)
 
 ## Context
 

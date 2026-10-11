@@ -4,7 +4,7 @@
 
 This candidate is prepared in source and CI artifacts. It has not been tagged,
 published as a release or deployed by this work. Operational acceptance gates are
-listed in [release policy](docs/release.md).
+listed in [release policy](docs/development/release.md).
 
 - SQLite history with a bounded asynchronous writer, deduplication, retention,
   independent observations, restart/gap evidence and migrations through schema 4.

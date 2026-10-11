@@ -1,6 +1,6 @@
 # Extended soak and performance investigation (2026-10-11 KST)
 
-[Documentation index](../README.md)
+[Documentation index](../../README.md) · [Development guide](../README.md)
 
 All three 90-minute acceptance runs completed successfully under the
 [predeclared plan](long-soak-plan.md). The source runtime baseline was `0.2.0rc1`,

@@ -1,6 +1,6 @@
 # Configuration and local administration
 
-[Documentation index](README.md)
+[Documentation index](../README.md) · [User guide](README.md)
 
 All paths are explicit; keep private state outside the installation directory.
 The runtime uses Python 3.9+ standard libraries. See [operations](operations.md)

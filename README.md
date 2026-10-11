@@ -34,13 +34,13 @@ python3 -m hub --nodes ./nodes.example.json
 
 Keep the terminal running and open **[http://127.0.0.1:9787/](http://127.0.0.1:9787/)** on the same computer. Zero devices is expected. Stop with **Ctrl+C**.
 
-Next: [register agents](docs/backend.md#register-agents-and-start-monitoring), or follow the [detailed Quick Start](docs/quick-start.md) for expected output and API checks. Windows users with an existing registry can use the [saved launcher and login startup](docs/operations.md#windows-quick-start-and-login-startup).
+Next: [register agents](docs/guides/setup.md#register-agents-and-start-monitoring), or follow the [detailed Quick Start](docs/guides/quick-start.md) for expected output and API checks. Windows users with an existing registry can use the [saved launcher and login startup](docs/guides/operations.md#windows-quick-start-and-login-startup).
 
 ## Documentation
 
 - [Documentation index](docs/README.md) — all guides and project status.
-- [Setup and operations](docs/backend.md) — registration, dashboard, and history.
-- [Installation and services](docs/operations.md) — packages, Windows/Linux startup, backup, and upgrades.
-- [Development and validation](docs/development.md) — source layout, local checks, and CI.
+- [User guide](docs/guides/README.md) — setup, background execution, automatic startup, and operations.
+- [Design reference](docs/design/README.md) — architecture, API, storage schema, and design decisions.
+- [Development and validation](docs/development/README.md) — source layout, local checks, and CI.
 
 [Apache License 2.0](LICENSE).

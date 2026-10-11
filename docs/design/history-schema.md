@@ -1,9 +1,9 @@
 # History schema and durability
 
-[Documentation index](README.md)
+[Documentation index](../README.md) · [Design reference](README.md)
 
 SQLite `PRAGMA user_version` is **4**, independent of application and HTTP versions.
-The executable schema is [hub/history/schema.py](../hub/history/schema.py); the
+The executable schema is [hub/history/schema.py](../../hub/history/schema.py); the
 [ADR](adr/0002-hub-history-storage.md) records initial design decisions.
 
 | Version | Added storage |
@@ -48,7 +48,7 @@ Core and optional retention defaults to 7 days, events to 30 days, with hourly
 bounded transactional cleanup. Alert snapshots are current restoration state,
 not a full time series. Deletion does not shrink the file immediately; do not
 run uncontrolled VACUUM against an operating Hub. WAL/checkpoint and disk budgets
-must be measured for the deployment; see [resource budget](resource-budget.md).
+must be measured for the deployment; see [resource budget](../development/resource-budget.md).
 
 ## Migration and recovery
 
@@ -60,6 +60,6 @@ lower `user_version` manually. There is no automatic schema downgrade.
 Use `platmon-hub backup --db PATH --output NEW_PATH` for a consistent online copy;
 it refuses overwrite and verifies the backup. Never copy only the live main DB
 while ignoring WAL. Restore to a clean path after all users of that database have
-stopped. Preserve the old DB and sidecars for diagnosis. The [release policy](release.md)
-and [operations guide](operations.md) describe version selection and data-loss
+stopped. Preserve the old DB and sidecars for diagnosis. The [release policy](../development/release.md)
+and [operations guide](../guides/operations.md) describe version selection and data-loss
 consent for restoring an older backup.

@@ -1,6 +1,6 @@
 # Access boundaries
 
-[Documentation index](README.md)
+[Documentation index](../README.md) · [User guide](README.md)
 
 The Hub has no public authentication endpoint. HTTP is read-only by default;
 [local web registration](web-registration.md) is an explicitly enabled local-only

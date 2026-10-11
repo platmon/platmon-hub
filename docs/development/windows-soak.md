@@ -1,12 +1,12 @@
 # Windows 30-minute fleet soak
 
-[Documentation index](README.md) · [Development and CI](development.md#ci) · [Acceptance criteria](mvp-acceptance.md)
+[Documentation index](../README.md) · [Development guide](README.md) · [Development and CI](README.md#ci) · [Acceptance criteria](mvp-acceptance.md)
 
 Run this **read-only** test on the Windows PC already hosting Hub. It polls only Hub's local API, never scans or controls Orin/Pi agents. Runtime uses Python stdlib; the measurement harness uses PowerShell 7 and Windows Get-Process.
 
 ## Reproduce on Windows (Orin Nano + Raspberry Pi)
 
-1. Complete the [Hub setup](backend.md#register-agents-and-start-monitoring) with your two devices. Preserve your existing private `nodes.json` and use the already-running device Agents. Open both terminals in the **repository root** containing `hub/` and `scripts/`, not in `docs/`.
+1. Complete the [Hub setup](../guides/setup.md#register-agents-and-start-monitoring) with your two devices. Preserve your existing private `nodes.json` and use the already-running device Agents. Open both terminals in the **repository root** containing `hub/` and `scripts/`, not in `docs/`.
 2. In terminal A start Hub: `python -m hub --nodes "$env:LOCALAPPDATA\platmon-hub\nodes.json"` (or `py -3 -m hub --nodes "$env:LOCALAPPDATA\platmon-hub\nodes.json"` if using the Windows launcher). If the registry is outside the checkout, supply its actual absolute path. Keep this terminal running.
 3. In another PowerShell 7 terminal, identify the **Hub Python process PID** (not the shell or another Python process):
 
@@ -16,7 +16,7 @@ Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
   Select-Object ProcessId, CommandLine
 ```
 
-4. Check basic script wiring first, replacing `12345` with the actual PID. The script is [scripts/soak-windows.ps1](../scripts/soak-windows.ps1), relative to the repository root:
+4. Check basic script wiring first, replacing `12345` with the actual PID. The script is [scripts/soak-windows.ps1](../../scripts/soak-windows.ps1), relative to the repository root:
 
 ```powershell
 ./scripts/soak-windows.ps1 -HubPid 12345 -DurationSeconds 15 -ExpectedNodeCount 2

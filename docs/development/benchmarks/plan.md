@@ -1,6 +1,6 @@
 # Synthetic experiment plan (2026-10-10)
 
-[Documentation index](../README.md)
+[Documentation index](../../README.md) · [Development guide](../README.md)
 
 Baseline: current merged PR #16, local Linux x86-64 / Python 3.12.3, 10 synthetic
 agents, default 5s core / 10s optional polling, 16 workers, queue 2048, schema 4.
