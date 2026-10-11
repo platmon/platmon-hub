@@ -256,6 +256,39 @@ class WebRegistrationTests(unittest.TestCase):
             path='/api/admin/nodes/' + first + '/update')[0], 409)
         self.assertEqual(self.registry.read_bytes(), original)
 
+    def test_rename_keeps_stored_endpoint_spelling(self):
+        for stored, host, port in (('http://MyPi.Local:9797', 'mypi.local', 9797), ('http://192.0.2.20', '192.0.2.20', 80)):
+            with self.subTest(stored=stored):
+                identity = '00000000-0000-0000-0000-000000000009'
+                self.registry.write_text(json.dumps({'nodes': [dict(node_id=identity, name='Pi', endpoint=stored, enabled=True)]}), encoding='utf-8')
+                node = self.request(method='GET')[2]['nodes'][0]
+                status = self.request(dict(name='Renamed', host=host, port=port, enabled=True, expected=node),
+                                      path='/api/admin/nodes/' + identity + '/update')[0]
+                self.assertEqual(status, 200)
+                self.assertEqual(load_registry(self.registry)[0].endpoint, stored)
+                self.assertEqual(load_registry(self.registry)[0].name, 'Renamed')
+        node = self.request(method='GET')[2]['nodes'][0]
+        self.request(dict(name='Moved', host='192.0.2.20', port=9797, enabled=True, expected=node),
+                     path='/api/admin/nodes/' + identity + '/update')
+        self.assertEqual(load_registry(self.registry)[0].endpoint, 'http://192.0.2.20:9797')
+
+    def test_unusable_registry_exits_with_guidance(self):
+        root = Path(self.directory.name)
+        broken = root / 'broken.json'
+        invalid = root / 'invalid.json'
+        broken.write_text('{"nodes": [', encoding='utf-8')
+        invalid.write_text('{"nodes": [{}]}', encoding='utf-8')
+        for path, text in ((root / 'missing.json', 'registry file not found'),
+                           (broken, 'registry is not valid JSON (line 1'),
+                           (invalid, 'invalid registry (invalid node record)')):
+            with self.subTest(text=text):
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as exit:
+                    main(['--nodes', str(path), '--port', '9'])
+                self.assertEqual(exit.exception.code, 2)
+                self.assertIn(text, stderr.getvalue())
+                self.assertNotIn('Traceback', stderr.getvalue())
+
     def test_concurrent_edit_has_one_winner_and_stale_retry_is_rejected(self):
         from concurrent.futures import ThreadPoolExecutor
         identity = self.request()[2]['node_id']

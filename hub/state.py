@@ -9,6 +9,8 @@ from . import protocol
 from .history.projector import Acceptance, CoreRecord
 
 
+OPTIONAL_UNSUPPORTED = ("unsupported", "incompatible")
+
 
 def _finite(value):
     return type(value) in (int, float) and math.isfinite(value)
@@ -224,7 +226,8 @@ class NodeState:
                             obs["stale"] = True
             optional_alert_error = None
             if self._optional_error is not None:
-                optional_alert_error = True
+                # Contract: a missing or unknown optional endpoint is unsupported, not an error.
+                optional_alert_error = None if self._optional_error in OPTIONAL_UNSUPPORTED else True
             elif self._last_observations is not None:
                 observed = list(self._last_observations['groups'].values())
                 current_groups = [g for g in observed if g['state'] not in ('unsupported', 'unavailable') and

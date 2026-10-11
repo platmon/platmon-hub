@@ -31,6 +31,11 @@ class NoCurrentData(AgentFailure):
     category = "stale"
 
 
+class OptionalUnsupported(AgentFailure):
+    """Older agents answer 404 for an optional endpoint; not an error."""
+    category = "unsupported"
+
+
 def _nonnegative(value):
     return type(value) in (float, int) and math.isfinite(value) and value >= 0
 
@@ -116,6 +121,8 @@ class HttpAgentClient:
         except urllib.error.HTTPError as exc:
             if exc.code == 503 and path == "/api/stats":
                 raise NoCurrentData("no current stats") from exc
+            if exc.code == 404 and path == "/api/observations":
+                raise OptionalUnsupported("optional endpoint not provided") from exc
             if exc.code in (301, 302, 303, 307, 308):
                 raise ProtocolFailure("redirect disallowed") from exc
             raise ServerFailure(f"HTTP {exc.code}") from exc

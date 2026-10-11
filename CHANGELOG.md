@@ -17,6 +17,11 @@ listed in [release policy](docs/development/release.md).
   recovery, cooldown and conservative restart behavior.
 - Optional tested TLS/auth proxy, HTTP admission bounds, loopback Host protection
   and redacted access logs. No writable HTTP administration or Agent control.
+- Fixes: an Agent without `/api/observations` (404) or with an unknown observations
+  schema is reported as unsupported/incompatible and no longer raises
+  `optional_error`; an unusable `--nodes` file exits with a short explanation
+  instead of a traceback; a web rename keeps the stored endpoint spelling
+  (host case, implicit `:80`) instead of recording an endpoint change.
 - Synthetic 10/50/100-node evidence, a bounded ten-minute soak and fault tests;
   real three-device read-only checks on Linux and native Windows.
 
