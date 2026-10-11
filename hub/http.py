@@ -19,6 +19,7 @@ ASSETS = {
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/assets/styles.css": ("styles.css", "text/css; charset=utf-8"),
     "/assets/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/assets/data.js": ("data.js", "text/javascript; charset=utf-8"),
     "/assets/devices.js": ("devices.js", "text/javascript; charset=utf-8"),
     "/favicon.svg": ("assets/brand/favicon.svg", "image/svg+xml"),
     "/assets/brand/platmon-icon-light.svg": ("assets/brand/platmon-icon-light.svg", "image/svg+xml"),
@@ -36,6 +37,7 @@ class HubServer(ThreadingHTTPServer):
         if admin is not None and (address[0] != '127.0.0.1' or fleet.watcher is None or
                 fleet.watcher.path.resolve() != admin.registry_path):
             raise ValueError('web registry administration requires loopback and the same active registry watcher')
+        self.export_slot = threading.BoundedSemaphore(1)
         self.admin = admin
         self.admin_budget = RequestBudget(rate=0.2, burst=5)
         self.fleet = fleet
@@ -134,7 +136,10 @@ class HubHandler(BaseHTTPRequestHandler):
         path = self._request_path()
         if path is None:
             return
-        if path.path == '/api/events' and not path.fragment:
+        if path.path == '/api/data/export' and not path.fragment:
+            from .data_api import download
+            download(self, path.query)
+        elif path.path == '/api/events' and not path.fragment:
             self._events(path.query)
         elif path.path.startswith('/api/nodes/') and path.path.endswith('/history') and path.path.count('/') == 4 and not path.fragment:
             self._history(path)

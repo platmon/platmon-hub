@@ -126,6 +126,7 @@ class DashboardHttpTests(unittest.TestCase):
                            ("/assets/styles.css", "text/css"),
                            ("/assets/app.js", "text/javascript"),
                            ("/assets/devices.js", "text/javascript"),
+                           ("/assets/data.js", "text/javascript"),
                            ("/favicon.svg", "image/svg+xml"),
                            ("/assets/brand/platmon-icon-light.svg", "image/svg+xml"),
                            ("/assets/brand/platmon-icon-dark.svg", "image/svg+xml"),
@@ -147,6 +148,7 @@ class DashboardHttpTests(unittest.TestCase):
         self.assertEqual(self.request("GET", "/favicon.svg?x=1")[0], 404)
         self.assertEqual(self.request("GET", "/assets/app.js?target=x")[0], 404)
         self.assertEqual(self.request("GET", "/assets/devices.js?target=x")[0], 404)
+        self.assertEqual(self.request("GET", "/assets/data.js?target=x")[0], 404)
         self.assertEqual(self.request("GET", "/api/proxy?url=http://example.com")[0], 404)
         self.assertEqual(self.request("POST", "/")[0], 405)
 
