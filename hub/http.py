@@ -2,6 +2,7 @@
 
 import json
 import logging
+import socket
 import threading
 import time
 from pathlib import Path
@@ -43,6 +44,9 @@ class HubServer(ThreadingHTTPServer):
         self.fleet = fleet
         self.request_budget = RequestBudget()
         self._requests = threading.BoundedSemaphore(32)
+        # An IPv6 literal such as ::1 needs an IPv6 socket; names and IPv4 stay IPv4.
+        if ':' in address[0]:
+            self.address_family = socket.AF_INET6
         super().__init__(address, HubHandler)
 
     def get_request(self):
@@ -104,7 +108,25 @@ class HubHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         logging.getLogger('hub.access').warning('HTTP protocol error or timeout')
 
+    def _drain_body(self):
+        # A response sent before a declared request body arrives (405, 403, 429...)
+        # makes the late body hit a closed socket; Windows then resets the
+        # connection and the client loses the response. Read small bodies first.
+        if getattr(self, '_body_drained', False):
+            return
+        self._body_drained = True
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+        except (AttributeError, TypeError, ValueError):
+            return
+        if 0 < length <= 65536:
+            try:
+                self.rfile.read(length)
+            except OSError:
+                self.close_connection = True
+
     def end_headers(self):
+        self._drain_body()
         self.send_header('X-Frame-Options', 'DENY')
         self.send_header('Referrer-Policy', 'no-referrer')
         self.send_header('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
@@ -255,6 +277,7 @@ class HubHandler(BaseHTTPRequestHandler):
             self._reply(415, {'error': 'invalid_body', 'message': 'JSON content is required.'})
             return
         try:
+            self._body_drained = True
             raw = self.rfile.read(length)
             if len(raw) != length:
                 raise ValueError('incomplete body')
@@ -272,6 +295,17 @@ class HubHandler(BaseHTTPRequestHandler):
 
     do_PUT = do_PATCH = do_DELETE = do_OPTIONS = _read_only
 
+    def do_HEAD(self):
+        # Uptime checkers probe with HEAD. Downloads would run a full export, so refuse them.
+        if urlsplit(self.path).path in ('/api/data/export', '/api/data/report'):
+            self._read_only()
+        else:
+            self.do_GET()
+
+    def _body(self, data):
+        if self.command != 'HEAD':
+            self.wfile.write(data)
+
     def _static(self, filename, media_type):
         # Exact route-to-file mapping: no user-selected paths or directory traversal.
         data = (ASSET_ROOT / filename).read_bytes()
@@ -281,7 +315,7 @@ class HubHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
-        self.wfile.write(data)
+        self._body(data)
 
     def _reply(self, status, body):
         output = json.dumps(body, allow_nan=False, separators=(",", ":")).encode("utf-8")
@@ -291,4 +325,4 @@ class HubHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(output)))
         self.end_headers()
-        self.wfile.write(output)
+        self._body(output)
