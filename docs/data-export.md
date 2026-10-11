@@ -95,3 +95,50 @@ leaving the tab or hiding the page. It retains no downloaded archive after the
 browser save is initiated. Live Fleet requests are suspended on other tabs;
 Agent polling remains active. No directory listing, user-selected output path,
 network URL, new write API or external chart service is introduced.
+
+## Automatic daily archives (opt-in)
+
+Start Hub with a dedicated new/empty archive directory:
+
+```powershell
+python -m hub --nodes .\nodes.json --history-db "$env:LOCALAPPDATA\platmon-hub\history.db" --archive-dir "$env:LOCALAPPDATA\platmon-hub\archives"
+```
+
+Archives are disabled unless `--archive-dir` is supplied. Defaults are
+`--archive-retention-days 90` and `--archive-quota-mib 10240` (10 GiB of recognized
+ZIPs). The directory is owned by Hub, marked `.platmon-archives-v1` and protected
+by a cross-process lock. Do not place unrelated files or manual exports there.
+Unrecognized files are never deleted and do not count toward the archive quota;
+this is not a quota on the whole disk, SQLite database, or other applications.
+
+Each pass creates at most one complete UTC day's `YYYY-MM-DD.zip` in an isolated
+worker. It starts with the oldest available date within the database retention
+window (at most 31 days), excluding today. Successful catch-up passes run a minute
+apart; caught-up work runs hourly. Errors retry in a minute and are visible through
+`GET /api/data/archive/status`; logs contain exception types rather than private
+paths or data. Shutdown cancels and waits for the owned worker before closing DB.
+
+Daily files are published only when complete. Age retention removes recognized
+old files; quota pressure removes oldest recognized files even within 90 days.
+A persisted checkpoint prevents re-creating quota-pruned archives. If one day's
+ZIP exceeds the quota or worker budget, it is not published and the checkpoint
+does not advance. Increase the budget or split manual exports as appropriate.
+Default scheduled files omit optional observations; an explicit standalone
+`archive --observations` includes the selected optional data.
+
+For an OS-scheduled job or a manual bounded pass:
+
+```powershell
+python -m hub archive --db "$env:LOCALAPPDATA\platmon-hub\history.db" --directory "$env:LOCALAPPDATA\platmon-hub\archives"
+```
+
+The standalone command defaults to seven days of catch-up; `--catchup-days` can
+be 1–31. It uses the same ownership, checkpoint, retention and quota policy.
+Multiple jobs never write concurrently. The normal Windows launcher remains
+unchanged and does not silently enable archives.
+
+This is separate from SQLite retention: a failed/offline archiver does not stop
+database pruning. Already-expired data cannot be recovered. Dates with no stored
+rows produce empty material, not generated samples. A forcibly killed Hub may
+leave `.job-*` scratch directories; remove them only after confirming no archive
+job is running. Treat the directory as private data and back up important exports.

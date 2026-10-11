@@ -152,6 +152,9 @@ class HubHandler(BaseHTTPRequestHandler):
         elif path.path == "/api/registry/status":
             watcher = self.server.fleet.watcher
             self._reply(200, {"schema_version": 1, "registry": watcher.snapshot() if watcher else {"enabled": False}})
+        elif path.path == "/api/data/archive/status":
+            archive = getattr(self.server, "archive", None)
+            self._reply(200, {"schema_version": 1, "archive": archive.snapshot() if archive else {"enabled": False}})
         elif path.path == "/api/history/status":
             history = self.server.fleet.history
             self._reply(200, {"schema_version": 1, "history": history.snapshot() if history else {"enabled": False, "state": "disabled"}})
