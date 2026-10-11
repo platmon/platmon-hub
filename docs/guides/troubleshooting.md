@@ -12,7 +12,9 @@ sharing evidence.
 | `python` missing or opens Microsoft Store | Use an installed Python 3.9+ interpreter; try `py -3` on Windows or `python3` on Linux. |
 | `No module named hub` | For a source run, return to the repository root containing `hub/`. For a wheel, check the active Python environment. |
 | Registry file not found | Check the current directory and exact `--nodes` path. Use [setup](setup.md#register-agents-and-start-monitoring) to create a new registry without replacing an existing one. |
-| Windows launcher fails at `Resolve-Path` | Pass the existing file with `-Registry`. From the repository root, `.\start-hub.cmd -Registry .\nodes.json -Check` checks a registry in that checkout without starting Hub. See [launcher setup](operations.md#windows-quick-start-and-login-startup) for the user-directory alternative and saving the corrected path. |
+| Windows launcher fails at `Resolve-Path` | Pass the existing file with `-Registry`. From the repository root, `.\start-hub.cmd -Registry .\nodes.json -Check` checks a registry in that checkout without starting Hub. See [launcher setup](windows-startup.md) for the user-directory alternative and saving the corrected path. |
+| Startup shortcut says `Hub was not started` | Registration succeeded. [Open the registered shortcut](windows-startup.md#3-start-hub-now) to start now, or wait for the next Windows login. |
+| `Start-ScheduledTask` / `Get-ScheduledTaskInfo` cannot find `platmon-hub` | The login-startup installer creates a shortcut, not a task. Use the [shortcut start command](windows-startup.md#3-start-hub-now). Task commands require a successful, separate [Task Scheduler registration](windows-task-scheduler.md#2-register-the-task). |
 | Zero devices | The Quick Start example is intentionally empty. Add agents to your private registry and run Hub using that file. |
 | Bind fails | Check port ownership and permissions; choose an explicit free port. Hub never silently changes ports. |
 | 403 from Hub | Use localhost/loopback Host; configure the proxy's upstream Host as documented. |

@@ -6,10 +6,12 @@ Start with the [Quick Start](quick-start.md), then [register your agents](setup.
 
 ## Background execution and automatic startup
 
+Choose one Windows startup method. For a personal Windows PC, start with the login shortcut guide. If you already registered it, use [Start Hub now](windows-startup.md#3-start-hub-now).
+
 | Goal | Instructions |
 | --- | --- |
-| Save Windows launcher settings and start at user login | [Windows launcher and login startup](operations.md#windows-quick-start-and-login-startup); the console window is minimized. |
-| Run Windows in the background at boot, before login | [Windows Task Scheduler](operations.md#windows-task-scheduler-example); registration requires administrator rights. |
+| Save Windows launcher settings and start at user login | [Windows launcher and login startup](windows-startup.md); the console window is minimized. |
+| Run Windows in the background at boot, before login | [Windows Task Scheduler](windows-task-scheduler.md); registration requires administrator rights. |
 | Run Linux as a service | [systemd](operations.md#linux-systemd-example). |
 
 ## Guides
@@ -20,7 +22,9 @@ Start with the [Quick Start](quick-start.md), then [register your agents](setup.
 | [Setup and backend behavior](setup.md) | Device registration, registry reload, dashboard, and persistence behavior. |
 | [Configuration and CLI](configuration.md) | Options, private state, registry validation, and local administration. |
 | [Local web device management](web-registration.md) | Devices tab, preview/import, and the opt-in local administration boundary. |
-| [Installation and operations](operations.md) | Wheel installation, Windows launcher/login startup, services, logs, backup, and rollback. |
+| [Windows login startup](windows-startup.md) | One registry, login shortcut registration, starting now, and stopping Hub. |
+| [Windows Task Scheduler](windows-task-scheduler.md) | Separate administrator-managed deployment for startup before login. |
+| [Installation and operations](operations.md) | Wheel installation, service guides, logs, backup, and rollback. |
 | [Ports](ports.md) | Default listeners and Windows/Linux bind diagnostics. |
 | [Troubleshooting](troubleshooting.md) | Startup, connectivity, history, registry, and alert failures. |
 | [Security](security.md) | Local access boundary, optional TLS/authentication proxy, and resource controls. |

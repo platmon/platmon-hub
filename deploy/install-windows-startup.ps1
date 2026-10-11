@@ -33,4 +33,8 @@ if ($PSCmdlet.ShouldProcess($shortcutPath, 'Create current-user Hub shortcut')) 
     $shortcut.Description = 'platmon Hub local fleet monitoring'
     $shortcut.Save()
     Write-Host ('Created {0}. Hub was not started.' -f $shortcutPath)
+    if (-not $Desktop) {
+        Write-Host 'Hub will start at your next Windows login. This shortcut is not a scheduled task.'
+    }
+    Write-Host ('To start Hub now: Invoke-Item -LiteralPath "{0}"' -f $shortcutPath)
 }
