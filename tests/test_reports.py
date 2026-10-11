@@ -18,8 +18,8 @@ class ReportTests(unittest.TestCase):
 
     def extra(self):
         for seq, received, cpu, hottest in ((2, 2500, 20, 50), (3, DAY_MS + 1000, 100, 60)):
-            self.store.connection.execute('INSERT INTO core_samples VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-                (fixtures.NODE, 'first', seq, received, 0, 5000, 'ready', cpu, None, 30, 40, hottest))
+            self.store.connection.execute('INSERT INTO core_samples VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                (fixtures.NODE, 'first', seq, received, 0, 5000, 'ready', cpu, None, 30, 40, hottest, None))
 
     def rows(self, archive, name):
         return list(csv.DictReader(io.StringIO(archive.read(name).decode('utf-8-sig'))))
@@ -69,6 +69,37 @@ class ReportTests(unittest.TestCase):
         output.write_bytes(b'keep')
         with self.assertRaises(FileExistsError): monthly_report(directory, output, '1970-01')
         self.assertEqual(output.read_bytes(), b'keep')
+
+    def test_monthly_report_merges_legacy_and_npu_summaries(self):
+        self.extra()
+        self.store.connection.execute('UPDATE core_samples SET npu_percent=70 WHERE received_at_ms>=?', (DAY_MS,))
+        directory = self.root / 'archives'
+        for _ in range(2):
+            archive_once(self.db, directory, now_ms=2 * DAY_MS)
+        path = directory / 'summaries' / '1970-01-01.json'
+        document = json.loads(path.read_text(encoding='utf-8'))
+        self.assertEqual(document['summary_format_version'], 2)
+        document['summary_format_version'] = 1
+        for row in document['metrics']:
+            for key in list(row):
+                if key.startswith('npu_percent_'):
+                    del row[key]
+        path.write_text(json.dumps(document), encoding='utf-8')
+        old = read_daily(path)['metrics'][0]
+        self.assertEqual(old['npu_percent_count'], 0)
+        self.assertIsNone(old['npu_percent_average'])
+        monthly_report(directory, self.root / 'mixed.zip', '1970-01')
+        with zipfile.ZipFile(self.root / 'mixed.zip') as z:
+            row = next(r for r in self.rows(z, 'summary-monthly.csv') if r['instance_id'] == 'first')
+            self.assertEqual(row['sample_count'], '3')
+            self.assertEqual(row['npu_percent_count'], '1')
+            self.assertEqual(float(row['npu_percent_average']), 70)
+            self.assertEqual(row['hottest_at_ms'], str(DAY_MS + 1000))
+        # New summaries must carry all NPU statistics; only v1 is normalized.
+        document['summary_format_version'] = 2
+        path.write_text(json.dumps(document), encoding='utf-8')
+        with self.assertRaises(ExportError):
+            read_daily(path)
 
     def test_corrupt_summary_fails_without_partial_report(self):
         directory = self.root / 'archives'

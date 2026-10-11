@@ -4,6 +4,8 @@ import math
 import uuid
 from dataclasses import dataclass, astuple
 
+OBSERVATION_GROUPS = ('storage', 'wifi', 'probe', 'battery')
+
 
 @dataclass(frozen=True)
 class CoreRecord:
@@ -19,6 +21,7 @@ class CoreRecord:
     memory_percent: object
     disk_percent: object
     hottest_c: object
+    npu_percent: object = None
 
     def values(self):
         return astuple(self)
@@ -34,7 +37,8 @@ class CoreRecord:
                     0 <= self.data_age_ms <= self.stale_after_ms and self.stale_after_ms > 0 and
                     self.core_state in ('ready', 'degraded') and
                     all(x is None or (type(x) in (int, float) and math.isfinite(x) and 0 <= x <= 100)
-                        for x in self.values()[7:11]) and
+                        for x in (self.cpu_percent, self.gpu_percent, self.memory_percent,
+                                  self.disk_percent, self.npu_percent)) and
                     (self.hottest_c is None or (type(self.hottest_c) in (int, float) and
                                                math.isfinite(self.hottest_c))))
         except (ValueError, TypeError, AttributeError, OverflowError):
@@ -63,7 +67,7 @@ class ObservationRecord:
         base = CoreRecord(self.node_id, self.instance_id, self.observation_id,
                           self.received_at_ms, self.data_age_ms, self.stale_after_ms,
                           'ready', None, None, None, None, None)
-        return (base.valid() and self.group_name in ('storage', 'wifi', 'probe') and
+        return (base.valid() and self.group_name in OBSERVATION_GROUPS and
                 self.state in ('ok', 'partial', 'error', 'unavailable') and
                 len(self.data_json.encode('utf-8')) <= 16384)
 
@@ -84,7 +88,7 @@ class ContinuityRecord:
     def valid(self):
         try:
             return (str(uuid.UUID(self.node_id)) == self.node_id and
-                    self.scope in ('core', 'storage', 'wifi', 'probe') and
+                    self.scope in ('core',) + OBSERVATION_GROUPS and
                     (self.instance_id is None or 1 <= len(self.instance_id.encode('utf-8')) <= 128) and
                     type(self.received_at_ms) is int and 0 <= self.received_at_ms < 2**63 and
                     self.reason in (None, 'transport', 'offline', 'stale', 'starting', 'error',
@@ -103,10 +107,14 @@ def project_observation(node_id, instance_id, name, group, received_at_ms):
         'probe': ('targets', ('address', 'port', 'connect_ms', 'reason', 'attempts', 'failures', 'failure_ratio')),
     }
     publication = group.get('observation')
-    if name not in spec or publication is None or group['state'] in ('starting', 'stale') or publication.get('stale') is True:
+    if name not in OBSERVATION_GROUPS or publication is None or group['state'] in ('starting', 'stale') or publication.get('stale') is True:
         return None
-    rows_name, fields = spec[name]
     data = group.get('data')
+    if name == 'battery':
+        payload = json.dumps(_battery_data(data), allow_nan=False, separators=(',', ':'))
+        return ObservationRecord(node_id, instance_id, name, publication['id'], received_at_ms,
+                                 publication['data_age_ms'], group['stale_after_ms'], group['state'], payload)
+    rows_name, fields = spec[name]
     rows = data.get(rows_name) if isinstance(data, dict) else None
     projected = None
     if isinstance(rows, list):
@@ -128,6 +136,42 @@ def project_observation(node_id, instance_id, name, group, received_at_ms):
     payload = json.dumps({rows_name: projected}, allow_nan=False, separators=(',', ':'))
     return ObservationRecord(node_id, instance_id, name, publication['id'], received_at_ms,
                              publication['data_age_ms'], group['stale_after_ms'], group['state'], payload)
+
+
+def _battery_data(data):
+    """Keep driver units, signed current/power and unknown booleans unchanged."""
+    fields = ('name', 'present', 'percent', 'status', 'capacity_level', 'technology', 'health',
+              'charge_now_uah', 'charge_full_uah', 'charge_full_design_uah',
+              'energy_now_uwh', 'energy_full_uwh', 'energy_full_design_uwh',
+              'current_ua', 'power_uw', 'voltage_uv', 'cycle_count')
+    result = {}
+    for key, selected in (('batteries', fields), ('external', ('name', 'type', 'online'))):
+        rows = data.get(key) if isinstance(data, dict) else None
+        result[key] = None
+        if not isinstance(rows, list):
+            continue
+        result[key] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            item = {}
+            for field in selected:
+                value = row.get(field)
+                if key == 'batteries' and row.get('present') is False and field not in ('name', 'present'):
+                    value = None
+                if field in ('present', 'online'):
+                    value = value if type(value) is bool else None
+                elif field in ('name', 'type', 'status', 'capacity_level', 'technology', 'health'):
+                    value = value if isinstance(value, str) else None
+                elif not (type(value) in (int, float) and math.isfinite(value)):
+                    value = None
+                elif field not in ('current_ua', 'power_uw') and value < 0:
+                    value = None
+                elif field == 'percent' and value > 100:
+                    value = None
+                item[field] = value
+            result[key].append(item)
+    return result
 
 
 EVENT_TYPES = ('core_state', 'agent_restart', 'optional_error', 'optional_recovered',

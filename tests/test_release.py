@@ -24,7 +24,7 @@ class ReleaseTests(unittest.TestCase):
             connection=sqlite3.connect(str(db))
             connection.executescript(SQL)
             connection.execute('INSERT INTO core_samples VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-                CoreRecord(NODE_ID,'legacy',1,1000,1,5000,'ready',0,None,50,None,45).values())
+                CoreRecord(NODE_ID,'legacy',1,1000,1,5000,'ready',0,None,50,None,45).values()[:12])
             connection.commit();connection.close()
             old=root/'before.db'
             subprocess.run([sys.executable,'-m','hub','backup','--db',str(db),'--output',str(old)],check=True,stdout=subprocess.PIPE)

@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — platmon 1.2.0 compatibility
+
+- Consume the additive platmon v1.1.0/v1.2.0 fields while retaining v1.0.0
+  compatibility: status/stats schema 1 and observations schema 2 are unchanged.
+- Show GPU/NPU driver, provider, usage and clocks, including detected devices
+  without readings. Add NPU usage to node summaries, History, CSV exports and
+  daily/monthly reports; missing readings remain null and idle zero remains zero.
+- Add Power & battery details: power rails, fans, battery presence/charge/status,
+  charge or energy capacity, full/design ratio, voltage, signed current/power,
+  cycle count and external power's true/false/unknown state. Battery freshness
+  follows its own observation, independent of core samples.
+- Persist bounded battery observations with deduplication, continuity and optional
+  error/recovery events; include them in opt-in observation exports and archives.
+- History schema 5 adds nullable `npu_percent`, with a verified pre-upgrade backup.
+  Daily summary format 2 includes NPU statistics; monthly reporting still accepts
+  format 1 summaries, treating their NPU readings as unknown. Existing benchmark
+  evidence remains evidence of schema 4, not a new schema-5 capacity measurement.
+
 ## 0.2.0rc1 — candidate (2026-10-11)
 
 This candidate is prepared in source and CI artifacts. It has not been tagged,

@@ -61,7 +61,7 @@ class ObservationHistoryTests(unittest.TestCase):
         old = self.path.with_name('v1.db')
         c = sqlite3.connect(str(old))
         c.executescript(SQL)
-        c.execute('INSERT INTO core_samples VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', record().values())
+        c.execute('INSERT INTO core_samples VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', record().values()[:12])
         c.commit()
         c.close()
         migrated = HistoryStore(old).open()

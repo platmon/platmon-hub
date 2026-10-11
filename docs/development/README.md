@@ -77,6 +77,11 @@ Run `python scripts/check-package.py` (Linux: `python3`) to build twice, compare
 
 With Playwright available and an empty Hub on an explicit loopback test port, `node scripts/check-history-ui.cjs http://127.0.0.1:PORT` validates synthetic History interactions and layout. Replace `PORT` with the running test port. Playwright is development tooling, not a runtime dependency. Screenshots go to the OS temporary directory.
 
+`node scripts/check-agent-ui.cjs http://127.0.0.1:PORT` checks the pinned 1.2.0
+GPU/NPU/battery fixture, independent freshness, missing/zero/signed readings,
+older agents, HTML escaping and light/dark mobile layouts. Unit tests additionally
+cover schema-4-to-5 backup/rollback and mixed old/new retained summaries.
+
 ## CI
 
 The [test workflow](../../.github/workflows/test.yml) runs on `ubuntu-latest` and `windows-latest` with Python 3.9 and 3.13 (four jobs). Each job runs unit tests, Python compilation, JavaScript syntax checks, synthetic fleet/soak smoke, and isolated package build/install validation. Linux jobs validate the systemd example and the Python 3.13 job checks the optional TLS proxy. Windows jobs validate launch/startup scripts without installing a service.

@@ -27,7 +27,7 @@ def _ratio_percent(group):
 
 def _overview(stats):
     """Small, validated projection for node cards; never infer absent values as zero."""
-    result = {"cpu_percent": None, "gpu_percent": None, "memory_percent": None,
+    result = {"cpu_percent": None, "gpu_percent": None, "npu_percent": None, "memory_percent": None,
               "disk_percent": None, "hottest_c": None}
     if not isinstance(stats, dict):
         return result
@@ -37,11 +37,12 @@ def _overview(stats):
                     and _finite(cpu.get("usage")) and 0 <= cpu["usage"] <= 100]
         if readings:
             result["cpu_percent"] = round(sum(readings) / len(readings), 1)
-    gpu = stats.get("gpu")
-    if isinstance(gpu, dict):
-        usage = gpu.get("usage")
-        if _finite(usage) and 0 <= usage <= 100:
-            result["gpu_percent"] = usage
+    for name in ("gpu", "npu"):
+        accelerator = stats.get(name)
+        if isinstance(accelerator, dict):
+            usage = accelerator.get("usage")
+            if _finite(usage) and 0 <= usage <= 100:
+                result[name + "_percent"] = usage
     result["memory_percent"] = _ratio_percent(stats.get("memory"))
     result["disk_percent"] = _ratio_percent(stats.get("disk"))
     temps = stats.get("temperature")

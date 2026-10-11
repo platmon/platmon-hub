@@ -51,11 +51,11 @@ The Hub defaults to TCP 9787 and agents to TCP 9797. `--port 9798` changes the H
 
 ## Read-only Fleet Dashboard
 
-The zero-dependency static page at `/` shows a fleet-wide count of Live, Partial, Stale/Starting and Offline/Error nodes, node cards (CPU, GPU, memory, root filesystem and hottest sensor), and a selected-node detail including per-core CPU, temperatures, optional observations and per-interface network/disk I/O rates when present. Unsupported and missing readings are marked N/A, **never zero**. Cached metrics remain visible as **last known** with their age once `data_current` is false.
+The zero-dependency static page at `/` shows a fleet-wide count of Live, Partial, Stale/Starting and Offline/Error nodes, node cards (CPU, GPU, NPU, memory, root filesystem and hottest sensor), and a selected-node detail including per-core CPU, temperatures, optional observations and per-interface network/disk I/O rates when present. Unsupported and missing readings are marked N/A, **never zero**. Cached metrics remain visible as **last known** with their age once `data_current` is false.
 
 The browser polls Hub `/api/nodes` every 5 s while visible and `/api/nodes/<node_id>` for the selected node. It does **not** trigger additional agent reads, discover endpoints or fetch arbitrary URLs. Hidden tabs stop requesting data until visible again; failed Hub requests show a connection banner without silently turning last-known values current. All agent-provided labels are rendered using DOM `textContent`, never interpolated as HTML. Assets are served from an exact allowlist with a restrictive Content Security Policy; there are no external browser dependencies.
 
-The Hub's `/api/nodes` summary adds an `overview` object with optional `cpu_percent`, `gpu_percent`, `memory_percent`, `disk_percent`, and `hottest_c` fields; unavailable readings are JSON null. This is an additive, Hub-owned schema-1 projection. It is computed only from the last accepted agent snapshot; callers must consult `data_current` and `headline` before calling the values live. The detail response includes the same `overview` and original cached `stats` / independent `observations`.
+The Hub's `/api/nodes` summary adds an `overview` object with optional `cpu_percent`, `gpu_percent`, `npu_percent`, `memory_percent`, `disk_percent`, and `hottest_c` fields; unavailable readings are JSON null. This is an additive, Hub-owned schema-1 projection. It is computed only from the last accepted agent snapshot; callers must consult `data_current` and `headline` before calling the values live. The detail response includes the same `overview` and original cached `stats` / independent `observations`.
 
 History and internal alerts are opt-in. Authenticated remote viewing requires the separately configured proxy; see [security](security.md). Synthetic capacity and actual three-device evidence have explicit [limits](../development/resource-budget.md). Default bind remains loopback.
 
@@ -111,17 +111,24 @@ See [the storage contract](../design/adr/0002-hub-history-storage.md).
 
 ### Observations and discontinuities (introduced in history schema 2)
 
-Storage, Wi-Fi and TCP-probe publications are deduplicated independently by node,
+Storage, Wi-Fi, TCP-probe and battery publications are deduplicated independently by node,
 instance, group and observation ID. Only fresh, actually received publications are
 stored; unavailable values stay null. The selected payload is limited to 16 KiB:
 filesystem device numbers and byte capacities; Wi-Fi interface identity, tri-state
 connection and signal/quality values in their original units; probe target,
-handshake milliseconds and attempt/failure statistics. Unknown fields are omitted.
+handshake milliseconds and attempt/failure statistics; battery charge/energy,
+voltage, signed current/power, cycle count and external power state. Unknown fields are omitted.
 No probe is configured or triggered by Hub. Core sequence is never an optional ID.
+
+For platmon 1.2.0, device details include **Power & battery**, with separate battery
+freshness and `Current` / `Last-known` labeling, power rails and fans. GPU/NPU
+details show driver/provider and clocks, even when load is unavailable. Older
+agents remain supported without these additional fields. Battery has observation
+exports but no graph or charge-control action; NPU usage has a History graph.
 
 Schema 1 upgrades transactionally to schema 2 after a verified adjacent
 `.v1-backup-<unique-id>` snapshot. Keep that backup for rollback with Hub stopped;
-older software cannot open newer schemas. The current schema is 4; see [migration history](../design/history-schema.md). New tables record group publications,
+older software cannot open newer schemas. The current schema is 5; see [migration history](../design/history-schema.md). New tables record group publications,
 continuity evidence, gaps and Hub sessions. Core and optional history share the
 configured retention period (default seven days). Diagnostic persisted/submitted
 counts include continuity records as well as metric records.
@@ -138,7 +145,7 @@ open gap, not new synthetic samples. A group failure never changes Core health.
 `GET /api/nodes/{node_id}/history?metric=cpu_percent&from_ms=0&to_ms=3600000&max_points=1200`
 queries Hub receipt UTC milliseconds in the half-open range `[from_ms,to_ms)`.
 Use actual epoch milliseconds for an operating installation. Metrics are a fixed
-allowlist: `cpu_percent`, `gpu_percent`, `memory_percent`, `disk_percent`,
+allowlist: `cpu_percent`, `gpu_percent`, `npu_percent`, `memory_percent`, `disk_percent`,
 `hottest_c`. The maximum span is seven days and the maximum point count is 1,200.
 Unknown/duplicate parameters, invalid bounds and metrics return 400; unregistered
 nodes return 404; disabled/unavailable history returns 503.
@@ -156,7 +163,7 @@ Query parameters remain forbidden on static assets and other existing routes.
 
 ### Browser history
 
-Device details now include a separate History panel for CPU, memory, GPU, highest
+Device details now include a separate History panel for CPU, memory, GPU, NPU, highest
 temperature and root-disk usage. Select a metric and 1h/6h/24h/7d range. Canvas
 renders average lines and min/max bars, approximate shaded gaps and dashed agent
 restart boundaries. Missing values are N/A, never zero. Hover or use arrow keys

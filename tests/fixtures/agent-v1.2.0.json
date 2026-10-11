@@ -1,0 +1,53 @@
+{
+  "status": {
+    "schema_version": 1,
+    "instance_id": "agent-1.2.0-fixture",
+    "state": "ready",
+    "ready": true,
+    "sample": {"sequence": 42}
+  },
+  "stats": {
+    "schema_version": 1,
+    "sample": {"instance_id": "agent-1.2.0-fixture", "sequence": 42, "data_age_ms": 100, "stale_after_ms": 5000},
+    "collectors": {
+      "core": {"state": "ok", "reason": null},
+      "gpu": {"state": "ok", "reason": null},
+      "npu": {"state": "ok", "reason": null}
+    },
+    "cpu": [{"id": 0, "usage": 25.0, "freq": 1200000000}],
+    "gpu": {"usage": 12.5, "freq": 700000000, "max_freq": 2250000000, "driver": "i915", "provider": "rc6_residency"},
+    "npu": {"usage": 0.0, "freq": 0, "max_freq": 1400000000, "driver": "intel_vpu", "provider": "npu_busy_time"},
+    "memory": {"used": 250, "total": 1000},
+    "disk": {"used": 10, "total": 20},
+    "temperature": {"cpu": 51.2},
+    "power": {"board": 6.5},
+    "fans": [{"name": "acpi_fan", "rpm": null, "percent": null}],
+    "power_mode": null
+  },
+  "observations": {
+    "schema_version": 2,
+    "instance_id": "agent-1.2.0-fixture",
+    "clock": {"source": "boottime", "suspend_aware": true},
+    "groups": {
+      "battery": {
+        "state": "ok",
+        "interval_ms": 60000,
+        "stale_after_ms": 180000,
+        "collecting_for_ms": null,
+        "observation": {"id": 12, "data_age_ms": 1000, "stale": false},
+        "collector": {"state": "ok", "reason": null, "issues": [], "issues_truncated": 0},
+        "data": {
+          "provider": "sysfs_power_supply",
+          "batteries": [{
+            "name": "BAT1", "present": true, "percent": 89, "status": "Discharging",
+            "capacity_level": "Normal", "technology": "Li-ion", "health": null,
+            "charge_now_uah": 3026000, "charge_full_uah": 3400000, "charge_full_design_uah": 4023000,
+            "energy_now_uwh": null, "energy_full_uwh": null, "energy_full_design_uwh": null,
+            "current_ua": -250000, "power_uw": null, "voltage_uv": 16436000, "cycle_count": 237
+          }],
+          "external": [{"name": "ADP1", "type": "Mains", "online": null}]
+        }
+      }
+    }
+  }
+}

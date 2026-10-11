@@ -76,3 +76,9 @@ CREATE TABLE alert_states (
 PRAGMA user_version=4;
 """
 VERSION = 4
+
+MIGRATION_5 = """
+ALTER TABLE core_samples ADD COLUMN npu_percent REAL CHECK (npu_percent BETWEEN 0 AND 100);
+PRAGMA user_version=5;
+"""
+VERSION = 5

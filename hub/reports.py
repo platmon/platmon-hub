@@ -40,7 +40,7 @@ def metric_rows(connection, start, end, nodes, grain):
         node, instance, date, count, first, last = row[:6]
         low, high = period_bounds(date, grain)
         low, high = max(low, start), min(high, end)
-        hottest = row[-1]
+        hottest = row[6 + METRICS.index('hottest_c') * len(STAT_NAMES) + 3]
         peak_time = None
         if hottest is not None:
             peak_time = connection.execute('SELECT min(received_at_ms) FROM core_samples WHERE node_id=? AND instance_id=? AND received_at_ms>=? AND received_at_ms<? AND hottest_c=?', (node, instance, low, high, hottest)).fetchone()[0]
@@ -68,7 +68,7 @@ def gap_rows(connection, start, end, nodes, as_of):
 def write_reports(connection, archive, manifest, budget, start, end, nodes, check, as_of):
     # Daily archives also contain a bounded machine-readable summary so monthly
     # material remains available after raw archives expire.
-    daily = {'summary_format_version': 1, 'from_ms': start, 'to_ms': end,
+    daily = {'summary_format_version': 2, 'from_ms': start, 'to_ms': end,
              'as_of_ms': as_of, 'metrics': [], 'events': [], 'gaps': []}
     sources = [('summary-daily.csv', SUMMARY_COLUMNS, metric_rows(connection, start, end, nodes, 'day'), 'metrics'),
                ('summary-monthly.csv', SUMMARY_COLUMNS, metric_rows(connection, start, end, nodes, 'month'), None),
@@ -104,11 +104,17 @@ def read_daily(path):
         raise ExportError('invalid daily summary')
     document = json.loads(path.read_text(encoding='utf-8'))
     start, end = period_bounds(path.stem, 'day')
-    if (not isinstance(document, dict) or document.get('summary_format_version') != 1 or document.get('from_ms') != start or document.get('to_ms') != end or
+    if (not isinstance(document, dict) or type(document.get('summary_format_version')) is not int or
+            document['summary_format_version'] not in (1, 2) or document.get('from_ms') != start or document.get('to_ms') != end or
             any(not isinstance(document.get(key), list) for key in ('metrics', 'events', 'gaps')) or
             sum(len(document[key]) for key in ('metrics', 'events', 'gaps')) > 10000):
         raise ExportError('invalid daily summary')
     for row in document['metrics']:
+        if document['summary_format_version'] == 1:
+            legacy = set(SUMMARY_COLUMNS) - {'npu_percent_' + stat for stat in STAT_NAMES}
+            if not isinstance(row, dict) or set(row) != legacy:
+                raise ExportError('invalid legacy metric summary')
+            row.update({'npu_percent_' + stat: 0 if stat == 'count' else None for stat in STAT_NAMES})
         if not isinstance(row, dict) or set(row) != set(SUMMARY_COLUMNS):
             raise ExportError('invalid metric summary')
         identity(row['node_id'])
