@@ -1,5 +1,7 @@
 # Configuration and local administration
 
+[Documentation index](README.md)
+
 All paths are explicit; keep private state outside the installation directory.
 The runtime uses Python 3.9+ standard libraries. See [operations](operations.md)
 for service accounts and filesystem permissions.
@@ -10,6 +12,11 @@ for service accounts and filesystem permissions.
 | `--bind ADDRESS` | `127.0.0.1`; retain loopback behind an authenticated proxy |
 | `--port PORT` | `9787`; fixed integer 1–65535, no automatic fallback |
 | `--history-db PATH` | Disabled unless supplied; local SQLite database |
+| `--archive-dir PATH` | Opt-in daily archive directory; requires history; see [exports and reports](data-export.md) |
+| `--archive-retention-days DAYS` | 90; raw ZIP retention upper bound, subject to quota |
+| `--archive-summary-retention-days DAYS` | 365; daily-summary retention upper bound, subject to quota |
+| `--archive-quota-mib MIB` | 10240; shared quota for recognized raw ZIPs and summaries |
+| `--web-admin` | Opt-in local web device management; requires loopback and registry reload |
 | `--history-retention-days DAYS` | 7; finite positive number, core and observations |
 | `--event-retention-days DAYS` | 30; finite positive number |
 | `--alerts PATH` | Disabled unless supplied; requires history; see [rules](alerts.md) |

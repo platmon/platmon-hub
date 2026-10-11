@@ -1,5 +1,7 @@
 # Hub read-only API
 
+[Documentation index](README.md)
+
 Hub HTTP schema 1 is independent of Agent schemas and SQLite schema 4. JSON missing
 measurements are `null`, never synthetic zero. UTC timestamps use Unix milliseconds.
 Responses disable caching. The browser contacts the Hub only.
@@ -17,7 +19,7 @@ Responses disable caching. The browser contacts the Hub only.
 
 Node routes use the canonical registry UUID. Unknown nodes return 404. A removed
 node's stored data remains in SQLite, but the node History route requires a current
-registry entry. See [backend](../backend.md) for live payload and freshness semantics.
+registry entry. See [backend](backend.md) for live payload and freshness semantics.
 
 ## History
 

@@ -1,5 +1,7 @@
 # History schema and durability
 
+[Documentation index](README.md)
+
 SQLite `PRAGMA user_version` is **4**, independent of application and HTTP versions.
 The executable schema is [hub/history/schema.py](../hub/history/schema.py); the
 [ADR](adr/0002-hub-history-storage.md) records initial design decisions.

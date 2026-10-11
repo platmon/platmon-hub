@@ -1,5 +1,7 @@
 # Access boundaries
 
+[Documentation index](README.md)
+
 The Hub has no public authentication endpoint. HTTP is read-only by default;
 [local web registration](web-registration.md) is an explicitly enabled local-only
 exception for managing devices from a trusted Hub host.

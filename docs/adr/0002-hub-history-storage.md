@@ -1,10 +1,12 @@
 # ADR-0002: Hub-owned history with an isolated SQLite writer
 
+[Documentation index](../README.md)
+
 - **Status:** Proposed for Draft PR review; implementation follows in PR #7
 - **Date:** 2026-10-10
 - **Baseline:** `main` at `bdb77b5398751ad34c91711bbbe02191a5839f87`
 - **Scope:** Core history storage contract; extension boundaries for observations, gaps, queries and events
-- **Related:** [ADR-0001](0001-http-pull-and-device-identity.md), [Architecture](../architecture.md), [Agent contract](../agent-contract.md), [Backend](../../backend.md)
+- **Related:** [ADR-0001](0001-http-pull-and-device-identity.md), [Architecture](../architecture.md), [Agent contract](../agent-contract.md), [Backend](../backend.md)
 
 ## Context and decision
 

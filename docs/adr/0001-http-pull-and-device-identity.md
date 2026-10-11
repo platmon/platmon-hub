@@ -1,6 +1,8 @@
 # ADR-0001: HTTP Pull from independent agents and Hub-owned node identity
 
-- **Status:** Proposed (decision to be reviewed before implementation)
+[Documentation index](../README.md)
+
+- **Status:** Implemented in the current preview
 - **Date:** 2026-10-10
 - **Scope:** platmon-hub initial fleet MVP (Jetson Orin Nano and Raspberry Pi)
 - **Related:** [Architecture](../architecture.md), [Agent contract](../agent-contract.md), [MVP acceptance](../mvp-acceptance.md)
@@ -9,9 +11,9 @@
 
 The separately released [platmon v1.0.0](https://github.com/platmon/platmon/releases/tag/v1.0.0) provides passive local collection and read-only HTTP APIs on Linux. It already runs independently of any fleet service, contains its own short-lived memory history, and has no HTTP authentication. Its random `instance_id` changes each time the service restarts; it does not advertise a globally persistent device identity.
 
-A prospective central viewer must support at least two heterogeneous boards, handle independently missing sensors and node outages, and avoid adding runtime requirements or release coupling to platmon.
+The central viewer must support at least two heterogeneous boards, handle independently missing sensors and node outages, and avoid adding runtime requirements or release coupling to platmon.
 
-## Proposed decision
+## Decision
 
 1. Maintain **two repositories** and independent releases: `platmon/platmon` (agent) and `platmon/platmon-hub` (central viewer).
 2. Use explicit static **HTTP Pull** from Hub to the existing agent `/api/status`, `/api/stats`, and `/api/observations` endpoints. Do not add Push, remote configuration or other agent endpoints for the MVP.
@@ -19,7 +21,7 @@ A prospective central viewer must support at least two heterogeneous boards, han
 4. Use **endpoint-specific schema gates**: v1.0.0 has schema 1 for status/stats and schema 2 for observations. Keep core and optional group failures separate; never infer a valid sample from HTTP 200 alone.
 5. Bound timeouts, per-node concurrency and registry changes. Deploy only on a trusted management network or VPN; Hub's UI cannot become an arbitrary proxy or remote-control channel.
 
-The implementation details (registry file/DB encoding, HTTP client framework, frontend stack) are intentionally **deferred** to implementation PRs; the invariants above are the reviewable contract.
+The preview implements these invariants with an operator-managed JSON registry, Python standard-library HTTP client/server, and static HTML/CSS/JavaScript. See [architecture](../architecture.md) for the current implementation and its timeout/capacity limits.
 
 ## Alternatives considered
 

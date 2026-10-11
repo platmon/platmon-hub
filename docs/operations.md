@@ -1,5 +1,7 @@
 # Install and operate platmon-hub
 
+[Documentation index](README.md)
+
 Hub runs on Python 3.9+ using only its standard library. Build tooling uses
 setuptools/wheel; neither is a service dependency. A wheel is preferable to a
 custom service wrapper: it preserves the existing Python entrypoint and includes
@@ -19,7 +21,7 @@ python -m venv /path/to/venv
 On Windows use `venv\Scripts\python.exe` and `venv\Scripts\platmon-hub.exe`.
 Keep code/venv, registry, logs and database in separate directories. Start with an
 empty registry (`{"nodes": []}`), then add only approved endpoints using the
-[local CLI](../backend.md#local-registry-cli). UUIDs live in the registry, not in
+[local CLI](backend.md#local-registry-cli). UUIDs live in the registry, not in
 code or the venv. Default binding remains `127.0.0.1:9787`; choose another fixed
 port explicitly with `--port`, never 0 or an automatic fallback.
 

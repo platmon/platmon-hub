@@ -1,5 +1,7 @@
 # Extended soak plan (2026-10-11 KST)
 
+[Documentation index](../README.md)
+
 Deadline: at most 09:00 KST on 2026-10-11; finish earlier when the experiment and
 any necessary fix/recheck provide sufficient evidence. Baseline is merged
 `0.2.0rc1`, main `b4c3b26541aef182197b1e12bba877d0cc592437`.

@@ -1,5 +1,7 @@
 # Fleet resource budget and measured limits
 
+[Documentation index](README.md)
+
 Evidence: [predeclared experiment plan](benchmarks/plan.md) and committed
 [raw synthetic results](benchmarks/README.md), measured 2026-10-10 UTC.
 Linux x86-64, Python 3.12.3, 20 logical CPUs visible to the workspace. The Hub
