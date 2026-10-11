@@ -17,7 +17,7 @@ class DataApiTests(unittest.TestCase):
     setUp = fixtures.ExportTests.setUp
     tearDown = fixtures.ExportTests.tearDown
 
-    def request(self, query, disabled=False, busy=False):
+    def request(self, query, disabled=False, busy=False, route="/api/data/export"):
         history = None if disabled else SimpleNamespace(path=self.db, snapshot=lambda: {'schema_version': 4})
         fleet = SimpleNamespace(history=history)
         server = HubServer(('127.0.0.1', 0), fleet)
@@ -26,7 +26,7 @@ class DataApiTests(unittest.TestCase):
         if busy: server.export_slot.acquire()
         conn = HTTPConnection('127.0.0.1', server.server_port, timeout=15)
         try:
-            conn.request('GET', '/api/data/export?' + query)
+            conn.request('GET', route + '?' + query)
             response = conn.getresponse()
             return response.status, dict(response.getheaders()), response.read()
         finally:
@@ -57,6 +57,14 @@ class DataApiTests(unittest.TestCase):
             status, _, body = self.request('from_ms=1&to_ms=2')
             self.assertEqual(status, 422)
             self.assertNotIn(b'private details', body)
+
+    def test_report_download(self):
+        status, _, body = self.request('from_ms=1000&to_ms=3000', route='/api/data/report')
+        self.assertEqual(status, 200)
+        with zipfile.ZipFile(io.BytesIO(body)) as archive:
+            self.assertIn('summary-daily.csv', archive.namelist())
+            self.assertIn('summary-monthly.csv', archive.namelist())
+            self.assertFalse(any(name.startswith('measurements/') for name in archive.namelist()))
 
     def test_selection(self):
         self.assertEqual(selection('from_ms=1&to_ms=2'), (1, 2, None))

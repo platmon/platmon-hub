@@ -42,7 +42,7 @@ def owned_archives(root):
 
 def run_worker(database, output, start, stop=None, observations=False):
     command = [sys.executable, '-m', 'hub', 'export', '--db', str(Path(database).resolve()),
-               '--output', str(output), '--from-ms', str(start), '--to-ms', str(start + DAY_MS)]
+               '--output', str(output), '--from-ms', str(start), '--to-ms', str(start + DAY_MS), '--reports']
     if observations: command.append('--observations')
     child = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
@@ -61,9 +61,10 @@ def run_worker(database, output, start, stop=None, observations=False):
 
 
 def archive_once(database, directory, now_ms=None, retention_days=90,
-                 quota_bytes=10 * 1024 ** 3, catchup_days=7, stop=None, observations=False):
+                 quota_bytes=10 * 1024 ** 3, catchup_days=7, stop=None, observations=False, summary_retention_days=365):
     """Archive at most one complete UTC day, oldest available first."""
-    if (type(retention_days) is not int or not 1 <= retention_days <= 3650 or
+    if (type(summary_retention_days) is not int or not 1 <= summary_retention_days <= 3650 or
+            type(retention_days) is not int or not 1 <= retention_days <= 3650 or
             type(catchup_days) is not int or not 1 <= catchup_days <= 31 or
             type(quota_bytes) is not int or not 1 <= quota_bytes <= 1024 ** 4):
         raise ExportError('invalid archive policy')
@@ -79,6 +80,10 @@ def archive_once(database, directory, now_ms=None, retention_days=90,
             with marker.open('x', encoding='utf-8') as stream: stream.write('platmon-hub archive format 1\n')
         elif marker.read_text(encoding='utf-8') != 'platmon-hub archive format 1\n':
             raise ExportError('invalid archive ownership marker')
+        from .reports import owned_summaries
+        for summary_start, summary_path in owned_summaries(root):
+            if summary_start + DAY_MS <= now_ms - summary_retention_days * DAY_MS:
+                summary_path.unlink()
         owned = owned_archives(root)
         for start, path in owned:
             if start + DAY_MS <= now_ms - retention_days * DAY_MS:
@@ -122,6 +127,12 @@ def archive_once(database, directory, now_ms=None, retention_days=90,
                     total -= oldest.stat().st_size
                     oldest.unlink()
                 os.link(str(temporary), str(output))
+                try:
+                    from .reports import retain_summary
+                    retain_summary(output, root, quota_bytes, summary_retention_days, now_ms)
+                except BaseException:
+                    output.unlink()
+                    raise
             state_temp = root / '.archive-state.tmp'
             with state_temp.open('w', encoding='utf-8') as stream:
                 json.dump({'last_day_ms': start}, stream)
@@ -133,9 +144,9 @@ def archive_once(database, directory, now_ms=None, retention_days=90,
 
 
 class ArchiveScheduler:
-    def __init__(self, database, directory, retention_days=90, quota_bytes=10 * 1024 ** 3, catchup_days=7):
+    def __init__(self, database, directory, retention_days=90, quota_bytes=10 * 1024 ** 3, catchup_days=7, summary_retention_days=365):
         self.database, self.directory = database, directory
-        self.policy = dict(retention_days=retention_days, quota_bytes=quota_bytes, catchup_days=catchup_days)
+        self.policy = dict(retention_days=retention_days, quota_bytes=quota_bytes, catchup_days=catchup_days, summary_retention_days=summary_retention_days)
         self.stop = threading.Event()
         self.lock = threading.Lock()
         self.status = {'enabled': True, 'state': 'starting', 'last_success_ms': None, 'failures': 0}
@@ -179,12 +190,13 @@ def main(argv=None):
     parser.add_argument('--retention-days', type=int, default=90)
     parser.add_argument('--quota-mib', type=int, default=10240)
     parser.add_argument('--catchup-days', type=int, default=7)
+    parser.add_argument('--summary-retention-days', type=int, default=365)
     parser.add_argument('--observations', action='store_true')
     args = parser.parse_args(argv)
     try:
         result = archive_once(args.db, args.directory, retention_days=args.retention_days,
                               quota_bytes=args.quota_mib * 1024 ** 2, catchup_days=args.catchup_days,
-                              observations=args.observations)
+                              observations=args.observations, summary_retention_days=args.summary_retention_days)
     except (OSError, ValueError, sqlite3.Error, subprocess.SubprocessError) as exc:
         parser.exit(2, 'Archive failed: ' + type(exc).__name__ + '\n')
     print(json.dumps(result))

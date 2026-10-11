@@ -134,3 +134,11 @@ independent contracts. See the release policy before upgrading or downgrading.
 Export persisted measurements, events and gaps as CSV files in a versioned ZIP
 using `python -m hub export`. See [History data exports](docs/data-export.md)
 for commands, UTC time selection, limits and missing-data semantics.
+
+The Dashboard **Data** tab downloads raw CSV ZIPs or daily/monthly reports.
+Daily archives are opt-in with `--archive-dir PATH`: recognized raw ZIPs are kept
+up to 90 days and daily summaries up to 365 days, sharing a default 10 GiB quota.
+`python -m hub report --archive-dir PATH --month YYYY-MM --output report.zip`
+builds a monthly report from retained daily summaries after raw History expires.
+Missing samples and dates remain unknown. See the export guide for limits and
+commands; enabling archives does not change database retention.

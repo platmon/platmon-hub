@@ -12,6 +12,12 @@
   document.getElementById("data-from").value = start.toISOString().slice(0, 16);
   document.getElementById("data-to").value = end.toISOString().slice(0, 16);
 
+  function option(text, value) {
+    const item = document.createElement("option");
+    item.textContent = text;
+    item.value = value;
+    return item;
+  }
   function suspend() {
     ticket++;
     if (controller) controller.abort();
@@ -36,8 +42,8 @@
       const archive = archives.archive;
       document.getElementById("data-archive-status").textContent = archive && archive.enabled ? "Automatic archives: " + archive.state + (archive.created ? " · " + archive.created : "") + " · failures: " + archive.failures : "Automatic archives are disabled. Enable --archive-dir to keep daily files.";
       const selected = select.value;
-      select.replaceChildren(new Option("All stored devices", ""));
-      for (const node of nodes.nodes) select.append(new Option(node.name, node.node_id));
+      select.replaceChildren(option("All stored devices", ""));
+      for (const node of nodes.nodes) select.append(option(node.name, node.node_id));
       select.value = selected;
       status.textContent = history.history && history.history.enabled ? "History enabled. Select a UTC range to download stored data." : "History is disabled. Start Hub with --history-db, or use start-hub.cmd.";
       button.disabled = !(history.history && history.history.enabled);
@@ -66,7 +72,7 @@
     try {
       const params = new URLSearchParams({from_ms:String(from), to_ms:String(to)});
       if (node) params.set("node_id", node);
-      const response = await fetch("/api/data/export?" + params, {cache:"no-store", credentials:"omit", signal:controller.signal});
+      const response = await fetch("/api/data/" + document.getElementById("data-kind").value + "?" + params, {cache:"no-store", credentials:"omit", signal:controller.signal});
       if (!response.ok) throw new Error(response.status === 429 ? "Another export is running. Retry shortly." : "Export unavailable. Reduce the range, check History or use the CLI.");
       if (Number(response.headers.get("Content-Length")) > 34 * 1024 * 1024) throw new Error("Download too large; use the CLI.");
       const data = await response.blob();

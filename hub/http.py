@@ -136,9 +136,9 @@ class HubHandler(BaseHTTPRequestHandler):
         path = self._request_path()
         if path is None:
             return
-        if path.path == '/api/data/export' and not path.fragment:
+        if path.path in ('/api/data/export', '/api/data/report') and not path.fragment:
             from .data_api import download
-            download(self, path.query)
+            download(self, path.query, report=path.path == "/api/data/report")
         elif path.path == '/api/events' and not path.fragment:
             self._events(path.query)
         elif path.path.startswith('/api/nodes/') and path.path.endswith('/history') and path.path.count('/') == 4 and not path.fragment:

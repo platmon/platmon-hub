@@ -142,3 +142,63 @@ database pruning. Already-expired data cannot be recovered. Dates with no stored
 rows produce empty material, not generated samples. A forcibly killed Hub may
 leave `.job-*` scratch directories; remove them only after confirming no archive
 job is running. Treat the directory as private data and back up important exports.
+
+## Daily/monthly reports
+
+In the Data tab, choose **Daily/monthly report** to download observed resource
+summaries instead of raw Core rows. The web limits apply to this download too.
+A report ZIP includes:
+
+- `summary-daily.csv` and `summary-monthly.csv`: rows separated by stable node
+  UUID and Agent instance. Every metric has non-null count, sample-weighted
+  average, minimum and maximum. `sample_count` counts Core rows including rows
+  missing that metric. `hottest_at_ms` is the earliest receipt time attaining the
+  maximum observed temperature, or empty when temperature is unsupported.
+- `event-summary.csv`: counts of recorded transitions by UTC day, node, type,
+  previous/current state and reason. Offline/recovery, restarts and Writer errors
+  remain distinct. A zero recorded count is not proof that no incident happened.
+- `gap-details.csv`: original recorded gap bounds and overlap with the selected
+  range, clipped at report generation time for open gaps. Overlapping gaps and
+  different scopes must not be summed into an uptime percentage.
+- `summary.json`: bounded machine-readable daily material, and `manifest.json`.
+  Raw event/gap rows also remain in `events.csv` / `gaps.csv` for investigation.
+
+A selected partial month remains a partial observation window. Average is over
+observed samples, not wall-clock time. Neither missing rows nor unknown gaps are
+counted as healthy/offline, and null metrics stay null with count zero.
+
+```powershell
+python -m hub report --db "$env:LOCALAPPDATA\platmon-hub\history.db" --output .\report.zip --from-ms 1791676800000 --to-ms 1791763200000
+```
+
+Use `export --reports` to include raw Core rows and reports in one consistent
+snapshot. Reports from SQLite are bounded to 31 days and cannot recover expired
+rows. `report --help` describes the database form; the archive form is below.
+
+### Retained daily summaries
+
+Automatic archives also keep `summaries/YYYY-MM-DD.json` separately from raw
+ZIPs. Default `--archive-summary-retention-days 365` preserves these daily
+summaries for a year; the standalone job uses `--summary-retention-days`.
+The configured quota now covers recognized ZIPs **and** summaries together.
+When it is exhausted, older raw ZIPs are discarded first, then older summaries.
+Retention periods are upper bounds, not guaranteed under quota pressure.
+
+Create a monthly report after the raw SQLite/ZIP data has expired:
+
+```powershell
+python -m hub report --archive-dir "$env:LOCALAPPDATA\platmon-hub\archives" --month 2026-10 --output .\october-report.zip
+```
+
+The command reads retained daily summaries under the archive ownership lock and
+merges averages using each metric's non-null sample count. It preserves Agent
+instances, extrema, peak times, transition counts and daily gap details. Its
+manifest lists every available and missing **completed UTC date** in the month;
+future dates and today's unfinished UTC date are not expected. Missing summaries
+remain unknown. At most 10,000 metric/event groups, 200,000 output rows, 32 MiB
+CSV and a 30-second generation deadline bound work. Invalid/corrupt summaries
+fail without publishing a partial report. Existing output is never overwritten.
+
+Summary retention cannot manufacture reports for dates never archived. Earlier
+archives made without reports are not silently backfilled. Report snapshots are
+analysis material, not DB backups or formal uptime/SLA measurements.
