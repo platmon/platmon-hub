@@ -125,7 +125,7 @@
         <label>Device name <input id="device-name" name="device-name" maxlength="100" required autocomplete="off"></label>
         <label>Agent IP or hostname <input id="device-host" name="device-host" maxlength="253" required placeholder="192.0.2.1" autocomplete="off"></label>
         <label>Agent port <input id="device-port" name="device-port" type="number" min="1" max="65535" value="9797" required></label>
-        <label class="device-checkbox"><input id="device-enabled" type="checkbox" checked> Start monitoring after registration</label>
+        <label class="device-checkbox"><input id="device-enabled" type="checkbox" checked><span id="device-enabled-label"> Start monitoring after registration</span></label>
       </fieldset>
       <div class="device-actions">
         <button type="button" id="device-cancel" class="refresh-button">Cancel</button>

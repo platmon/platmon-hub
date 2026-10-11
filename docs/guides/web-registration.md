@@ -38,9 +38,9 @@ through that proxy is deliberately unavailable. The proxy must reject `/api/admi
    Agent port (default 9797, not Hub port), then **Save device**. Bare or bracketed
    IPv6 works. Do not enter a URL or credentials into the host field.
 3. **Edit** changes name, endpoint and enabled state in one atomic operation and
-   keeps the UUID and History. **Disable / Enable** opens the same form with the
-   desired enabled state selected; save to apply it. Disable retains registration
-   and History while stopping future polling.
+   keeps the UUID and History. **Disable / Enable** applies immediately without a
+   form; the status line confirms the result. Disable retains registration and
+   History while stopping future polling.
 4. **Remove** opens a separate confirmation showing name, endpoint and UUID.
    Cancel keeps the device. **Remove device** deletes only that registration;
    stored History and events remain. Re-adding creates a new UUID; use Disable

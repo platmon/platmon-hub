@@ -20,6 +20,8 @@
     if (content !== undefined && content !== null) node.textContent = String(content);
     return node;
   }
+  // The page labels every other time as UTC; status times follow the same clock.
+  function utcTime(date) { return date.toISOString().slice(11, 19) + " UTC"; }
   function numeric(value) { return typeof value === "number" && Number.isFinite(value); }
   function percent(value) { return numeric(value) && value >= 0 && value <= 100 ? value.toFixed(1) + "%" : "N/A"; }
   function degree(value) { return numeric(value) ? value.toFixed(1) + "°C" : "N/A"; }
@@ -84,15 +86,18 @@
     );
   }
   function renderCards() {
+    // Rebuilding every refresh would otherwise drop keyboard/screen-reader focus.
+    const focused = list.contains(document.activeElement) ? document.activeElement.dataset.nodeId : null;
     list.replaceChildren();
     fleetNote.textContent = nodes.length + (nodes.length === 1 ? " device" : " devices");
     if (!nodes.length) {
-      list.append(element("p", "empty", "No nodes are registered. Add approved endpoints using the local registry CLI."));
+      list.append(element("p", "empty", "No devices are registered. Add one in the Devices tab (Hub started with --web-admin) or with the local registry CLI."));
       return;
     }
     for (const n of nodes) {
       const card = element("button", "node-card");
       card.type = "button";
+      card.dataset.nodeId = n.node_id;
       card.setAttribute("aria-pressed", String(n.node_id === selected));
       const title = element("div", "card-header");
       const names = element("div");
@@ -110,6 +115,7 @@
         loadHistory(true);
       });
       list.append(card);
+      if (n.node_id === focused) card.focus({preventScroll: true});
     }
   }
   function section(root, heading) {
@@ -227,7 +233,7 @@
       if (!nodes.some(n => n.node_id === selected)) selected = nodes[0] ? nodes[0].node_id : null;
       renderSummary();
       renderCards();
-      updated.textContent = "Hub updated " + lastSuccess.toLocaleTimeString();
+      updated.textContent = "Hub updated " + utcTime(lastSuccess);
       await loadDetail();
       loadHistory(false);
     } catch (_err) {
@@ -246,7 +252,7 @@
       details.replaceChildren(element("p", "empty", "Hub connection lost. Device details cannot be verified; retry to refresh."));
       banner.hidden = false;
       banner.textContent = "Hub connection lost. Node readings are last known, not current.";
-      updated.textContent = lastSuccess ? "Last Hub contact " + lastSuccess.toLocaleTimeString() : "Hub unavailable";
+      updated.textContent = lastSuccess ? "Last Hub contact " + utcTime(lastSuccess) : "Hub unavailable";
       fleetNote.textContent = "Refresh failed";
     } finally {
       fleetBusy = false;
@@ -369,7 +375,7 @@
       if (ticket !== historyTicket || document.hidden) return;
       historyData = doc;
       historyLoaded = Date.now();
-      historyStatus.textContent = doc.points.length + " history points · Updated " + new Date(historyLoaded).toLocaleTimeString();
+      historyStatus.textContent = doc.points.length + " history points · Updated " + utcTime(new Date(historyLoaded));
       const reasons = Array.from(new Set(doc.gaps.map(g => g.reason))).join(", ");
       historyGaps.textContent = "Average line · Min/max bars · Shaded gaps · Dashed restart boundaries" + (reasons ? " · " + reasons : "");
       drawHistory();
