@@ -2,6 +2,7 @@
 
 import argparse
 import errno
+import json
 import logging
 import math
 import sys
@@ -56,6 +57,22 @@ def positive_days(value):
         raise argparse.ArgumentTypeError("retention days must be finite and positive") from exc
 
 
+def registry_or_exit(parser, path):
+    """Explain an unusable registry instead of printing a traceback."""
+    try:
+        return load_registry(path)
+    except FileNotFoundError:
+        parser.error(f"registry file not found: {path}. Copy nodes.example.json or pass an existing --nodes file.")
+    except json.JSONDecodeError as exc:
+        parser.error(f"registry is not valid JSON (line {exc.lineno}, column {exc.colno}): {path}")
+    except UnicodeError:
+        parser.error(f"registry must be UTF-8 encoded: {path}")
+    except ValueError as exc:
+        parser.error(f"invalid registry ({exc}): {path}. Check it with: python -m hub nodes --file <path> validate")
+    except OSError as exc:
+        parser.error(f"cannot read registry ({exc.strerror or type(exc).__name__}): {path}")
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "report" and any(arg.split("=", 1)[0] == "--archive-dir" for arg in argv):
@@ -76,7 +93,7 @@ def main(argv=None):
     if argv and argv[0] == "nodes":
         from .nodes_cli import main as nodes_main
         return nodes_main(argv[1:])
-    parser = argparse.ArgumentParser(description="platmon-hub read-only backend")
+    parser = argparse.ArgumentParser(prog="platmon-hub", description="platmon-hub read-only backend")
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("--log-file", help="optional UTF-8 rotating local log file")
     parser.add_argument("--nodes", required=True, help="path to explicitly managed node registry JSON")
@@ -104,7 +121,7 @@ def main(argv=None):
         admin = RegistryAdmin(args.nodes)
     handlers = [RotatingFileHandler(args.log_file, maxBytes=2*1024*1024, backupCount=3, encoding="utf-8")] if args.log_file else None
     logging.basicConfig(level=logging.INFO, handlers=handlers, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    nodes = load_registry(args.nodes)
+    nodes = registry_or_exit(parser, args.nodes)
     from .alerts import load_rules
     if args.alerts and not args.history_db:
         parser.error('--alerts requires --history-db')

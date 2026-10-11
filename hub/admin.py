@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 from dataclasses import asdict
+from urllib.parse import urlsplit
 from .registry import validate_registry
 
 from .nodes_cli import endpoint_for_host, failure_message, update_registry
@@ -73,12 +74,22 @@ class RegistryAdmin:
 
     def update(self, node_id, data):
         expected = self._expected(data, node_id)
-        return self._write('update', node_id=node_id, expected=expected, **self._device(data, updating=True))
+        device = self._device(data, updating=True)
+        # The page edits host and port separately, which drops host case and an
+        # implicit :80. Keep the stored spelling so a rename is not an endpoint change.
+        if same_origin(device['endpoint'], expected['endpoint']):
+            device['endpoint'] = expected['endpoint']
+        return self._write('update', node_id=node_id, expected=expected, **device)
 
     def remove(self, node_id, data):
         if not isinstance(data, dict) or set(data) != {'expected', 'confirm_node_id'} or data.get('confirm_node_id') != node_id:
             raise AdminError(400, 'confirmation_required', 'Confirm the specific device before removing it. History is preserved.')
         return self._write('remove', node_id=node_id, expected=self._expected(data, node_id))
+
+
+def same_origin(first, second):
+    a, b = urlsplit(first), urlsplit(second)
+    return (a.hostname, a.port or 80) == (b.hostname, b.port or 80)
 
 
 def unique_object(pairs):

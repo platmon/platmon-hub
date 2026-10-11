@@ -12,6 +12,8 @@ remains independent. Configuration is at most 64 KiB, with at most 32 unique rul
 Numeric conditions: `cpu_percent`, `memory_percent`, `disk_percent`, `hottest_c`,
 `gpu_percent`. Require finite `warning <= critical`; percentages are 0..100.
 Boolean conditions: `offline`, `stale`, `optional_error` (no numeric thresholds).
+`optional_error` ignores agents that do not provide `/api/observations` (404) or
+report an unknown observations schema; those show as `unsupported` or `incompatible`.
 Rule IDs use 1..48 lowercase letters, digits, hyphens or underscores.
 
 Evaluation runs once per second outside polling workers. Durations use monotonic

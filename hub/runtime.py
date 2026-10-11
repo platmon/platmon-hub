@@ -7,7 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from . import protocol
-from .state import NodeState
+from .state import NodeState, OPTIONAL_UNSUPPORTED
 from .registry import validate_registry
 from .reload import RegistryWatcher
 from dataclasses import asdict
@@ -157,9 +157,10 @@ class Fleet:
             with self._registry_lock:
                 if self._current(node_id, state):
                     state.fail_observations(exc)
+                    reason = 'unavailable' if exc.category in OPTIONAL_UNSUPPORTED else 'error'
                     for name in ('storage', 'wifi', 'probe'):
                         self._history_submit(ContinuityRecord(node_id, name, state.snapshot(include_details=False)['instance_id'],
-                                                             int(time.time()*1000), 'error'))
+                                                             int(time.time()*1000), reason))
         except Exception:
             LOG.exception('unexpected observations poll error node_id=%s', node_id)
             with self._registry_lock:

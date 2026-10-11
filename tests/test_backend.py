@@ -211,6 +211,21 @@ class PollTests(unittest.TestCase):
         self.assertEqual(self.fleet.get_node(NODE_ID)["consecutive_transport_failures"], 1)
         self.assertEqual(self.fleet.get_node(NODE_ID)["agent_state"], "ready")
 
+    def test_missing_optional_endpoint_is_unsupported_not_alerting(self):
+        self.client.handlers["/api/observations"] = protocol.OptionalUnsupported("404")
+        self.fleet.core_once(NODE_ID)
+        self.fleet.observations_once(NODE_ID)
+        node = self.fleet.get_node(NODE_ID)
+        self.assertEqual(node["headline"], "live")
+        self.assertEqual(node["optional_error"], "unsupported")
+        self.assertIsNone(node["optional_alert_error"])
+        self.client.handlers["/api/observations"] = protocol.ContractFailure("schema 3")
+        self.fleet.observations_once(NODE_ID)
+        self.assertIsNone(self.fleet.get_node(NODE_ID)["optional_alert_error"])
+        self.client.handlers["/api/observations"] = protocol.ServerFailure("HTTP 500")
+        self.fleet.observations_once(NODE_ID)
+        self.assertTrue(self.fleet.get_node(NODE_ID)["optional_alert_error"])
+
     def test_independent_nodes_faults(self):
         healthy = Node(str(uuid.UUID(int=2)), "Pi", "http://192.0.2.2:9797")
         client = FakeClient()
@@ -321,3 +336,22 @@ class HttpAgentClientTests(unittest.TestCase):
         with self.assertRaises(protocol.ProtocolFailure): client.get(self.endpoint, "/api/stats", 2)
         with self.assertRaises(protocol.ProtocolFailure): client.get(self.endpoint, "/api/status", 2)
         with self.assertRaises(protocol.ProtocolFailure): client.get(self.endpoint, "/api/observations", 2)
+
+    def test_optional_404_is_unsupported_but_core_404_is_error(self):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        class Missing(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(404)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            def log_message(self, format, *args): pass
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Missing)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 1)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        endpoint = "http://127.0.0.1:" + str(server.server_address[1])
+        client = protocol.HttpAgentClient()
+        with self.assertRaises(protocol.OptionalUnsupported): client.get(endpoint, "/api/observations", 2)
+        with self.assertRaises(protocol.ServerFailure): client.get(endpoint, "/api/status", 2)
