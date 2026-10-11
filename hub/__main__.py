@@ -58,6 +58,9 @@ def positive_days(value):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "export":
+        from .export import main as export_main
+        return export_main(argv[1:])
     if argv and argv[0] == "backup":
         from .backup import main as backup_main
         return backup_main(argv[1:])
