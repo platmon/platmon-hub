@@ -84,12 +84,32 @@ See [systemd's directory/permission model](https://www.freedesktop.org/software/
 ## Windows quick start and login startup
 
 For a source checkout, stop any existing Hub using this Registry/DB before changing
-preview versions or starting the launcher. From PowerShell in the checkout:
+preview versions or starting the launcher. Open PowerShell in the **repository
+root** containing `start-hub.cmd`.
+
+Choose the location of your **existing** private registry, preserving its UUIDs.
+If `nodes.json` is in this checkout next to `start-hub.cmd`, resolve and save it:
 
 ```powershell
-# One-time setup; use your existing private Registry, preserving its UUIDs.
-.\start-hub.cmd -Registry 'C:\platmon-config\nodes.json' -SaveSettings
-# Later launches from this checkout need no path arguments.
+.\start-hub.cmd -Registry .\nodes.json -SaveSettings -Check
+```
+
+If you created the registry using the [setup guide](setup.md#register-agents-and-start-monitoring),
+use its user-specific path **instead**:
+
+```powershell
+.\start-hub.cmd -Registry "$env:LOCALAPPDATA\platmon-hub\nodes.json" -SaveSettings -Check
+```
+
+Both commands check paths and save settings without starting Hub. If your existing
+registry is elsewhere, supply that file's actual path with `-Registry`; the
+launcher does not move or create it. If you have no registry yet, complete the
+[setup guide](setup.md#register-agents-and-start-monitoring) first. Do not replace
+an existing registry with the empty example.
+
+After the chosen command succeeds, start Hub. Later launches use the same command:
+
+```powershell
 .\start-hub.cmd
 ```
 
@@ -97,8 +117,10 @@ The launcher uses the Python resolved on the first setup, loopback port 9787,
 `--web-admin`, and `%LOCALAPPDATA%\platmon-hub\history.db` / `hub.log`.
 It stores only local paths, port and read-only preference in that directory's
 `launcher.json`; it never copies/deletes the Registry or stores a token. Keep
-this file private and outside Git. Pass `-Python 'C:\venv\Scripts\python.exe'`,
-`-StateDirectory PATH`, `-Port PORT`, or `-ReadOnly` to override a saved value;
+this file private and outside Git. An explicit `-Registry` overrides the saved path;
+without either, a source checkout defaults to its own `nodes.json`.
+Use `-Python` with an existing executable path, `-StateDirectory PATH`, `-Port PORT`,
+or `-ReadOnly` to override a saved value;
 `-SaveSettings` persists overrides with a `.bak` copy. `-Check` validates/resolves
 settings without starting Hub; combine it with `-SaveSettings` to configure only.
 A missing Registry is an error; the launcher does not discover or register Agents.
