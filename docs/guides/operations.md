@@ -83,113 +83,18 @@ See [systemd's directory/permission model](https://www.freedesktop.org/software/
 
 ## Windows quick start and login startup
 
-For a source checkout, stop any existing Hub using this Registry/DB before changing
-preview versions or starting the launcher. Open PowerShell in the **repository
-root** containing `start-hub.cmd`.
-
-Choose the location of your **existing** private registry, preserving its UUIDs.
-If `nodes.json` is in this checkout next to `start-hub.cmd`, resolve and save it:
-
-```powershell
-.\start-hub.cmd -Registry .\nodes.json -SaveSettings -Check
-```
-
-If you created the registry using the [setup guide](setup.md#register-agents-and-start-monitoring),
-use its user-specific path **instead**:
-
-```powershell
-.\start-hub.cmd -Registry "$env:LOCALAPPDATA\platmon-hub\nodes.json" -SaveSettings -Check
-```
-
-Both commands check paths and save settings without starting Hub. If your existing
-registry is elsewhere, supply that file's actual path with `-Registry`; the
-launcher does not move or create it. If you have no registry yet, complete the
-[setup guide](setup.md#register-agents-and-start-monitoring) first. Do not replace
-an existing registry with the empty example.
-
-After the chosen command succeeds, start Hub. Later launches use the same command:
-
-```powershell
-.\start-hub.cmd
-```
-
-The launcher uses the Python resolved on the first setup, loopback port 9787,
-`--web-admin`, and `%LOCALAPPDATA%\platmon-hub\history.db` / `hub.log`.
-It stores only local paths, port and read-only preference in that directory's
-`launcher.json`; it never copies/deletes the Registry or stores a token. Keep
-this file private and outside Git. An explicit `-Registry` overrides the saved path;
-without either, a source checkout defaults to its own `nodes.json`.
-Use `-Python` with an existing executable path, `-StateDirectory PATH`, `-Port PORT`,
-or `-ReadOnly` to override a saved value;
-`-SaveSettings` persists overrides with a `.bak` copy. `-Check` validates/resolves
-settings without starting Hub; combine it with `-SaveSettings` to configure only.
-A missing Registry is an error; the launcher does not discover or register Agents.
-Ctrl+C requests graceful shutdown. Logs rotate using the existing Hub settings.
-
-If PowerShell blocks a downloaded script, review it first, then use
-`Unblock-File` on the two scripts in `deploy`; no execution-policy bypass is used.
-An enforced organizational policy needs the organization's supported signing or
-execution route. For a wheel install, invoke the installed
-`share/platmon-hub/deploy/start-windows.ps1` directly instead of `start-hub.cmd`.
-
-Register automatic start **at current-user login**, without administrator rights:
-
-```powershell
-.\deploy\install-windows-startup.ps1 -WhatIf
-.\deploy\install-windows-startup.ps1
-# Optional manual-launch shortcut on your Desktop:
-.\deploy\install-windows-startup.ps1 -Desktop
-# Remove automatic start; this does not stop an already running Hub:
-.\deploy\install-windows-startup.ps1 -Remove
-# Remove the optional Desktop shortcut:
-.\deploy\install-windows-startup.ps1 -Desktop -Remove
-```
-
-Setup creates `platmon-hub.lnk` in the user's Startup folder and points at the
-reviewed launcher and settings paths. It does not start Hub immediately, overwrite
-an existing shortcut, elevate privileges, store passwords or register a system
-service. The launcher window starts minimized, remains available for Ctrl+C,
-and uses the same log/History paths. To change settings, stop Hub and rerun the
-launcher with overrides plus `-SaveSettings`; no shortcut recreation is needed.
-If the checkout moves, remove/recreate its shortcut. Keep the preview checkout
-until its shortcut is removed. Avoid starting another foreground instance while
-the login instance is running: fixed-port binding rejects the duplicate.
-
-Startup-folder launch requires login and is not a service/watchdog; it does not
-restart after failure. Open `shell:startup` to inspect the shortcut. Use the
-Task Scheduler deployment below when startup before login is required; it uses
-a separate account/permission model and remains read-only by default. Do not
-register both mechanisms for the same Hub. Login/reboot verification must be
-performed on the target host; these scripts are not installed or registered by CI.
+For a Windows PC where Hub should start when you log in, follow the dedicated
+[Windows login startup guide](windows-startup.md). It covers saving one existing
+registry path, registering the Startup shortcut, and starting that shortcut now.
+If registration already printed `Created ... Hub was not started.`, go straight
+to [Start Hub now](windows-startup.md#3-start-hub-now).
 
 ## Windows Task Scheduler example
 
-Install Python/venv in a machine-accessible directory such as
-`C:\Program Files\platmon-hub\venv`, not an interactive user's profile.
-Prepare an administrator-owned config directory and
-`C:\ProgramData\platmon-hub\state`. Grant Local Service read/execute access to
-Python/venv, read-only access to the registry, and modify access only to state.
-Retain administrative/SYSTEM access, and do not grant ordinary users write
-access to code, config or state. Review NTFS ACLs before registering the task.
-
-From elevated PowerShell, after substituting actual reviewed paths:
-
-```powershell
-./deploy/install-windows-task.ps1 -Python 'C:\Program Files\platmon-hub\venv\Scripts\python.exe' -Registry 'C:\ProgramData\platmon-hub\config\nodes.json' -StateDirectory 'C:\ProgramData\platmon-hub\state' -WhatIf
-./deploy/install-windows-task.ps1 -Python 'C:\Program Files\platmon-hub\venv\Scripts\python.exe' -Registry 'C:\ProgramData\platmon-hub\config\nodes.json' -StateDirectory 'C:\ProgramData\platmon-hub\state'
-Start-ScheduledTask -TaskName platmon-hub
-Get-ScheduledTaskInfo -TaskName platmon-hub
-```
-
-The task uses Local Service and an AtStartup trigger, without interactive login
-or a stored user password. It refuses to overwrite an existing task implicitly.
-See [Microsoft's service-account task principal example](https://learn.microsoft.com/en-us/powershell/module/scheduledtasks/new-scheduledtaskprincipal).
-`Stop-ScheduledTask -TaskName platmon-hub` can forcibly terminate the process;
-it is not a guaranteed graceful flush. Foreground Ctrl+C supports graceful drain.
-To restart a scheduled instance, stop it, verify process exit, then start it.
-Do not run a foreground instance against its same database. Confirm reboot
-startup and the account's filesystem/network access on the actual Windows host.
-No service or scheduled task is installed by the wheel or CI.
+Startup before login uses a separate administrator-managed installation. Follow
+the [Task Scheduler guide](windows-task-scheduler.md) only for that deployment.
+A login Startup shortcut does not create a scheduled task; the two guides are
+alternatives, not consecutive setup steps.
 
 ## Logging and health
 

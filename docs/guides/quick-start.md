@@ -67,4 +67,4 @@ Follow [Register agents and start monitoring](setup.md#register-agents-and-start
 
 For file locations, see the [repository layout](../development/README.md#repository-layout). If startup fails, use [first-run troubleshooting](troubleshooting.md).
 
-For a saved Windows launcher with History and the Devices tab, see [Windows quick start and login startup](operations.md#windows-quick-start-and-login-startup). For an installed CLI or supervised service, follow [installation and operations](operations.md).
+For a saved Windows launcher with History and the Devices tab, see [Windows quick start and login startup](windows-startup.md). For an installed CLI or supervised service, follow [installation and operations](operations.md).
