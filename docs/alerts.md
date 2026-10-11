@@ -1,5 +1,7 @@
 # Internal alerts
 
+[Documentation index](README.md)
+
 Enable with `--history-db /path/history.db --alerts /path/alerts.json`.
 Review `alerts.example.json` against each device's safe operating temperatures;
 its thresholds are examples, not hardware safety limits. Rules apply to all enabled

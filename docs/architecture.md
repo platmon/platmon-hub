@@ -1,5 +1,7 @@
 # platmon-hub architecture
 
+[Documentation index](README.md)
+
 This describes the implemented `0.2.0rc1` candidate. Agent and Hub application/API
 versions are independent; [the consumption contract](agent-contract.md) pins the
 Agent status/stats schema 1 and observations schema 2.

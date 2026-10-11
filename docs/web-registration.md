@@ -1,5 +1,7 @@
 # Local web device management
 
+[Documentation index](README.md)
+
 The Dashboard has separate **Monitoring** and **Devices** tabs. Devices lists the
 registry and supports add, edit, enable/disable and remove. The forms use name,
 IP/hostname, port (default 9797), and enabled state. Existing CLI management

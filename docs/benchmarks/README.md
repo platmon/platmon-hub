@@ -1,5 +1,7 @@
 # Reproducing synthetic measurements
 
+[Documentation index](../README.md)
+
 These files contain generated loopback-only measurements, not private registry or
 operational logs. The [experiment plan](plan.md) defines targets and the time budget
 before execution. Default runs use unchanged production polling/storage bounds.

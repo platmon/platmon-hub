@@ -1,5 +1,7 @@
 # Hub listener port policy and bind-failure diagnosis
 
+[Documentation index](README.md) · [Setup and operations](backend.md#access-boundary)
+
 ## Defaults and boundary
 
 | Component | Default TCP listener | Where it runs |
@@ -9,7 +11,19 @@
 
 Hub binds to **`127.0.0.1:9787`** by default. Open the dashboard using `http://127.0.0.1:9787/`. Do not expose the Hub directly to an untrusted network: this MVP has **no authentication or TLS**. A non-loopback bind needs an operator-managed authenticated, encrypted reverse proxy or other approved protection.
 
-Choose a different port explicitly, e.g. `python -m hub --nodes nodes.json --port 9798`. The Hub **never** scans for free ports, falls back to a different port, or accepts ephemeral `--port 0`. The operator must update browser URLs, proxies and service configuration consistently after changing the port.
+Run Hub commands from the **repository root**, after creating your registry with the [setup guide](backend.md#register-agents-and-start-monitoring). Choose a different port explicitly:
+
+```powershell
+# Windows PowerShell (use py -3 instead of python if needed)
+python -m hub --nodes "$env:LOCALAPPDATA\platmon-hub\nodes.json" --port 9798
+```
+
+```sh
+# Linux
+python3 -m hub --nodes "$HOME/.config/platmon-hub/nodes.json" --port 9798
+```
+
+For the empty-registry [Quick Start](quick-start.md), use `./nodes.example.json` in place of the private registry path. The Hub **never** scans for free ports, falls back to a different port, or accepts ephemeral `--port 0`. The operator must update browser URLs, proxies and service configuration consistently after changing the port.
 
 `9787` is in the IANA **User Ports** range (1024–49151), **not an exclusive assignment to platmon-hub**. IANA service registration does not guarantee that the port is free on a given host, and an unregistered port would not guarantee exclusivity either. The successful Windows two-agent, 30-minute local soak established availability **on that test host at the time**, not universal freedom from collisions.
 

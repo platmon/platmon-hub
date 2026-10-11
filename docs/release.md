@@ -1,5 +1,7 @@
 # Release candidate and upgrade policy
 
+[Documentation index](README.md)
+
 `0.2.0rc1` is a candidate application version, not an assertion of production
 acceptance. Versions follow PEP 440; candidate increments precede a stable release.
 Hub HTTP schema 1, SQLite schema 4 and Agent schemas remain separately versioned.

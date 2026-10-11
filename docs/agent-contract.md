@@ -1,6 +1,10 @@
 # platmon agent consumption contract for Hub
 
-**Status:** Proposed Hub-side consumer contract. **Source of truth:** the published [platmon v1.0.0 HTTP API](https://github.com/platmon/platmon/blob/v1.0.0/docs/api.md), [observations](https://github.com/platmon/platmon/blob/v1.0.0/docs/observations.md) and [history](https://github.com/platmon/platmon/blob/v1.0.0/docs/history.md). All links are pinned to the agent release, not its evolving `main` branch. This document does **not** introduce or change endpoints in platmon.
+[Documentation index](README.md) · [Architecture](architecture.md) · [Hub API](api.md)
+
+**Status:** Agent contract baseline consumed by the current Hub preview. **Source of truth:** the published [platmon v1.0.0 HTTP API](https://github.com/platmon/platmon/blob/v1.0.0/docs/api.md), [observations](https://github.com/platmon/platmon/blob/v1.0.0/docs/observations.md) and [history](https://github.com/platmon/platmon/blob/v1.0.0/docs/history.md). All links are pinned to the agent release, not its evolving `main` branch. This document does **not** introduce or change endpoints in platmon.
+
+This document describes upstream semantics and the Hub consumption policy. The implemented health/freshness checks are in [hub/protocol.py](../hub/protocol.py) and [hub/state.py](../hub/state.py); it is not a claim that every optional upstream field is validated. Hub-facing response fields are documented separately in the [Hub API reference](api.md).
 
 ## 1. Compatibility matrix
 
@@ -9,7 +13,7 @@
 | `GET /api/status` | HTTP 200 even when no current snapshot; inspect `ready` and `state`. No collection triggered. | `1` | **Required** for node health and collection progress; cannot equate HTTP 200 to healthy. |
 | `GET /api/stats` | HTTP 200 with current snapshot; **503** for no current data (including stale). Requests can wait up to 5 s for the first sample. | `1` | Read only when `/api/status` indicates `ready=true`; missing current data is **not** transport offline. |
 | `GET /api/observations` | HTTP 200 and `groups` map (can be `{}`); reads the independent slow publishers; no collection triggered. | **`2`** | Poll on independent low cadence; handle group absence, individual staleness and tri-state Wi-Fi. Failure is not core failure. |
-| `GET /api/history` | HTTP 200 with bounded in-memory series if enabled; **404** when disabled. Restart clears history. | `1` | Out of scope for polling and persistence in the initial fleet MVP. Future optional read; never presume durable history. |
+| `GET /api/history` | HTTP 200 with bounded in-memory series if enabled; **404** when disabled. Restart clears history. | `1` | Not polled. Hub persistence stores its own accepted responses; Agent history is not a durable backfill. |
 | `GET /text`, `GET /` | Human-readable output or local Web UI (if enabled). | N/A | Not a machine contract for Hub. |
 
 All agent API responses above carry `Cache-Control: no-store` in v1.0.0; Hub must not rely on intermediary caches. Default agent port is 9797, but it is configurable and must be stored with each node's endpoint. The API has **no authentication**: a trusted network/VPN is a prerequisite, not an authorization feature.
@@ -50,13 +54,13 @@ If the status state and `ready` field contradict one another, Hub must report a 
 
 ### Clock and freshness across nodes
 
-Hub must not compare the Orin and Pi wall-clock timestamps to determine which node is fresher or sort publication sequence across them. Store the Hub's receipt time (UTC for audit) plus a **Hub monotonic receipt tick**; compute elapsed time locally since receipt. For a cached response, display `agent_reported_data_age_ms + hub_elapsed_since_receipt_ms` as an **estimated lower bound** (network transit time is not included), and stop labeling a cached sample current when this exceeds `stale_after_ms` plus the Hub core poll interval and request deadlines (see [architecture §5](architecture.md#5-state-and-freshness-model); upstream `stale_after_ms` is only `max(3 × interval, 5 s)`, about one poll period). Add an explicit Hub poll/connection error and last-success age if contact is lost.
+Hub must not compare the Orin and Pi wall-clock timestamps to determine which node is fresher or sort publication sequence across them. Store the Hub's receipt time (UTC for audit) plus a **Hub monotonic receipt tick**; compute elapsed time locally since receipt. For a cached response, display `agent_reported_data_age_ms + hub_elapsed_since_receipt_ms` as an **estimated lower bound** (network transit time is not included), and stop labeling a cached sample current when this exceeds `stale_after_ms` plus the Hub core poll interval and request deadlines (see [state semantics](architecture.md#default-polling-and-state-semantics); upstream `stale_after_ms` is only `max(3 × interval, 5 s)`, about one poll period). Add an explicit Hub poll/connection error and last-success age if contact is lost.
 
 A newer Hub poll returning the **same** `(node_id, instance_id, sequence)` must only refresh reachability/age; it must **not** append a duplicate published measurement. On a changed `instance_id`, start a new sample generation even if its sequence is smaller. If the same instance returns an older sequence, reject it from the latest sample rather than overwriting newer data. Malformed timing values must not produce an optimistic Live assessment.
 
 ## 3. Stable identities
 
-Hub's `node_id` is durable and assigned in its registry independently of platmon's protocol. A UUID is recommended. It is never derived from an IP address, hostname, Linux machine ID, serial number or agent `instance_id` (none is guaranteed to be a stable global ID by the platmon API). Endpoint/IP/hostname can change without a new logical node.
+Hub's `node_id` is durable and assigned in its registry independently of platmon's protocol. The registry requires a canonical UUID. It is never derived from an IP address, hostname, Linux machine ID, serial number or agent `instance_id` (none is guaranteed to be a stable global ID by the platmon API). Endpoint/IP/hostname can change without a new logical node.
 
 | Entity | Identity key | Lifetime / caution |
 | --- | --- | --- |
@@ -92,16 +96,16 @@ A failure or unsupported schema in `/api/observations` should be marked as an **
 | Valid status `ready=false` | Display agent `starting` or `stale`; no attempt to force new collection or fake sample values. |
 | Stats 503 after `ready=true` | Race/no current data; show stale/no current sample, retry next scheduled cycle; not offline. |
 | Invalid JSON, truncated content, missing mandatory field, incompatible status/ready pair | Explicit protocol error; leave last good values labeled last known. |
-| Socket/DNS/connect/read timeout | Transport failure; apply Hub's two-consecutive-failure offline policy; no cross-node stall. |
+| Socket/DNS/connect/read timeout | Transport failure; apply Hub's two-consecutive-failure offline policy, subject to the [worker and DNS limits](architecture.md#default-polling-and-state-semantics). |
 | Sample with `null`/unsupported optional metrics | Preserve unavailable semantics, never substitute zero. |
 
 All JSON must be decoded with size bounds and type/range validation for fields used to make health or freshness decisions. Schema support is **per endpoint**, not one global Hub-compatible version. When a newer agent introduces an incompatible schema version, Hub must fail visibly for the affected required endpoint rather than guessing.
 
-## 6. History boundary and future retention
+## 6. Agent history boundary and Hub retention
 
 Agent `/api/history` stores only recent, capped memory series (default retention **600 seconds**, configurable 60–3600) and resets on service restart. The endpoint may be disabled. Values are indexed by `series_id` and publication ID with **age relative to the response**, not trustworthy global absolute sample timestamps. A `null` means missing/unknown or a discontinuity; never interpolate across gaps or convert it to zero. Independent slow groups have their own publication IDs; `series_intervals_ms` provides their cadence.
 
-Hub MVP does **not** scrape `/api/history` to backfill a database. A later history PR must make its own decisions about ingestion cadence, Hub receipt-time timestamping, retention, gap semantics, restart boundaries and downsampling; it cannot claim to reconstruct lost intervals from a 600-second volatile buffer.
+Hub does **not** scrape `/api/history` to backfill its database. Optional SQLite persistence stores accepted core and independent observations with Hub receipt time, bounded retention, and explicit continuity/gap evidence. See [history schema](history-schema.md) and [ADR-0002](adr/0002-hub-history-storage.md). Stored History and reports cannot reconstruct unobserved or expired intervals from the Agent memory buffer.
 
 ## 7. Source anchors and change control
 
@@ -111,4 +115,4 @@ Hub MVP does **not** scrape `/api/history` to backfill a database. A later histo
 - [v1.0.0 passive network scope](https://github.com/platmon/platmon/blob/v1.0.0/docs/network.md)
 - [v1.0.0 TCP probe meaning](https://github.com/platmon/platmon/blob/v1.0.0/docs/probe.md)
 
-Future changes to Hub's accepted schema set need fixtures and a compatibility note; do not silently upgrade requirements on the released agent. The proposed Hub state mapping and polling defaults are documented in [architecture.md](architecture.md), **not** promised behaviors of platmon.
+Future changes to Hub's accepted schema set need fixtures and a compatibility note; do not silently upgrade requirements on the released agent. The implemented Hub state mapping and polling defaults are documented in [architecture.md](architecture.md), **not** promised behaviors of platmon.
