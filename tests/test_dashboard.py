@@ -64,7 +64,7 @@ class OverviewTests(unittest.TestCase):
         snap = self.state.snapshot(include_details=False)
         self.assertEqual(snap["overview"], {
             "cpu_percent": 30.0, "gpu_percent": None, "memory_percent": 25.0,
-            "disk_percent": 50.0, "hottest_c": 52.2
+            "disk_percent": 50.0, "hottest_c": 52.2, "npu_percent": None
         })
         self.assertIsNone(snap["stats"])
         self.assertTrue(snap["data_current"])
@@ -85,7 +85,7 @@ class OverviewTests(unittest.TestCase):
         other.accept_core(fixture_status(), s)
         self.assertEqual(other.snapshot()["overview"], {
             "cpu_percent": None, "gpu_percent": None, "memory_percent": None,
-            "disk_percent": None, "hottest_c": None
+            "disk_percent": None, "hottest_c": None, "npu_percent": None
         })
 
     def test_disabled_node_cannot_be_current(self):

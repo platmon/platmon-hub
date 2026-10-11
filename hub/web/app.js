@@ -25,6 +25,12 @@
   function numeric(value) { return typeof value === "number" && Number.isFinite(value); }
   function percent(value) { return numeric(value) && value >= 0 && value <= 100 ? value.toFixed(1) + "%" : "N/A"; }
   function degree(value) { return numeric(value) ? value.toFixed(1) + "°C" : "N/A"; }
+  function quantity(value, divisor, unit, signed) {
+    return numeric(value) && (signed || value >= 0) ? (value / divisor).toFixed(2) + " " + unit : "N/A";
+  }
+  function frequency(value) { return quantity(value, 1e6, "MHz"); }
+  function objects(value) { return Array.isArray(value) ? value.filter(x => x && typeof x === "object" && !Array.isArray(x)) : []; }
+  function triState(value, yes, no) { return value === true ? yes : value === false ? no : "Unknown"; }
   function age(value) {
     if (!numeric(value) || value < 0) return "Unknown age";
     const seconds = value / 1000;
@@ -52,6 +58,7 @@
     grid.append(
       metric("CPU", percent(data.cpu_percent)),
       metric("GPU", percent(data.gpu_percent)),
+      metric("NPU", percent(data.npu_percent)),
       metric("Memory", percent(data.memory_percent)),
       metric("Root disk", percent(data.disk_percent)),
       metric("Hottest", degree(data.hottest_c))
@@ -146,6 +153,76 @@
     if (rows.length > maxRows) root.append(element("p", "empty", "+" + (rows.length - maxRows) + " more rows in Agent API"));
   }
   function rowsOf(obj) { return obj && typeof obj === "object" && !Array.isArray(obj) ? Object.entries(obj) : []; }
+  function renderAccelerators(root, stats) {
+    const wrap = section(root, "GPU & NPU");
+    for (const key of ["gpu", "npu"]) {
+      const device = stats[key] && typeof stats[key] === "object" ? stats[key] : {};
+      const collector = stats.collectors && stats.collectors[key];
+      wrap.append(element("h4", "", key.toUpperCase()));
+      wrap.append(element("p", "secondary", collector
+        ? [collector.state, collector.reason].filter(Boolean).join(" · ")
+        : "No collector information reported"));
+      table(wrap, ["Field", "Value"], [
+        ["Driver", device.driver], ["Provider", device.provider],
+        ["Usage", percent(device.usage)], ["Frequency", frequency(device.freq)],
+        ["Maximum frequency", frequency(device.max_freq)]
+      ]);
+    }
+  }
+  function renderPower(root, stats, n) {
+    const wrap = section(root, "Power & battery");
+    if (stats) {
+      if (stats.power_mode != null) wrap.append(element("p", "secondary", "Power mode: " + stats.power_mode));
+      const rails = rowsOf(stats.power);
+      if (rails.length) table(wrap, ["Power rail", "Reading"], rails.map(([name, value]) => [name, quantity(value, 1, "W")]));
+      const fans = objects(stats.fans);
+      if (fans.length) table(wrap, ["Fan", "Speed", "Duty"], fans.map(f => [f.name, quantity(f.rpm, 1, "rpm"), percent(f.percent)]));
+    }
+    const group = n.observations && n.observations.battery;
+    if (!group || typeof group !== "object") {
+      wrap.append(element("p", "empty", "No battery observation reported by this agent."));
+      return;
+    }
+    const publication = group.observation;
+    const current = n.enabled !== false && !n.optional_error && publication && publication.stale !== true &&
+      numeric(publication.data_age_ms) && numeric(group.stale_after_ms) && publication.data_age_ms <= group.stale_after_ms &&
+      (group.state === "ok" || group.state === "partial");
+    wrap.append(element("p", current ? "secondary" : "last-known",
+      "Battery · " + (group.state || "unknown") + " · " + (current ? "Current" : "Last-known / not current") +
+      " · " + (publication ? age(publication.data_age_ms) : "No observation") +
+      (group.collector && group.collector.reason ? " · " + group.collector.reason : "")));
+    const data = group.data && typeof group.data === "object" ? group.data : {};
+    const batteries = objects(data.batteries);
+    for (const battery of batteries.slice(0, 16)) {
+      wrap.append(element("h4", "", battery.name || "Battery"));
+      if (battery.present === false) {
+        wrap.append(element("p", "empty", "Not present"));
+        continue;
+      }
+      const rows = [["Present", triState(battery.present, "Yes", "No")], ["Charge", percent(battery.percent)],
+        ["Status", battery.status], ["Capacity level", battery.capacity_level],
+        ["Technology", battery.technology], ["Health", battery.health],
+        ["Voltage", quantity(battery.voltage_uv, 1e6, "V")],
+        ["Current", quantity(battery.current_ua, 1e6, "A", true)],
+        ["Power", quantity(battery.power_uw, 1e6, "W", true)],
+        ["Cycle count", Number.isInteger(battery.cycle_count) && battery.cycle_count >= 0 ? battery.cycle_count : "N/A"]];
+      // Keep charge and energy families separate; voltage is not a conversion factor.
+      for (const [family, suffix, unit] of [["charge", "uah", "Ah"], ["energy", "uwh", "Wh"]]) {
+        const values = ["now", "full", "full_design"].map(part => battery[family + "_" + part + "_" + suffix]);
+        if (!values.some(numeric)) continue;
+        const label = family === "charge" ? "Charge" : "Energy";
+        rows.push([label + " now / full / design", values.map(v => quantity(v, 1e6, unit)).join(" / ")]);
+        const full = values[1], design = values[2];
+        rows.push([label + " full vs design", numeric(full) && full >= 0 && numeric(design) && design > 0
+          ? (full * 100 / design).toFixed(1) + "% of design" : "N/A"]);
+      }
+      table(wrap, ["Battery reading", "Value"], rows, 16);
+    }
+    if (batteries.length > 16) wrap.append(element("p", "empty", "+" + (batteries.length - 16) + " more batteries in Agent API"));
+    const external = objects(data.external);
+    if (external.length) table(wrap, ["External supply", "Type", "Power"], external.map(s => [s.name, s.type, triState(s.online, "Online", "Offline")]));
+    if (!batteries.length && !external.length) wrap.append(element("p", "empty", "No battery or external supply readings available."));
+  }
   function renderDetail(doc) {
     const n = doc.node;
     if (!n || n.node_id !== selected) throw new Error("Mismatched node detail");
@@ -163,6 +240,7 @@
     const resources = section(root, "Resources");
     viewMetrics(resources, n.overview, "detail-metrics");
     if (stats && typeof stats === "object") {
+      renderAccelerators(root, stats);
       const identity = section(root, "System");
       const sys = stats.system && typeof stats.system === "object" ? stats.system : {};
       table(identity, ["Field", "Value"], [
@@ -191,6 +269,7 @@
     } else {
       root.append(element("p", "empty", "No core snapshot is available yet."));
     }
+    renderPower(root, stats, n);
     const optional = section(root, "Independent observations");
     const groups = n.observations && typeof n.observations === "object" ? n.observations : {};
     const groupRows = rowsOf(groups).map(([key, group]) => [

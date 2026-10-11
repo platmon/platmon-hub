@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ..filelock import FileLock
 from ..alerts import AlertRecord
-from .schema import SQL, VERSION, MIGRATION_2, MIGRATION_3, MIGRATION_4
+from .schema import SQL, VERSION, MIGRATION_2, MIGRATION_3, MIGRATION_4, MIGRATION_5
 from .projector import ObservationRecord, ContinuityRecord, EventRecord
 
 
@@ -33,12 +33,12 @@ class HistoryStore:
             if version == 0 and not tables:
                 self._migrate(SQL)
                 version = 1
-            elif version not in (1, 2, 3, VERSION):
+            elif version not in (1, 2, 3, 4, VERSION):
                 raise SchemaError('unsupported_history_schema')
             columns = [r[1] for r in c.execute('PRAGMA table_info(core_samples)')]
             if columns != ['node_id', 'instance_id', 'sequence', 'received_at_ms', 'data_age_ms',
                            'stale_after_ms', 'core_state', 'cpu_percent', 'gpu_percent',
-                           'memory_percent', 'disk_percent', 'hottest_c']:
+                           'memory_percent', 'disk_percent', 'hottest_c'] + (['npu_percent'] if version >= 5 else []):
                 raise SchemaError('invalid_history_layout')
             expected = {'core_samples'}
             if version >= 2:
@@ -50,7 +50,7 @@ class HistoryStore:
             tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if tables != expected:
                 raise SchemaError('invalid_history_layout')
-            for target, script in ((2, MIGRATION_2), (3, MIGRATION_3), (4, MIGRATION_4)):
+            for target, script in ((2, MIGRATION_2), (3, MIGRATION_3), (4, MIGRATION_4), (5, MIGRATION_5)):
                 if version >= target:
                     continue
                 backup_path = self.path.with_name(self.path.name + '.v' + str(version) + '-backup-' + uuid.uuid4().hex)
@@ -195,7 +195,7 @@ class HistoryStore:
                 elif highest is not None and record.sequence < highest:
                     counts['dropped_regression'] += 1
                 else:
-                    c.execute('INSERT INTO core_samples VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', record.values())
+                    c.execute('INSERT INTO core_samples VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', record.values())
                     counts['persisted'] += 1
             c.execute('UPDATE hub_sessions SET last_seen_ms=? WHERE session_id=?', (int(time.time() * 1000), self.session_id))
             c.execute('COMMIT')

@@ -11,7 +11,7 @@ from .state import NodeState, OPTIONAL_UNSUPPORTED
 from .registry import validate_registry
 from .reload import RegistryWatcher
 from dataclasses import asdict
-from .history.projector import ContinuityRecord, project_observation, EventRecord
+from .history.projector import ContinuityRecord, project_observation, EventRecord, OBSERVATION_GROUPS
 
 LOG = logging.getLogger(__name__)
 
@@ -141,7 +141,7 @@ class Fleet:
             with self._registry_lock:
                 if not self._current(node_id, state): return
                 if state.accept_observations(raw) and self.history is not None:
-                    for name in ('storage', 'wifi', 'probe'):
+                    for name in OBSERVATION_GROUPS:
                         group = raw['groups'].get(name)
                         reason, threshold = 'absent', 30000
                         if group is not None:
@@ -158,7 +158,7 @@ class Fleet:
                 if self._current(node_id, state):
                     state.fail_observations(exc)
                     reason = 'unavailable' if exc.category in OPTIONAL_UNSUPPORTED else 'error'
-                    for name in ('storage', 'wifi', 'probe'):
+                    for name in OBSERVATION_GROUPS:
                         self._history_submit(ContinuityRecord(node_id, name, state.snapshot(include_details=False)['instance_id'],
                                                              int(time.time()*1000), reason))
         except Exception:

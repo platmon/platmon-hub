@@ -25,7 +25,7 @@ The ZIP contains UTF-8 CSV files with a BOM and CRLF lines:
   included only when no device filter is supplied.
 - `gaps.csv`: stored gaps overlapping the interval; original bounds are preserved.
   An empty end is an open gap. Unknown gaps do not prove network failure.
-- `observations.csv`: only with `--observations`; selected Storage/Wi-Fi/Probe
+- `observations.csv`: only with `--observations`; selected Storage/Wi-Fi/Probe/Battery
   JSON already persisted by Hub, with no additional Agent requests. Probe data
   can contain private addresses; treat archives as private operational data.
 - `manifest.json`: format/schema versions, selection, timestamp/null/unit/text
@@ -33,10 +33,15 @@ The ZIP contains UTF-8 CSV files with a BOM and CRLF lines:
 
 The Core columns are `node_id`, `instance_id`, `sequence`, `received_at_ms`,
 `data_age_ms`, `stale_after_ms`, `core_state`, `cpu_percent`, `gpu_percent`,
-`memory_percent`, `disk_percent`, `hottest_c`. Percent values are 0–100;
+`memory_percent`, `disk_percent`, `hottest_c`, `npu_percent`. Percent values are 0–100;
 temperature is degrees Celsius. Receipt time is when Hub observed the sample,
 not an exact Agent collection timestamp. Instance changes remain separate rows
 and identities. Missing values are empty cells, numeric zero remains zero.
+
+`npu_percent` is appended to the format-1 CSV columns; consumers should use header
+names. Battery JSON retains µAh/µWh, µV, signed µA/µW, and true/false/null for
+presence and external supply state. It does not estimate remaining runtime or
+convert charge into energy.
 
 To prevent spreadsheet formula execution, risky string cells and strings already
 starting with an apostrophe receive one extra leading apostrophe. Numeric cells
@@ -182,6 +187,9 @@ rows. `report --help` describes the database form; the archive form is below.
 Automatic archives also keep `summaries/YYYY-MM-DD.json` separately from raw
 ZIPs. Default `--archive-summary-retention-days 365` preserves these daily
 summaries for a year; the standalone job uses `--summary-retention-days`.
+New summaries use `summary_format_version: 2` with NPU statistics. Monthly reports
+accept both formats 1 and 2; old summaries contribute zero NPU observations and
+null aggregates, never an invented idle reading. The raw ZIP format remains 1.
 The configured quota now covers recognized ZIPs **and** summaries together.
 When it is exhausted, older raw ZIPs are discarded first, then older summaries.
 Retention periods are upper bounds, not guaranteed under quota pressure.

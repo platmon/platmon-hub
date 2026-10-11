@@ -2,7 +2,7 @@
 
 [Documentation index](../README.md) · [Design reference](README.md)
 
-Hub HTTP schema 1 is independent of Agent schemas and SQLite schema 4. JSON missing
+Hub HTTP schema 1 is independent of Agent schemas and SQLite schema 5. JSON missing
 measurements are `null`, never synthetic zero. UTC timestamps use Unix milliseconds.
 Responses disable caching. The browser contacts the Hub only.
 
@@ -21,12 +21,18 @@ Node routes use the canonical registry UUID. Unknown nodes return 404. A removed
 node's stored data remains in SQLite, but the node History route requires a current
 registry entry. See [backend](../guides/setup.md) for live payload and freshness semantics.
 
+`overview.npu_percent` is an additive nullable percentage beside `gpu_percent`.
+Detail `stats.gpu` / `stats.npu` preserve driver/provider and clocks (Hz), and
+`observations.battery` preserves the independent battery envelope and its age.
+Clients must distinguish unknown/null readings from numeric zero, and use the
+group's freshness rather than core freshness for battery data.
+
 ## History
 
 Required query parameters are `metric`, `from_ms`, `to_ms`; optional `max_points`
 defaults to 1200 and must be 1–1200. The half-open interval `[from_ms, to_ms)` must
 be positive and at most 7 days. Metrics are a fixed allowlist: `cpu_percent`,
-`gpu_percent`, `memory_percent`, `disk_percent`, `hottest_c`.
+`gpu_percent`, `npu_percent`, `memory_percent`, `disk_percent`, `hottest_c`.
 
 The response includes `schema_version`, `node_id`, `metric`, `from_ms`, `to_ms`,
 `max_points`, `points`, `gaps`, `timestamp_meaning: hub_receipt_utc_ms` and

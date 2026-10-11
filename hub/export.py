@@ -14,11 +14,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .history.schema import VERSION
+from .history.query import METRICS
 from .history.store import read_connection
 
 FORMAT_VERSION = 1
 DAY_MS = 86400000
-METRICS = ('cpu_percent', 'gpu_percent', 'memory_percent', 'disk_percent', 'hottest_c')
 CORE = ('node_id', 'instance_id', 'sequence', 'received_at_ms', 'data_age_ms',
         'stale_after_ms', 'core_state') + METRICS
 EVENTS = ('node_id', 'event_type', 'received_at_ms', 'previous_state',

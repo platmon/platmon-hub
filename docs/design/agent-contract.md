@@ -2,13 +2,17 @@
 
 [Documentation index](../README.md) · [Design reference](README.md) · [Architecture](architecture.md) · [Hub API](api.md)
 
-**Status:** Agent contract baseline consumed by the current Hub preview. **Source of truth:** the published [platmon v1.0.0 HTTP API](https://github.com/platmon/platmon/blob/v1.0.0/docs/api.md), [observations](https://github.com/platmon/platmon/blob/v1.0.0/docs/observations.md) and [history](https://github.com/platmon/platmon/blob/v1.0.0/docs/history.md). All links are pinned to the agent release, not its evolving `main` branch. This document does **not** introduce or change endpoints in platmon.
+**Status:** Agent contract baseline consumed by the current Hub preview. **Source of truth:** the tagged [platmon v1.2.0 HTTP API](https://github.com/platmon/platmon/blob/v1.2.0/docs/api.md), [observations](https://github.com/platmon/platmon/blob/v1.2.0/docs/observations.md) and [history](https://github.com/platmon/platmon/blob/v1.2.0/docs/history.md). All links are pinned to the agent release, not its evolving `main` branch. This document does **not** introduce or change endpoints in platmon.
 
 This document describes upstream semantics and the Hub consumption policy. The implemented health/freshness checks are in [hub/protocol.py](../../hub/protocol.py) and [hub/state.py](../../hub/state.py); it is not a claim that every optional upstream field is validated. Hub-facing response fields are documented separately in the [Hub API reference](api.md).
 
+The baseline tag resolves to commit `26eae6e975ce184e713418dd2858b56e50d3ab90`.
+Versions 1.1.0 and 1.2.0 are additive: 1.0.0 agents remain supported without NPU
+or battery fields. Hub does not require a global application-version handshake.
+
 ## 1. Compatibility matrix
 
-| Agent resource | v1.0.0 response behavior | Schema | Hub MVP consumer policy |
+| Agent resource | v1.2.0 response behavior | Schema | Hub consumer policy |
 | --- | --- | --- | --- |
 | `GET /api/status` | HTTP 200 even when no current snapshot; inspect `ready` and `state`. No collection triggered. | `1` | **Required** for node health and collection progress; cannot equate HTTP 200 to healthy. |
 | `GET /api/stats` | HTTP 200 with current snapshot; **503** for no current data (including stale). Requests can wait up to 5 s for the first sample. | `1` | Read only when `/api/status` indicates `ready=true`; missing current data is **not** transport offline. |
@@ -16,9 +20,9 @@ This document describes upstream semantics and the Hub consumption policy. The i
 | `GET /api/history` | HTTP 200 with bounded in-memory series if enabled; **404** when disabled. Restart clears history. | `1` | Not polled. Hub persistence stores its own accepted responses; Agent history is not a durable backfill. |
 | `GET /text`, `GET /` | Human-readable output or local Web UI (if enabled). | N/A | Not a machine contract for Hub. |
 
-All agent API responses above carry `Cache-Control: no-store` in v1.0.0; Hub must not rely on intermediary caches. Default agent port is 9797, but it is configurable and must be stored with each node's endpoint. The API has **no authentication**: a trusted network/VPN is a prerequisite, not an authorization feature.
+All agent API responses above carry `Cache-Control: no-store` in v1.2.0; Hub must not rely on intermediary caches. Default agent port is 9797, but it is configurable and must be stored with each node's endpoint. The API has **no authentication**: a trusted network/VPN is a prerequisite, not an authorization feature.
 
-The **application release version `1.0.0` is not an endpoint schema version**. Hub independently validates the response schema **per endpoint**. It must not assume `/api/observations` schema 1 because `/api/stats` is schema 1.
+The **application release version `1.2.0` is not an endpoint schema version**. Hub independently validates the response schema **per endpoint**. It must not assume `/api/observations` schema 1 because `/api/stats` is schema 1.
 
 ## 2. Required core health fields
 
@@ -52,6 +56,16 @@ If the status state and `ready` field contradict one another, Hub must report a 
 - `collectors.core.state=ok` means required collection succeeded. An optional `collectors.*.state` can be `ok`, `partial`, `error` or `unavailable`. `unavailable` often means unsupported hardware or no data now, **not** an error. Partial/error means diagnostic degradation, not necessarily a stale core snapshot.
 - Missing keys, `null`, and warmup are **not numeric zero**. CPU rows absent during warmup are not idle cores; distinguish `cpu_sampling.unavailable` reasons (e.g. `warmup`, `gap`, `counter_regressed`). GPU may be null on the Pi without making the node degraded.
 
+### GPU and NPU additions (1.1.0)
+
+Both accelerator objects can be absent/null, or present with null `usage`, `freq`
+and `max_freq`. A driver with no supported load source remains visible by `driver`
+and `provider`; `unavailable/not_exposed` differs from `not_detected`. Usage is
+percent, clocks are Hz, and a measured zero is valid (including a gated clock).
+Hub shows the source metadata and persists validated GPU/NPU percentages; Intel
+GPU RC6 usage is time outside idle, not per-engine occupancy. No NPU threshold or
+hardware identity is inferred.
+
 ### Clock and freshness across nodes
 
 Hub must not compare the Orin and Pi wall-clock timestamps to determine which node is fresher or sort publication sequence across them. Store the Hub's receipt time (UTC for audit) plus a **Hub monotonic receipt tick**; compute elapsed time locally since receipt. For a cached response, display `agent_reported_data_age_ms + hub_elapsed_since_receipt_ms` as an **estimated lower bound** (network transit time is not included), and stop labeling a cached sample current when this exceeds `stale_after_ms` plus the Hub core poll interval and request deadlines (see [state semantics](architecture.md#default-polling-and-state-semantics); upstream `stale_after_ms` is only `max(3 × interval, 5 s)`, about one poll period). Add an explicit Hub poll/connection error and last-success age if contact is lost.
@@ -75,7 +89,7 @@ Hub's `node_id` is durable and assigned in its registry independently of platmon
 
 ## 4. Independent low-frequency observations
 
-`/api/observations` uses **schema 2** in platmon v1.0.0. It includes `instance_id`, `clock`, and `groups` containing zero or more of `storage`, `wifi`, and `probe`, each with its own publication `observation.id`, times and `interval_ms`/`stale_after_ms`.
+`/api/observations` uses **schema 2** in platmon v1.2.0. It includes `instance_id`, `clock`, and `groups` containing zero or more of `storage`, `wifi`, `probe`, and `battery`, each with its own publication `observation.id`, times and `interval_ms`/`stale_after_ms`.
 
 - The `groups` map is legitimately empty if no groups are enabled. A group may be absent or idle by configuration; that is not an API violation.
 - The group's `state` may be `starting`, `stale`, `ok`, `partial`, `error`, or `unavailable`. A stale group may **still contain old `data`**, which must be visibly noncurrent.
@@ -84,7 +98,24 @@ Hub's `node_id` is durable and assigned in its registry independently of platmon
 - The configured `probe` observes a **TCP connection handshake** to an explicitly configured IP:port, not an ICMP ping and not end-to-end application responsiveness. Hub polling does **not** configure or trigger probes, and probe failures must not be interpreted as the agent being offline.
 - Network counters belong to the agent's own network namespace. Do not sum interface rates into a made-up host throughput or infer an uplink interface without a separate contract. Disk I/O `io_time_ratio` is time with I/O in flight, not necessarily saturation.
 
-A failure or unsupported schema in `/api/observations` should be marked as an **optional endpoint error** while a correctly read core sample remains usable. Versions of an older agent that answer 404 on this optional endpoint should not become transport `offline`. `/api/history` 404 means disabled; it also must not become transport `offline`.
+A failed `/api/observations` request is an **optional endpoint error**; 404 and unsupported schemas are marked **unsupported/incompatible** without raising the optional-error alert while a correctly read core sample remains usable. Versions of an older agent that answer 404 on this optional endpoint should not become transport `offline`. `/api/history` 404 means disabled; it also must not become transport `offline`.
+
+### Battery addition (1.2.0)
+
+The optional `battery` group follows the same publication identity and freshness
+rules as other observations. Its default interval is 60 seconds and stale threshold
+is three intervals. Hub's existing ten-second observations polling only reads the
+cache; it does not trigger battery collection. A missing group or
+`unavailable/not_detected` is normal on devices without a battery.
+
+Hub displays and persists selected `batteries` and `external` fields from the
+[battery contract](https://github.com/platmon/platmon/blob/v1.2.0/docs/battery.md).
+It preserves `present`/`online` as true/false/null; an empty battery bay has no
+readings. Charge (µAh) and energy (µWh) are never converted into one another.
+Voltage is µV, current is signed µA, power is signed µW; driver status determines
+charging/discharging. Full/design ratios compare values within one family only.
+The UI converts display units to Ah, Wh, V, A and W; observation exports retain
+the original units. No charge control, low-charge alert or battery graph is added.
 
 ## 5. Parsing / version policy
 
@@ -109,10 +140,15 @@ Hub does **not** scrape `/api/history` to backfill its database. Optional SQLite
 
 ## 7. Source anchors and change control
 
-- [v1.0.0 API fields and collector states](https://github.com/platmon/platmon/blob/v1.0.0/docs/api.md)
-- [v1.0.0 independent observations and schema-2 Wi-Fi](https://github.com/platmon/platmon/blob/v1.0.0/docs/observations.md)
-- [v1.0.0 history and gap semantics](https://github.com/platmon/platmon/blob/v1.0.0/docs/history.md)
-- [v1.0.0 passive network scope](https://github.com/platmon/platmon/blob/v1.0.0/docs/network.md)
-- [v1.0.0 TCP probe meaning](https://github.com/platmon/platmon/blob/v1.0.0/docs/probe.md)
+- [v1.2.0 API fields and collector states](https://github.com/platmon/platmon/blob/v1.2.0/docs/api.md)
+- [v1.2.0 independent observations and schema-2 Wi-Fi](https://github.com/platmon/platmon/blob/v1.2.0/docs/observations.md)
+- [v1.2.0 history and gap semantics](https://github.com/platmon/platmon/blob/v1.2.0/docs/history.md)
+- [v1.2.0 passive network scope](https://github.com/platmon/platmon/blob/v1.2.0/docs/network.md)
+- [v1.2.0 TCP probe meaning](https://github.com/platmon/platmon/blob/v1.2.0/docs/probe.md)
+- [v1.2.0 battery and external power](https://github.com/platmon/platmon/blob/v1.2.0/docs/battery.md)
+
+Synthetic compatibility coverage lives in [test_agent_v120.py](../../tests/test_agent_v120.py)
+and [the pinned payload fixture](../../tests/fixtures/agent-v1.2.0.json); these are
+contract tests, not evidence of a new physical-device acceptance run.
 
 Future changes to Hub's accepted schema set need fixtures and a compatibility note; do not silently upgrade requirements on the released agent. The implemented Hub state mapping and polling defaults are documented in [architecture.md](architecture.md), **not** promised behaviors of platmon.

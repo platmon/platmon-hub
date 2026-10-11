@@ -8,7 +8,7 @@ from urllib.parse import parse_qs
 from .schema import VERSION
 from .store import read_connection
 
-METRICS = ('cpu_percent', 'gpu_percent', 'memory_percent', 'disk_percent', 'hottest_c')
+METRICS = ('cpu_percent', 'gpu_percent', 'memory_percent', 'disk_percent', 'hottest_c', 'npu_percent')
 MAX_SPAN_MS = 7 * 86400000
 MAX_POINTS = 1200
 

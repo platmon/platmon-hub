@@ -1,4 +1,4 @@
-"""Measure schema-4 insert, query, retention and checkpoint costs in a temp DB."""
+"""Measure current-schema insert, query, retention and checkpoint costs in a temp DB."""
 import json
 import tempfile
 import time
