@@ -3,6 +3,7 @@
 import hashlib
 import json
 import threading
+import time
 import unittest
 import uuid
 from http.client import HTTPConnection
@@ -120,6 +121,32 @@ class DashboardHttpTests(unittest.TestCase):
             return response.status, dict(response.getheaders()), response.read()
         finally:
             conn.close()
+
+    def test_rejected_write_with_late_body_still_delivers_response(self):
+        # http.client sends headers and body separately; a reply sent before the
+        # body arrives used to be lost to a TCP reset on Windows.
+        import socket
+        body = b'{"name":"x"}'
+        for _ in range(10):
+            with socket.create_connection(("127.0.0.1", self.server.server_address[1]), timeout=2) as client:
+                headers = (b"PUT /api/nodes HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\n"
+                           b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n")
+                client.sendall(headers)
+                time.sleep(0.02)
+                client.sendall(body)
+                time.sleep(0.02)
+                self.assertTrue(client.recv(4096).startswith(b"HTTP/1.0 405"))
+
+    def test_head_returns_headers_without_body_and_refuses_downloads(self):
+        status, headers, body = self.request("HEAD", "/healthz")
+        self.assertEqual((status, body), (200, b""))
+        self.assertEqual(headers["Content-Type"], "application/json; charset=utf-8")
+        self.assertEqual(headers["Content-Length"], str(len(b'{"status":"ok"}')))
+        status, headers, body = self.request("HEAD", "/assets/app.js")
+        self.assertEqual((status, body), (200, b""))
+        self.assertEqual(int(headers["Content-Length"]), len(self.request("GET", "/assets/app.js")[2]))
+        self.assertEqual(self.request("HEAD", "/api/data/export?from_ms=0&to_ms=1")[0], 405)
+        self.assertEqual(self.request("HEAD", "/missing")[0], 404)
 
     def test_static_allowlist_mime_csp_and_no_query(self):
         for path, mime in [("/", "text/html"), ("/index.html", "text/html"),

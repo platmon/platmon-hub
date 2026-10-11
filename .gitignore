@@ -3,3 +3,10 @@ __pycache__/
 .pytest_cache/
 nodes.json
 soak-results/
+
+# Local registry backups/locks written next to the registry, and packaging output
+nodes.json.bak
+*.lock
+build/
+dist/
+*.egg-info/

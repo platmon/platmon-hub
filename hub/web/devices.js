@@ -13,6 +13,7 @@
   const saveButton = document.getElementById("device-save");
   const cancelButton = document.getElementById("device-cancel");
   const removePreview = document.getElementById("device-remove-preview");
+  const enabledLabel = document.getElementById("device-enabled-label");
   const controllers = new Set();
   let available = false;
   let ticket = 0;
@@ -106,7 +107,7 @@
         const button = element("button", "refresh-button" + (action === "remove" ? " danger-button" : ""), label);
         button.type = "button";
         button.disabled = busy;
-        button.addEventListener("click", () => openDialog(action, node));
+        button.addEventListener("click", () => action === "toggle" ? toggle(node) : openDialog(action, node));
         actions.append(button);
       }
       card.append(description, actions);
@@ -155,11 +156,38 @@
     else if (!management.hidden) refresh();
   });
 
+  function address(node) {
+    const endpoint = new URL(node.endpoint);
+    return {host:endpoint.hostname, port:Number(endpoint.port || 80)};
+  }
+  async function toggle(node) {
+    // Enable/disable is reversible and keeps History, so it applies without a dialog.
+    if (busy || !available || dialog.open) return;
+    const current = ticket;
+    busy = true;
+    addButton.disabled = true;
+    render();
+    status.textContent = (node.enabled ? "Disabling " : "Enabling ") + node.name + "…";
+    try {
+      const data = await request("/api/admin/nodes/" + encodeURIComponent(node.node_id) + "/update",
+        Object.assign({name:node.name, enabled:!node.enabled, expected:node}, address(node)));
+      if (current !== ticket) return;
+      if (data.saved !== true) throw new Error("Cannot confirm save. Refresh Devices before retrying.");
+      document.dispatchEvent(new Event("registry-change"));
+      entries = validateEntries(await request("/api/admin/nodes"));
+      if (current === ticket) status.textContent = node.name + (node.enabled ? " disabled. Polling stops; History is preserved." : " enabled. Fleet starts polling automatically.");
+    } catch (error) {
+      if (current !== ticket) return;
+      status.textContent = error.name === "AbortError" ? "Save response timed out. Refresh Devices before retrying; the change may already be saved." : error.message;
+    } finally {
+      if (current === ticket) { busy = false; addButton.disabled = !available; render(); }
+    }
+  }
   function openDialog(action, node) {
     if (busy || !available || dialog.open) return;
     form.reset();
     editing = node;
-    operation = action === "toggle" ? "update" : action;
+    operation = action;
     fields.hidden = operation === "remove";
     fields.disabled = operation === "remove";
     removePreview.hidden = operation !== "remove";
@@ -172,12 +200,13 @@
       "Remove this registration and stop future polling. Existing History and events are preserved. Cancel to keep the device." : "Changes apply automatically and preserve the device identity and History.";
     saveButton.textContent = operation === "remove" ? "Remove device" : "Save device";
     saveButton.classList.toggle("danger-button", operation === "remove");
+    enabledLabel.textContent = operation === "add" ? " Start monitoring after registration" : " Monitor this device";
     if (node) {
-      const endpoint = new URL(node.endpoint);
+      const {host, port} = address(node);
       document.getElementById("device-name").value = node.name;
-      document.getElementById("device-host").value = endpoint.hostname;
-      document.getElementById("device-port").value = endpoint.port || "80";
-      document.getElementById("device-enabled").checked = action === "toggle" ? !node.enabled : node.enabled;
+      document.getElementById("device-host").value = host;
+      document.getElementById("device-port").value = String(port);
+      document.getElementById("device-enabled").checked = node.enabled;
       removePreview.textContent = node.name + " · " + node.endpoint + " · " + node.node_id;
     }
     dialog.showModal();

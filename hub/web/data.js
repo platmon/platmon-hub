@@ -7,10 +7,19 @@
   let controller = null;
   let ticket = 0;
   let busy = false;
-  const end = new Date();
-  const start = new Date(end.getTime() - 86400000);
-  document.getElementById("data-from").value = start.toISOString().slice(0, 16);
-  document.getElementById("data-to").value = end.toISOString().slice(0, 16);
+  const fromInput = document.getElementById("data-from");
+  const toInput = document.getElementById("data-to");
+  let rangeEdited = false;
+  // Until the user picks a range, keep the default "last 24 hours" ending now,
+  // not at the moment the page was first opened.
+  function defaultRange() {
+    if (rangeEdited) return;
+    const end = new Date();
+    fromInput.value = new Date(end.getTime() - 86400000).toISOString().slice(0, 16);
+    toInput.value = end.toISOString().slice(0, 16);
+  }
+  for (const input of [fromInput, toInput]) input.addEventListener("input", () => { rangeEdited = true; });
+  defaultRange();
 
   function option(text, value) {
     const item = document.createElement("option");
@@ -28,6 +37,7 @@
   async function refresh() {
     if (view.hidden || document.hidden || busy) return;
     suspend();
+    defaultRange();
     const current = ticket;
     controller = new AbortController();
     const timeout = setTimeout(() => { if (current === ticket && controller) controller.abort(); }, 5000);
@@ -54,8 +64,9 @@
   document.getElementById("data-form").addEventListener("submit", async event => {
     event.preventDefault();
     if (busy || view.hidden || document.hidden || button.disabled) return;
-    const from = Date.parse(document.getElementById("data-from").value + "Z");
-    const to = Date.parse(document.getElementById("data-to").value + "Z");
+    defaultRange();
+    const from = Date.parse(fromInput.value + "Z");
+    const to = Date.parse(toInput.value + "Z");
     const node = document.getElementById("data-uuid").value.trim() || select.value;
     if (!Number.isFinite(from) || !Number.isFinite(to) || from < 0 || to <= from || to - from > 7 * 86400000 ||
         (node && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(node))) {

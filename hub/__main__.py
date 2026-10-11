@@ -7,6 +7,7 @@ import logging
 import math
 import sys
 import signal
+import socket
 from logging.handlers import RotatingFileHandler
 from . import __version__
 from .http import HubServer
@@ -32,9 +33,19 @@ def bind_hub(bind, port, fleet, admin=None):
         if admin is None:
             return HubServer((bind, port), fleet)
         return HubServer((bind, port), fleet, admin=admin)
+    except socket.gaierror:
+        raise SystemExit(
+            f"platmon-hub: cannot listen on {bind}:{port}: the bind address is not a local "
+            "IP address or resolvable name. Use 127.0.0.1, ::1 or an address of this host."
+        ) from None
     except OSError as exc:
         if exc.errno in (errno.EADDRINUSE, 10048):
             reason = "address/port is already in use"
+        elif exc.errno in (errno.EADDRNOTAVAIL, 10049):
+            raise SystemExit(
+                f"platmon-hub: cannot listen on {bind}:{port}: the address does not belong to this host. "
+                "Use 127.0.0.1, ::1 or an IP address assigned to this computer."
+            ) from None
         elif exc.errno in (errno.EACCES, errno.EPERM, 10013):
             reason = "permission denied or port reserved by the OS"
         else:

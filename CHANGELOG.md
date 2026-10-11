@@ -22,6 +22,14 @@ listed in [release policy](docs/development/release.md).
   `optional_error`; an unusable `--nodes` file exits with a short explanation
   instead of a traceback; a web rename keeps the stored endpoint spelling
   (host case, implicit `:80`) instead of recording an endpoint change.
+- Fixes: `--bind ::1` and other IPv6 literals work; a foreign or unresolvable bind
+  address is explained instead of a traceback; a rejected write whose body arrives
+  late no longer loses its response to a TCP reset on Windows; registry saves
+  retry briefly while another program holds the file open on Windows; `HEAD` is
+  answered on read-only routes (not on downloads).
+- Dashboard: device cards keep keyboard focus across refreshes; Enable/Disable
+  applies directly; status times are shown in UTC like the rest of the page; the
+  Data tab's default range stays "last 24 hours" until edited.
 - Synthetic 10/50/100-node evidence, a bounded ten-minute soak and fault tests;
   real three-device read-only checks on Linux and native Windows.
 

@@ -7,12 +7,26 @@ import os
 import stat
 import sys
 import tempfile
+import time
 import uuid
 from dataclasses import asdict
 from pathlib import Path
 
 from .filelock import FileLock
 from .registry import load_registry, validate_registry
+
+
+def replace(source, target, attempts=20, delay=0.05):
+    """Windows refuses to replace a file another process (editor, antivirus,
+    the Hub watcher) has open; that sharing violation clears within moments."""
+    for attempt in range(attempts):
+        try:
+            os.replace(str(source), str(target))
+            return
+        except PermissionError:
+            if os.name != 'nt' or attempt == attempts - 1:
+                raise
+            time.sleep(delay)
 
 
 def atomic_write(path, data, mode=0o600):
@@ -26,7 +40,7 @@ def atomic_write(path, data, mode=0o600):
             handle.flush()
             os.fsync(handle.fileno())
         os.chmod(str(temporary), mode)
-        os.replace(str(temporary), str(path))
+        replace(temporary, path)
     finally:
         if temporary.exists():
             temporary.unlink()

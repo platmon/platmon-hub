@@ -9,7 +9,7 @@ for service accounts and filesystem permissions.
 | Option | Default / behavior |
 | --- | --- |
 | `--nodes PATH` | Required strict JSON registry |
-| `--bind ADDRESS` | `127.0.0.1`; retain loopback behind an authenticated proxy |
+| `--bind ADDRESS` | `127.0.0.1`; retain loopback behind an authenticated proxy. IPv6 literals such as `::1` are supported |
 | `--port PORT` | `9787`; fixed integer 1–65535, no automatic fallback |
 | `--history-db PATH` | Disabled unless supplied; local SQLite database |
 | `--archive-dir PATH` | Opt-in daily archive directory; requires history; see [exports and reports](data-export.md) |

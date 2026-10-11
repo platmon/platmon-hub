@@ -2,6 +2,8 @@
 
 import argparse
 import errno
+import socket
+import threading
 import unittest
 from unittest import mock
 
@@ -39,10 +41,43 @@ class PortPolicyTests(unittest.TestCase):
 
     def test_unrecognized_socket_error_is_not_masked(self):
         with mock.patch("hub.__main__.HubServer",
-                        side_effect=OSError(errno.EADDRNOTAVAIL, "not available")):
+                        side_effect=OSError(errno.ENETUNREACH, "unreachable")):
             with self.assertRaises(OSError) as cm:
                 bind_hub("203.0.113.9", 9787, mock.Mock())
-        self.assertEqual(cm.exception.errno, errno.EADDRNOTAVAIL)
+        self.assertEqual(cm.exception.errno, errno.ENETUNREACH)
+
+    def test_foreign_or_unresolvable_bind_address_is_explained(self):
+        for error, text in ((OSError(errno.EADDRNOTAVAIL, "not available"), "does not belong to this host"),
+                            (OSError(10049, "not available"), "does not belong to this host"),
+                            (socket.gaierror(11001, "getaddrinfo failed"), "not a local IP address")):
+            with self.subTest(text=text), mock.patch("hub.__main__.HubServer", side_effect=error):
+                with self.assertRaises(SystemExit) as cm:
+                    bind_hub("203.0.113.9", 9787, mock.Mock())
+                self.assertIn("203.0.113.9:9787", str(cm.exception))
+                self.assertIn(text, str(cm.exception))
+
+    @unittest.skipUnless(socket.has_ipv6, "IPv6 unavailable")
+    def test_ipv6_loopback_bind_serves_requests(self):
+        from http.client import HTTPConnection
+        from hub.http import HubServer
+        from hub.runtime import Fleet
+        fleet = Fleet([])
+        self.addCleanup(fleet.close)
+        try:
+            server = HubServer(("::1", 0), fleet)
+        except OSError as exc:
+            self.skipTest("IPv6 loopback unavailable: " + str(exc))
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 2)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        connection = HTTPConnection("::1", server.server_address[1], timeout=2)
+        try:
+            connection.request("GET", "/healthz")
+            self.assertEqual(connection.getresponse().status, 200)
+        finally:
+            connection.close()
 
     def test_failed_startup_closes_fleet(self):
         fleet = mock.Mock()
