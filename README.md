@@ -43,6 +43,7 @@ Next: [register agents](docs/guides/setup.md#register-agents-and-start-monitorin
 - [Documentation index](docs/README.md) — all guides and project status.
 - [User guide](docs/guides/README.md) — setup, background execution, automatic startup, and operations.
 - [Design reference](docs/design/README.md) — architecture, API, storage schema, and design decisions.
+- [Proposed Agent replay and full-publication storage](docs/design/adr/0003-agent-replay-and-raw-publications.md).
 - [Development and validation](docs/development/README.md) — source layout, local checks, and CI.
 
 [Apache License 2.0](LICENSE).
