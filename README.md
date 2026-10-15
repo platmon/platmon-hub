@@ -1,8 +1,8 @@
 # platmon-hub
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="hub/web/assets/brand/platmon-logo-dark.svg">
-  <img src="hub/web/assets/brand/platmon-logo-light.svg" alt="platmon — approved C / Terminal P brand" width="300">
+  <source media="(prefers-color-scheme: dark)" srcset="hub/web/assets/brand/hub-logo-dark.svg">
+  <img src="hub/web/assets/brand/hub-logo-light.svg" alt="platmon hub" width="300">
 </picture>
 
 Fleet monitoring for independent [platmon](https://github.com/platmon/platmon) agents. Run Hub on Windows or Linux to view live readings, optional SQLite history, internal alerts, and data exports. Hub never installs or controls agents.
