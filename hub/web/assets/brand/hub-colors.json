@@ -1,0 +1,25 @@
+{
+  "name": "platmon hub",
+  "identity": "stacked terminal p",
+  "source": "approved platmon C / Terminal P",
+  "variant": "hub 1.0",
+  "descriptor": "Connect · Monitor · Manage",
+  "colors": {
+    "light": {
+      "p": "#2F7D5B",
+      "terminal": "#1D2127",
+      "cursor": "#1D2127",
+      "platmon": "#1D2127",
+      "hub": "#2F7D5B",
+      "background": "#F6F7F9"
+    },
+    "dark": {
+      "p": "#2F7D5B",
+      "terminal": "#FFFFFF",
+      "cursor": "#FFFFFF",
+      "platmon": "#E6E8EB",
+      "hub": "#4FB286",
+      "background": "#121417"
+    }
+  }
+}

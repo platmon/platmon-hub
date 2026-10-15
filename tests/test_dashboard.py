@@ -155,6 +155,11 @@ class DashboardHttpTests(unittest.TestCase):
                            ("/assets/devices.js", "text/javascript"),
                            ("/assets/data.js", "text/javascript"),
                            ("/favicon.svg", "image/svg+xml"),
+                           ("/assets/brand/favicon.svg", "image/svg+xml"),
+                           ("/assets/brand/hub-icon-light.svg", "image/svg+xml"),
+                           ("/assets/brand/hub-icon-dark.svg", "image/svg+xml"),
+                           ("/assets/brand/hub-logo-light.svg", "image/svg+xml"),
+                           ("/assets/brand/hub-logo-dark.svg", "image/svg+xml"),
                            ("/assets/brand/platmon-icon-light.svg", "image/svg+xml"),
                            ("/assets/brand/platmon-icon-dark.svg", "image/svg+xml"),
                            ("/assets/brand/platmon-logo-light.svg", "image/svg+xml"),
@@ -186,24 +191,55 @@ class DashboardHttpTests(unittest.TestCase):
                 sha = hashlib.sha1(b"blob " + str(len(original)).encode("ascii") +
                                    b"\x00" + original).hexdigest()
                 self.assertEqual(sha, expected_git_sha)
-                route = "/favicon.svg" if filename == "favicon.svg" else "/assets/brand/" + filename
+                route = "/assets/brand/" + filename
                 status, headers, served = self.request("GET", route)
                 self.assertEqual(status, 200)
                 self.assertEqual(served, original)
                 self.assertEqual(headers["Content-Type"], "image/svg+xml")
+
+    def test_hub_brand_assets_preserve_master_shapes_and_theme_colors(self):
+        import xml.etree.ElementTree as ET
+        ns = "{http://www.w3.org/2000/svg}"
+        for name, mode in [("hub-icon-light.svg", "light"), ("hub-icon-dark.svg", "dark"),
+                           ("hub-logo-light.svg", "light"), ("hub-logo-dark.svg", "dark"),
+                           ("hub-favicon.svg", "dark")]:
+            with self.subTest(name=name):
+                data = (ASSET_ROOT / "assets" / "brand" / name).read_bytes()
+                svg = ET.fromstring(data)
+                paths = list(svg.iter(ns + "path"))
+                fills = [p.attrib.get("fill") for p in paths]
+                terminals = "#1D2127" if mode == "light" else "#FFFFFF"
+                self.assertEqual(fills.count(terminals), 2)  # two *filled* rear terminal tabs
+                self.assertTrue(any(p.attrib.get("fill") == "#2F7D5B" and
+                                    p.attrib.get("fill-rule") == "evenodd" and
+                                    p.attrib.get("d", "").startswith("M16 32") for p in paths))
+                cursors = [r for r in svg.iter(ns + "rect") if r.attrib.get("x") == "176"]
+                self.assertEqual(len(cursors), 1)
+                self.assertEqual(cursors[0].attrib["fill"], terminals)
+                self.assertFalse(list(svg.iter(ns + "text")))  # no platform font differences
+
+        for mode in ("light", "dark"):
+            logo = (ASSET_ROOT / "assets" / "brand" / ("hub-logo-" + mode + ".svg")).read_text()
+            master = (ASSET_ROOT / "assets" / "brand" / ("platmon-logo-" + mode + ".svg")).read_text()
+            for glyph in ("glyph-p", "glyph-l", "glyph-a", "glyph-t", "glyph-m", "glyph-o", "glyph-n"):
+                import re
+                pattern = r'<(?:path|rect) id="' + glyph + r'"[^>]+/>'
+                self.assertEqual(re.search(pattern, logo).group(), re.search(pattern, master).group())
+            for glyph in ("glyph-h", "glyph-u", "glyph-b"):
+                self.assertIn('id="' + glyph + '"', logo)
 
     def test_document_references_light_dark_assets_not_text_logo(self):
         status, headers, data = self.request("GET", "/")
         self.assertEqual(status, 200)
         document = data.decode("utf-8")
         self.assertIn('rel="icon" type="image/svg+xml" href="/favicon.svg"', document)
-        self.assertIn('/assets/brand/platmon-icon-light.svg', document)
-        self.assertIn('/assets/brand/platmon-icon-dark.svg', document)
+        self.assertIn('/assets/brand/hub-icon-light.svg', document)
+        self.assertIn('/assets/brand/hub-icon-dark.svg', document)
         self.assertIn('prefers-color-scheme: dark', document)
         self.assertNotIn('class="brand-mark" aria-hidden="true">p_', document)
         self.assertNotIn('class="brand-label"', document)
         self.assertNotIn('platmon <strong>hub</strong>', document)
-        self.assertIn('<img src="/assets/brand/platmon-icon-light.svg" alt="platmon"', document)
+        self.assertIn('<img src="/assets/brand/hub-icon-light.svg" alt="platmon hub"', document)
         self.assertIn('<title>Fleet monitoring</title>', document)
         self.assertNotIn("platmon-hub · Cached fleet view", document)
         self.assertIn('<span class="product-tag">Fleet monitoring</span>', document)
