@@ -22,7 +22,9 @@ def record(seq=1, instance='a'):
                       'ready', 25.0, None, 50.0, None, None)
 
 
-def wait_for(predicate, timeout=3):
+# An upper bound, not a pace: it returns as soon as the condition holds. Writer commits use WAL with
+# synchronous=FULL, which hosted Windows runners have taken over 3 s to complete (ADR 0002).
+def wait_for(predicate, timeout=15):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():
