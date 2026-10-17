@@ -431,4 +431,5 @@ continues; acknowledged rows evicted before unacknowledged ones; spool full; spo
 deleting unacknowledged segments with a loss; disable and re-enable; clock jumps; database
 restore producing a new chain; Agents without replay; both start choices, including backfill
 timing on a raw table of the measured production size; segment and SQLite growth measured on a
-Jetson and a Raspberry Pi; Windows and Linux; Python 3.9 and 3.13.
+Jetson and a Raspberry Pi; Windows and Linux; every interpreter supported under
+[ADR-0005](0005-os-and-python-support.md).

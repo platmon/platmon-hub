@@ -86,7 +86,7 @@ cover schema-4-to-5 backup/rollback and mixed old/new retained summaries.
 
 ## CI
 
-The [test workflow](../../.github/workflows/test.yml) runs on `ubuntu-latest` and `windows-latest` with Python 3.9 and 3.13 (four jobs). Each job runs unit tests, Python compilation, JavaScript syntax checks, synthetic fleet/soak smoke, and isolated package build/install validation. Linux jobs validate the systemd example and the Python 3.13 job checks the optional TLS proxy. Windows jobs validate launch/startup scripts without installing a service.
+The [test workflow](../../.github/workflows/test.yml) runs on `ubuntu-latest` and `windows-latest` with Python 3.9 and 3.13, plus Python 3.10, 3.12 and 3.14 on `ubuntu-latest` for the Ubuntu LTS default interpreters (seven jobs; [ADR-0005](../design/adr/0005-os-and-python-support.md)). Each job runs unit tests, Python compilation, JavaScript syntax checks, synthetic fleet/soak smoke, and isolated package build/install validation. Linux jobs validate the systemd example and the Python 3.13 job checks the optional TLS proxy. Windows jobs validate launch/startup scripts without installing a service.
 
 Windows jobs also start a loopback Hub with an empty registry and run a four-second measurement harness smoke. This checks script wiring and summary fields without reaching real agents. It does not replace the [30-minute Windows soak](windows-soak.md) or establish fleet capacity.
 

@@ -12,6 +12,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         python: ["3.9", "3.13"]
+        # Default interpreters of Ubuntu 22.04, 24.04 and 26.04 (ADR-0005)
+        include:
+          - {os: ubuntu-latest, python: "3.10"}
+          - {os: ubuntu-latest, python: "3.12"}
+          - {os: ubuntu-latest, python: "3.14"}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
