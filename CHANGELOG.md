@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — no backups of a new database
+
+- Creating a History database no longer leaves a verified backup of each empty
+  intermediate schema (`history.db.v1-backup-*` to `v6-backup-*`). Upgrading an
+  existing database still backs it up before every migration.
+
 ## Unreleased — NPU and probe alerts
 
 - Add `npu_percent` and `probe_failure_percent` alert conditions. The probe condition

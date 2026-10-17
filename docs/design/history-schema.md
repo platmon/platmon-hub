@@ -77,7 +77,8 @@ must be measured for the deployment; see [resource budget](../development/resour
 ## Migration and recovery
 
 The writer checks integrity and applies ordered transactional migrations, creating
-a verified pre-migration backup before each upgrade. An unsupported future schema
+a verified pre-migration backup before each upgrade of an existing database. A database
+created on first open has nothing to preserve and gets no backups. An unsupported future schema
 or migration failure disables history while live monitoring continues. Do not
 lower `user_version` manually. There is no automatic schema downgrade.
 

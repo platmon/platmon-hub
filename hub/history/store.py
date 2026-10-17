@@ -31,7 +31,9 @@ class HistoryStore:
             c.execute('PRAGMA busy_timeout=250')
             version = c.execute('PRAGMA user_version').fetchone()[0]
             tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            if version == 0 and not tables:
+            # A database created here has nothing to preserve, so its migrations take no backups.
+            created = version == 0 and not tables
+            if created:
                 self._migrate(SQL)
                 version = 1
             elif version not in (1, 2, 3, 4, 5, 6, VERSION):
@@ -57,14 +59,15 @@ class HistoryStore:
             for target, script in ((2, MIGRATION_2), (3, MIGRATION_3), (4, MIGRATION_4), (5, MIGRATION_5), (6, MIGRATION_6), (7, MIGRATION_7)):
                 if version >= target:
                     continue
-                backup_path = self.path.with_name(self.path.name + '.v' + str(version) + '-backup-' + uuid.uuid4().hex)
-                backup = sqlite3.connect(str(backup_path))
-                try:
-                    c.backup(backup)
-                    if backup.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
-                        raise SchemaError('backup_verification_failed')
-                finally:
-                    backup.close()
+                if not created:
+                    backup_path = self.path.with_name(self.path.name + '.v' + str(version) + '-backup-' + uuid.uuid4().hex)
+                    backup = sqlite3.connect(str(backup_path))
+                    try:
+                        c.backup(backup)
+                        if backup.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
+                            raise SchemaError('backup_verification_failed')
+                    finally:
+                        backup.close()
                 self._migrate(script)
                 version = target
             if c.execute('PRAGMA journal_mode=WAL').fetchone()[0] != 'wal':
