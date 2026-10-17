@@ -28,9 +28,11 @@ Detail `stats.gpu` / `stats.npu` preserve driver/provider and clocks (Hz), and
 Clients must distinguish unknown/null readings from numeric zero, and use the
 group's freshness rather than core freshness for battery data.
 
-Node summaries also carry an additive nullable `probe_failure_percent`: the highest
-`failure_ratio` × 100 among the probe targets of a current `probe` observation. It is
-null when the agent probes no target, or when the group is absent, starting, stale or unsupported.
+Node summaries also carry additive nullable alert evidence from current observations:
+`probe_failure_percent`, the highest `failure_ratio` × 100 among the probe targets;
+`battery_percent`, the lowest charge among present batteries; and `wifi_signal_dbm`,
+the weakest signal among connected Wi-Fi interfaces. Each is null when the group is
+absent, starting, stale or unsupported, or has no qualifying row.
 
 ## History
 

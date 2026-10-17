@@ -53,21 +53,36 @@ def _overview(stats):
     return result
 
 
-def _probe_failure_percent(groups, elapsed_ms):
-    """Worst target's failed share of its recent connect attempts; unknown unless current."""
-    group = groups.get("probe")
+def _current_data(groups, name, elapsed_ms):
+    """A group's data while its observation is current; None when absent, starting, stale or unsupported."""
+    group = groups.get(name)
     if not isinstance(group, dict) or group.get("state") not in ("ok", "partial", "error"):
         return None
     observation = group.get("observation")
     if observation is None or observation.get("stale") is True or observation["data_age_ms"] + elapsed_ms > group["stale_after_ms"]:
         return None
     data = group.get("data")
-    targets = data.get("targets") if isinstance(data, dict) else None
-    if not isinstance(targets, list):
-        return None
-    ratios = [t["failure_ratio"] for t in targets if isinstance(t, dict) and _finite(t.get("failure_ratio"))
-              and 0 <= t["failure_ratio"] <= 1]
-    return round(100 * max(ratios), 1) if ratios else None
+    return data if isinstance(data, dict) else None
+
+
+def _rows(data, key, accept, field):
+    rows = data.get(key) if data is not None else None
+    return [r[field] for r in rows if isinstance(r, dict) and accept(r) and _finite(r.get(field))] if isinstance(rows, list) else []
+
+
+def _observation_alerts(groups, elapsed_ms):
+    """Worst current value per alert condition from observations; each follows its own group's freshness.
+    probe: the target with the highest failed share; battery and Wi-Fi: the lowest reading."""
+    ratios = [r for r in _rows(_current_data(groups, "probe", elapsed_ms), "targets", lambda t: True, "failure_ratio")
+              if 0 <= r <= 1]
+    charges = [c for c in _rows(_current_data(groups, "battery", elapsed_ms), "batteries",
+                                lambda b: b.get("present") is not False, "percent") if 0 <= c <= 100]
+    # never the last signal of a connection that ended
+    signals = _rows(_current_data(groups, "wifi", elapsed_ms), "interfaces",
+                    lambda i: i.get("connected") is True, "signal_dbm")
+    return {"probe_failure_percent": round(100 * max(ratios), 1) if ratios else None,
+            "battery_percent": min(charges) if charges else None,
+            "wifi_signal_dbm": min(signals) if signals else None}
 
 
 def _load(stats):
@@ -279,10 +294,10 @@ class NodeState:
                             group["state"] = "stale"
                             obs["stale"] = True
             optional_alert_error = None
-            probe_failure_percent = None
+            observed_alerts = dict.fromkeys(("probe_failure_percent", "battery_percent", "wifi_signal_dbm"))
             if self._optional_error is None and self._last_observations is not None:
-                probe_failure_percent = _probe_failure_percent(self._last_observations["groups"],
-                                                               max(0, now - self._last_obs_tick) * 1000)
+                observed_alerts = _observation_alerts(self._last_observations["groups"],
+                                                      max(0, now - self._last_obs_tick) * 1000)
             if self._optional_error is not None:
                 # Contract: a missing or unknown optional endpoint is unsupported, not an error.
                 optional_alert_error = None if self._optional_error in OPTIONAL_UNSUPPORTED else True
@@ -295,7 +310,7 @@ class NodeState:
                     optional_alert_error = any(g['state'] in ('error', 'partial') for g in current_groups)
             return {
                 "optional_alert_error": optional_alert_error,
-                "probe_failure_percent": probe_failure_percent,
+                **observed_alerts,
                 "node_id": self.node.node_id,
                 "name": self.node.name,
                 "enabled": self.node.enabled,

@@ -7,6 +7,13 @@
   probe group's own freshness and is unknown when the group is stale or has no target.
 - Node summaries gain an additive nullable `probe_failure_percent` field.
 
+## Unreleased — battery and Wi-Fi alerts
+
+- Add `battery_percent` and `wifi_signal_dbm` alert conditions, where the low reading is
+  the bad one: `warning >= critical`, compared at or below, recovering above warning plus
+  hysteresis. They use the lowest present battery charge and the weakest connected signal
+  from current observations. Node summaries gain both as additive nullable fields.
+
 ## Unreleased — pressure and I/O rate history
 
 - History schema 7 adds nullable CPU/memory/I/O pressure (`some avg10`), busiest-interface
