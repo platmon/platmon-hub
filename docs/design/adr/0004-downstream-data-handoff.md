@@ -5,7 +5,7 @@
 - **Status:** Proposed (draft for review); not implemented
 - **Date:** 2026-10-17
 - **Scope:** A versioned, incremental, file-based contract through which a separate post-processing system receives committed Hub data
-- **Hub baseline:** `feat/alerts-and-load-history` at `a48232a9c1beb6bfab20e4565940b566658ff314` (SQLite schema 7)
+- **Hub baseline:** `main` at `758d62f6f2b06d82b71f564d0b21c5e2914de848` (SQLite schema 7)
 - **Agent prerequisite:** a platmon release that contains full-publication replay. Replay is listed under *Unreleased* in the platmon changelog; Agents running released 1.2.x answer 404 and contribute no raw publications
 - **Related:** [ADR-0002](0002-hub-history-storage.md), [ADR-0003](0003-agent-replay-and-raw-publications.md), [Replay guide](../../guides/replay.md), [History exports](../../guides/data-export.md)
 
