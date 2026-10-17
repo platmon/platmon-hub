@@ -27,6 +27,8 @@ class Fleet:
         if alert_rules is not None and history is None:
             raise ValueError('alerts require history')
         self.history = history
+        from .replay import ReplayCollector
+        self.replay = ReplayCollector(history, clock) if history is not None and getattr(history, 'raw_enabled', False) else None
         from .alerts import AlertEngine
         self.alerts = AlertEngine(alert_rules, history, clock=clock) if alert_rules is not None else None
         self.client = client or protocol.HttpAgentClient()
@@ -42,7 +44,7 @@ class Fleet:
         self._pool = ThreadPoolExecutor(max_workers=max_concurrency, thread_name_prefix="hub-poll")
         self._stop = threading.Event()
         self._scheduler = None
-        self._active = {}  # node_id -> (future, endpoint_kind)
+        self._active = {}  # node_id or (node_id, 'replay') -> (future, endpoint_kind, state)
         self._due = {node_id: {"core": clock(), "observations": clock()}
                      for node_id in self.nodes}
         self._started = False
@@ -92,6 +94,8 @@ class Fleet:
                 self._history_submit(EventRecord.create(node_id, 'registry_changed', int(time.time()*1000), 'registered', 'removed', 'removed'))
                 self._due.pop(node_id, None)
             self.nodes = replacement
+            if self.replay is not None:
+                self.replay.reconcile(replacement)
 
     def _current(self, node_id, state):
         return self.nodes.get(node_id) is state and state.node.enabled
@@ -169,20 +173,37 @@ class Fleet:
             with self._registry_lock:
                 if self._current(node_id, state): state.record_poll_duration('observations', max(0.0, (self.clock()-started)*1000))
 
+    def replay_once(self, node_id, state, stream, cursor):
+        from .replay import fetch_page
+        with self._registry_lock:
+            if not self._current(node_id, state):
+                return
+            endpoint = state.node.endpoint
+        try:
+            page, more = fetch_page(self.client, endpoint, node_id, stream, cursor, self.deadlines[0], self.deadlines[2])
+            with self._registry_lock:
+                if self._current(node_id, state):
+                    self.replay.accept(node_id, state, stream, page, more)
+        except Exception as exc:
+            with self._registry_lock:
+                if self._current(node_id, state):
+                    self.replay.fail(node_id, state, stream, exc)
+
     def _schedule(self):
         """One active request chain per node, globally bounded and fair."""
         cursor = 0
         while not self._stop.is_set():
             now = self.clock()
             with self._registry_lock:
-                for node_id, (future, kind, state) in list(self._active.items()):
+                for key, (future, kind, state) in list(self._active.items()):
                     if future.done():
+                        node_id = key[0] if kind == 'replay' else key
                         try:
                             future.result()
                         except Exception:
                             LOG.exception('poll worker unexpectedly raised node_id=%s', node_id)
-                        del self._active[node_id]
-                        if not self._current(node_id, state):
+                        del self._active[key]
+                        if kind == 'replay' or not self._current(node_id, state):
                             continue
                         period = self.core_interval if kind == 'core' else self.observations_interval
                         details = state.snapshot(include_details=False)
@@ -203,6 +224,17 @@ class Fleet:
                             fn = self.core_once if kind == 'core' else self.observations_once
                             state = self.nodes[node_id]
                             self._active[node_id] = (self._pool.submit(fn, node_id, state), kind, state)
+                    # Only spare slots after all currently due live work is admitted. Replay
+                    # holds its own per-node slot so a live poll falling due mid-fetch is not delayed.
+                    if self.replay is not None:
+                        for offset in range(len(ids)):
+                            if len(self._active) >= self.max_concurrency: break
+                            node_id = ids[(cursor+offset) % len(ids)]
+                            if node_id in self._active or (node_id, 'replay') in self._active: continue
+                            state = self.nodes[node_id]
+                            job = self.replay.ready(node_id, state)
+                            if job is not None:
+                                self._active[node_id, 'replay'] = (self._pool.submit(self.replay_once, node_id, state, *job), 'replay', state)
                     cursor = (cursor+1) % len(ids)
             self._stop.wait(0.05)
 

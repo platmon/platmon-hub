@@ -44,6 +44,7 @@ def main():
         with zipfile.ZipFile(wheel) as package:
             files=package.namelist()
             assert 'hub/web/app.js' in files and 'hub/web/assets/brand/favicon.svg' in files
+            assert all(name in files for name in ('hub/replay.py', 'hub/raw_export.py', 'hub/history/raw.py'))
             assert any(name.endswith('/share/platmon-hub/nodes.example.json') for name in files)
             expected_docs={path.relative_to(root).as_posix()
                            for path in (root/'docs').rglob('*')
@@ -62,6 +63,7 @@ def main():
         subprocess.run([str(builder),'-m','pip','install','--no-deps','--target',str(site),str(wheel)],check=True)
         installed_env=dict(os.environ,PYTHONPATH=str(site))
         version=subprocess.check_output([sys.executable,'-m','hub','--version'],cwd=str(work),env=installed_env,text=True).strip()
+        subprocess.run([sys.executable,'-m','hub','raw-export','--help'],cwd=str(work),env=installed_env,check=True,stdout=subprocess.PIPE)
         subprocess.run([sys.executable,'-c','from hub.http import ASSETS,ASSET_ROOT; assert all((ASSET_ROOT/p).is_file() for p,m in ASSETS.values())'],cwd=str(work),env=installed_env,check=True)
         empty=site/'share'/'platmon-hub'/'nodes.example.json'
         subprocess.run([sys.executable,'-m','hub','nodes','--file',str(empty),'validate'],cwd=str(work),env=installed_env,check=True)

@@ -212,3 +212,10 @@ fail without publishing a partial report. Existing output is never overwritten.
 Summary retention cannot manufacture reports for dates never archived. Earlier
 archives made without reports are not silently backfilled. Report snapshots are
 analysis material, not DB backups or formal uptime/SLA measurements.
+
+## Complete publication exports
+
+Existing CSV archives and reports contain selected summaries. Opt-in full Agent
+publications use a separate bounded `raw-export` JSONL ZIP command, preserving
+original collection times, units and cursor/loss evidence. See [raw capture and
+export](replay.md). Daily CSV archives do not automatically archive raw publications.

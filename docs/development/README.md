@@ -95,3 +95,12 @@ Keep the root README limited to the project purpose, minimum prerequisites, star
 Use repository-root paths in commands and document-relative paths in Markdown links. After moving a document, check its incoming links, outgoing links, and section anchors. Preserve Windows/Linux command variants where they differ. When adding a documentation subdirectory, update the data-file mappings in [pyproject.toml](../../pyproject.toml) and run the package check so installed documentation keeps the same directory structure.
 
 Keep operational defaults and limits in the [architecture reference](../design/architecture.md#default-polling-and-state-semantics), CLI and registry instructions in [setup](../guides/setup.md), and response fields in the [Hub API reference](../design/api.md). Service/backup instructions belong in [operations](../guides/operations.md), and complete CLI options in [configuration](../guides/configuration.md). Record measurements in the [resource budget](resource-budget.md) and linked benchmark reports with their scope; do not describe planned checks as completed validation.
+
+## Replay validation
+
+`tests/test_replay.py` checks complete stale payloads, missing IDs, malformed pages,
+ordered migration rollback/backup, atomic cursor/loss commits, idempotent retries,
+crash recovery, bounded admission, quota rollback, cursor retention, registry races,
+HTTP limits/409/404/redirect handling, Live isolation and bounded JSONL exports.
+[Raw replay synthetic plan](benchmarks/replay-plan.md) defines separate resource
+budgets. Existing Live benchmark evidence does not establish raw deployment capacity.

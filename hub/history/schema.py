@@ -82,3 +82,57 @@ ALTER TABLE core_samples ADD COLUMN npu_percent REAL CHECK (npu_percent BETWEEN 
 PRAGMA user_version=5;
 """
 VERSION = 5
+
+MIGRATION_6 = """
+CREATE TABLE raw_publications (
+    node_id TEXT NOT NULL, instance_id TEXT NOT NULL, stream TEXT NOT NULL,
+    publication_id INTEGER NOT NULL CHECK (publication_id > 0),
+    received_at_ms INTEGER NOT NULL, reported_started_at REAL NOT NULL,
+    reported_completed_at REAL NOT NULL, gap_before INTEGER NOT NULL,
+    data_json TEXT NOT NULL, envelope_id INTEGER NOT NULL, encoded_bytes INTEGER NOT NULL,
+    PRIMARY KEY (node_id, instance_id, stream, publication_id)
+);
+CREATE TABLE raw_envelopes (
+    envelope_id INTEGER PRIMARY KEY, digest TEXT NOT NULL UNIQUE,
+    envelope_json TEXT NOT NULL, encoded_bytes INTEGER NOT NULL,
+    refs INTEGER NOT NULL DEFAULT 0 CHECK (refs >= 0)
+);
+CREATE INDEX raw_publications_time ON raw_publications (received_at_ms);
+CREATE INDEX raw_publications_node_time ON raw_publications (node_id, received_at_ms);
+CREATE TABLE replay_cursors (
+    node_id TEXT NOT NULL, instance_id TEXT NOT NULL, stream TEXT NOT NULL,
+    after_id INTEGER NOT NULL CHECK (after_id >= 0), active INTEGER NOT NULL,
+    received_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (node_id, instance_id, stream)
+);
+CREATE UNIQUE INDEX replay_active ON replay_cursors (node_id, stream) WHERE active=1;
+CREATE TABLE replay_losses (
+    node_id TEXT NOT NULL, instance_id TEXT NOT NULL, stream TEXT NOT NULL,
+    from_id INTEGER NOT NULL, to_id INTEGER, reason TEXT NOT NULL,
+    received_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (node_id, instance_id, stream, from_id, reason)
+);
+CREATE INDEX replay_losses_time ON replay_losses (received_at_ms);
+CREATE TABLE raw_usage (
+    singleton INTEGER PRIMARY KEY CHECK (singleton=1), encoded_bytes INTEGER NOT NULL
+);
+INSERT INTO raw_usage VALUES (1,0);
+CREATE TRIGGER raw_usage_insert AFTER INSERT ON raw_publications BEGIN
+    UPDATE raw_usage SET encoded_bytes=encoded_bytes+new.encoded_bytes WHERE singleton=1;
+    UPDATE raw_envelopes SET refs=refs+1 WHERE envelope_id=new.envelope_id;
+END;
+CREATE TRIGGER raw_usage_delete AFTER DELETE ON raw_publications BEGIN
+    UPDATE raw_usage SET encoded_bytes=encoded_bytes-old.encoded_bytes WHERE singleton=1;
+    UPDATE raw_envelopes SET refs=refs-1 WHERE envelope_id=old.envelope_id;
+    DELETE FROM raw_envelopes WHERE envelope_id=old.envelope_id AND refs=0;
+END;
+-- A page envelope is stored and charged once, however many publications share it.
+CREATE TRIGGER raw_envelope_insert AFTER INSERT ON raw_envelopes BEGIN
+    UPDATE raw_usage SET encoded_bytes=encoded_bytes+new.encoded_bytes WHERE singleton=1;
+END;
+CREATE TRIGGER raw_envelope_delete AFTER DELETE ON raw_envelopes BEGIN
+    UPDATE raw_usage SET encoded_bytes=encoded_bytes-old.encoded_bytes WHERE singleton=1;
+END;
+PRAGMA user_version=6;
+"""
+VERSION = 6

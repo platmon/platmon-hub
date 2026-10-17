@@ -152,3 +152,26 @@ and [the pinned payload fixture](../../tests/fixtures/agent-v1.2.0.json); these 
 contract tests, not evidence of a new physical-device acceptance run.
 
 Future changes to Hub's accepted schema set need fixtures and a compatibility note; do not silently upgrade requirements on the released agent. The implemented Hub state mapping and polling defaults are documented in [architecture.md](architecture.md), **not** promised behaviors of platmon.
+
+## Opt-in full-publication replay
+
+The additional contract is pinned to Agent commit
+`47e384970324d71d9590c231504350ec2d40c863`
+([replay reference](https://github.com/platmon/platmon/blob/47e384970324d71d9590c231504350ec2d40c863/docs/reference/replay.md)).
+It is separate from the v1.2.0 Live baseline. Hub detects each Agent/stream's
+availability by response, not by an application release version.
+
+Only raw capture reads `/api/samples` and `/api/observation-samples`, with internally
+encoded instance/cursor/limit and the four allowed slow group names. Envelope
+schema 1 wraps core schema 1 or observation-entry schema 2. Strict validation
+requires process agreement, ascending IDs, nested IDs, finite timing, coherent
+pagination and exact coverage of every advanced ID by a record or missing range.
+Unsupported required schemas stop that stream visibly. Unknown additive payload
+fields are preserved. Stale payloads, null data and collection failures remain
+historical evidence; they never update Live freshness or alert evaluation.
+
+404 reduces capture coverage; 409 `instance_changed` requires status confirmation
+before a new generation can commit; 409 `cursor_ahead` stops without resetting.
+The 2 MiB replay limit does not change the 512 KiB Live bound. Original collection
+times remain separate from receipt UTC; cursor/loss updates commit atomically with
+raw pages. See [ADR-0003](adr/0003-agent-replay-and-raw-publications.md).

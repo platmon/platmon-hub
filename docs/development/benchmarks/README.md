@@ -57,3 +57,9 @@ aggregate summary, not private configuration or operational logs.
 [experiment plan](long-soak-plan.md), [RSS regression proof](windows-rss-probe.json)
 and [bounded-allocation/HTTP probes](windows-stdlib-probes.json). Raw field reports
 and browser heap snapshots remain private.
+
+## Raw replay probe
+
+[Replay results](replay.md) and [acceptance plan](replay-plan.md) defines the synthetic 10/50/100-node
+backlog, queue/RSS/commit/cleanup budgets before execution. Run
+`scripts/benchmark-replay.py` without any real Agent or private registry.

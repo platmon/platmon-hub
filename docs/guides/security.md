@@ -93,3 +93,13 @@ write rejection and status-only audit output, then stops its test process. This 
 not deployment and does not establish production DNS, firewall, Windows gateway,
 account revocation or organization session-policy compliance. Unit tests independently
 exercise Host checks, request limits, redaction, headers and forged-admin rejection.
+
+## Full-publication capture
+
+Opt-in [raw replay](replay.md) retains complete Agent payloads, including labels,
+hostnames and device/probe metadata not present in selected summaries. Protect
+raw databases, migration backups and JSONL exports with the same local account
+boundary. It introduces only two fixed bounded read-only Agent resources, no
+arbitrary URL query, Agent control or external analysis service. Size budgets
+apply to encoded ingress and retained raw rows; reserve additional disk capacity
+for metadata, indexes, WAL, backups, archives and exports.
