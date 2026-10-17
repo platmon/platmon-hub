@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from threading import RLock
 
 from . import protocol
-from .history.projector import LOAD_COLUMNS, Acceptance, CoreRecord
+from .history.projector import LOAD_COLUMNS, PRESSURE_COLUMNS, Acceptance, CoreRecord
 
 
 OPTIONAL_UNSUPPORTED = ("unsupported", "incompatible")
@@ -332,6 +332,8 @@ class NodeState:
                 "last_core_completed_utc": self._last_core_completed_utc,
                 "last_optional_completed_utc": self._last_optional_completed_utc,
                 "overview": _overview(self._last_stats),
+                # PSI some avg10 per resource, for alerts; null without the Agent's pressure group
+                "pressure": {name: value for name, value in _load(self._last_stats).items() if name in PRESSURE_COLUMNS},
                 "stats": metrics,
                 "observations": groups,
             }

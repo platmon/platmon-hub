@@ -188,6 +188,38 @@ class AlertTests(unittest.TestCase):
                 validate_rules({'rules':[dict(source, id='x')]})
         validate_rules({'rules':[dict(id='x', condition='battery_percent', warning=10, critical=10, hysteresis=0)]})
 
+    def test_pressure_conditions(self):
+        rules = validate_rules({'rules':[dict(id='io', condition='psi_io_some_avg10', warning=10, critical=25, duration_seconds=0)]})
+        engine = AlertEngine(rules, self.history)
+        self.node['pressure'] = {'psi_cpu_some_avg10': 1.0, 'psi_memory_some_avg10': 0.0, 'psi_io_some_avg10': 30.0}
+        engine.evaluate([self.node]); engine.evaluate([self.node])
+        row = engine.snapshot()['alerts'][0]
+        self.assertEqual((row['state'], row['severity'], row['value']), ('Active', 'critical', 30.0))
+        # Pressure is part of the core sample: noncurrent core data is unknown evidence, not recovery.
+        self.node.update(data_current=False, pressure={'psi_io_some_avg10': 0.0})
+        engine.evaluate([self.node])
+        self.assertEqual(engine.snapshot()['alerts'][0]['state'], 'Active')
+        self.assertFalse(engine.snapshot()['alerts'][0]['known'])
+        with self.assertRaises(ValueError):
+            validate_rules({'rules':[dict(id='x', condition='psi_cpu_some_avg10', warning=10, critical=120)]})
+
+    def test_pressure_reaches_node_summaries(self):
+        from hub.registry import Node
+        from hub.state import NodeState
+        from test_agent_v120 import fixture
+        from test_backend import FakeClock
+        from test_load_history import load_stats
+        document = fixture()
+        state = NodeState(Node(NODE_ID, 'pressure', 'http://192.0.2.1:9797'), clock=FakeClock())
+        state.accept_core(document['status'], document['stats'], received_at_ms=1000)
+        self.assertEqual(state.snapshot(include_details=False)['pressure'], dict.fromkeys(
+            ('psi_cpu_some_avg10', 'psi_memory_some_avg10', 'psi_io_some_avg10')))  # no pressure group: unknown
+        stats = dict(document['stats'], **load_stats())
+        stats['sample'] = dict(stats['sample'], sequence=stats['sample']['sequence'] + 1)
+        state.accept_core(document['status'], stats, received_at_ms=2000)
+        self.assertEqual(state.snapshot(include_details=False)['pressure'],
+                         {'psi_cpu_some_avg10': 1.25, 'psi_memory_some_avg10': 0.0, 'psi_io_some_avg10': 3.0})
+
     def test_writer_restores_state_and_api_reports_it(self):
         import threading
         import urllib.request

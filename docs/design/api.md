@@ -34,6 +34,10 @@ Node summaries also carry additive nullable alert evidence from current observat
 the weakest signal among connected Wi-Fi interfaces. Each is null when the group is
 absent, starting, stale or unsupported, or has no qualifying row.
 
+A `pressure` object carries `psi_cpu_some_avg10`, `psi_memory_some_avg10` and
+`psi_io_some_avg10` from the last accepted core sample, for alerts; each is null when
+the Agent reports no such resource. Like `overview`, consult `data_current` first.
+
 ## History
 
 Required query parameters are `metric`, `from_ms`, `to_ms`; optional `max_points`

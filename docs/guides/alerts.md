@@ -10,8 +10,16 @@ Edit the local configuration and restart the Hub to change rules. Registry hot r
 remains independent. Configuration is at most 64 KiB, with at most 32 unique rules.
 
 Numeric conditions: `cpu_percent`, `memory_percent`, `disk_percent`, `hottest_c`,
-`gpu_percent`, `npu_percent`, `probe_failure_percent`. Require finite `warning <= critical`;
+`gpu_percent`, `npu_percent`, `probe_failure_percent`, `psi_cpu_some_avg10`,
+`psi_memory_some_avg10`, `psi_io_some_avg10`. Require finite `warning <= critical`;
 percentages are 0..100.
+
+The `psi_*` conditions are the Agent's pressure stall information (`some avg10`): the
+share of the last 10 seconds in which some tasks waited on CPU, memory or I/O. It is not
+usage; a busy CPU with nothing waiting has no pressure. Pressure is part of the core
+sample, so it follows core freshness. Agents without a pressure group, or kernels
+without PSI (Jetson L4T and WSL kernels among them), give unknown evidence, never zero.
+There is no example rule: useful levels depend on the workload.
 
 `probe_failure_percent` is the worst probe target's share of failed TCP connect attempts
 over the agent's last 10 attempts to that target, as a percentage. It follows the `probe`

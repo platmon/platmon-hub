@@ -8,14 +8,14 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .history.projector import EventRecord
+from .history.projector import PRESSURE_COLUMNS, EventRecord
 
 # A low reading is the bad one for these: warning at or above critical, compared at or below, in (floor, ceiling).
 LOW_METRICS = {'battery_percent': (0, 100), 'wifi_signal_dbm': (-120, 0)}
 # Evidence from an optional observation group, which has its own freshness, not core's.
 OBSERVED = ('probe_failure_percent',) + tuple(LOW_METRICS)
 METRICS = ('cpu_percent', 'memory_percent', 'disk_percent', 'hottest_c', 'gpu_percent', 'npu_percent',
-           'probe_failure_percent') + tuple(LOW_METRICS)
+           'probe_failure_percent') + tuple(LOW_METRICS) + PRESSURE_COLUMNS
 CONDITIONS = METRICS + ('offline', 'stale', 'optional_error')
 STATES = ('Normal', 'Pending', 'Active', 'Recovering', 'Resolved')
 
@@ -189,6 +189,8 @@ class AlertEngine:
         if condition in OBSERVED:
             # Optional groups have their own freshness; core state does not gate them.
             return node.get(condition) if node['enabled'] else None
+        if condition in PRESSURE_COLUMNS:
+            return node['pressure'].get(condition) if node['data_current'] else None
         if condition in METRICS:
             return node['overview'].get(condition) if node['data_current'] else None
         if condition == 'offline':
