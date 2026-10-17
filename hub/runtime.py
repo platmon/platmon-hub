@@ -44,7 +44,7 @@ class Fleet:
         self._pool = ThreadPoolExecutor(max_workers=max_concurrency, thread_name_prefix="hub-poll")
         self._stop = threading.Event()
         self._scheduler = None
-        self._active = {}  # node_id -> (future, endpoint_kind)
+        self._active = {}  # node_id or (node_id, 'replay') -> (future, endpoint_kind, state)
         self._due = {node_id: {"core": clock(), "observations": clock()}
                      for node_id in self.nodes}
         self._started = False
@@ -195,16 +195,15 @@ class Fleet:
         while not self._stop.is_set():
             now = self.clock()
             with self._registry_lock:
-                for node_id, (future, kind, state) in list(self._active.items()):
+                for key, (future, kind, state) in list(self._active.items()):
                     if future.done():
+                        node_id = key[0] if kind == 'replay' else key
                         try:
                             future.result()
                         except Exception:
                             LOG.exception('poll worker unexpectedly raised node_id=%s', node_id)
-                        del self._active[node_id]
-                        if not self._current(node_id, state):
-                            continue
-                        if kind == 'replay':
+                        del self._active[key]
+                        if kind == 'replay' or not self._current(node_id, state):
                             continue
                         period = self.core_interval if kind == 'core' else self.observations_interval
                         details = state.snapshot(include_details=False)
@@ -225,16 +224,17 @@ class Fleet:
                             fn = self.core_once if kind == 'core' else self.observations_once
                             state = self.nodes[node_id]
                             self._active[node_id] = (self._pool.submit(fn, node_id, state), kind, state)
-                    # Only spare slots after all currently due live work is admitted.
+                    # Only spare slots after all currently due live work is admitted. Replay
+                    # holds its own per-node slot so a live poll falling due mid-fetch is not delayed.
                     if self.replay is not None:
                         for offset in range(len(ids)):
                             if len(self._active) >= self.max_concurrency: break
                             node_id = ids[(cursor+offset) % len(ids)]
-                            if node_id in self._active: continue
+                            if node_id in self._active or (node_id, 'replay') in self._active: continue
                             state = self.nodes[node_id]
                             job = self.replay.ready(node_id, state)
                             if job is not None:
-                                self._active[node_id] = (self._pool.submit(self.replay_once, node_id, state, *job), 'replay', state)
+                                self._active[node_id, 'replay'] = (self._pool.submit(self.replay_once, node_id, state, *job), 'replay', state)
                     cursor = (cursor+1) % len(ids)
             self._stop.wait(0.05)
 

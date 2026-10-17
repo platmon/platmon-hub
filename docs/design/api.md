@@ -105,7 +105,8 @@ commit; it remains unchanged while a new page is committing.
 `GET /api/history/status` additionally reports `history.raw`: `enabled`, encoded
 `queued_bytes`, `queue_byte_limit`, command/page `queue_depth`, `queue_capacity`,
 `in_flight`, explicit `quota_bytes`/`retention_ms`, `committed_pages`, `persisted`,
-`duplicates`, `rejected`, `failed_pages`, `cursor_read_failures`, `retention_deleted` and `last_error`. Admission is not a
+`duplicates`, `rejected`, `failed_pages`, `cursor_read_failures`, `retention_deleted`,
+`quota_evicted` and `last_error`. Admission is not a
 commit. Replay errors do not change the existing node health/alert fields.
 
 Full raw payloads are available through the bounded local `raw-export` CLI, not a

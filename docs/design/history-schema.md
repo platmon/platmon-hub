@@ -89,7 +89,8 @@ The writer returns a completion future after commit, never on queue admission.
 Cursor loads also execute on the writer thread; poll workers do no SQLite I/O.
 
 `raw_usage` and insert/delete triggers maintain transactional encoded-byte quota
-accounting without a fleet-size SUM on every page. Exceeding quota rolls back the
-page. Separate finite retention prunes raw rows in bounded turns; cursor/loss
+accounting without a fleet-size SUM on every page. At quota, a page commit evicts
+the oldest previously committed raw rows (counted as `quota_evicted`); only a page
+that cannot fit on its own rolls back. Separate finite retention prunes raw rows in bounded turns; cursor/loss
 metadata survives. Metadata, indexes, WAL, backups and exports remain separate
 filesystem costs. See [raw capture](../guides/replay.md) for configuration and export.

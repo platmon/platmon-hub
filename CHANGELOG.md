@@ -7,7 +7,8 @@
 - SQLite schema 6 atomically commits raw pages, unavailable ranges, restart evidence
   and durable cursors; acknowledge only committed pages and safely retry duplicates.
 - Require explicit raw retention/quota; bound the encoded ingress queue separately,
-  preserve cursor/loss metadata through raw pruning, and pause on quota/storage errors.
+  preserve cursor/loss metadata through raw pruning, evict the oldest raw rows under
+  quota pressure, and pause on storage errors.
 - Add `raw-export` for bounded consistent JSONL ZIP exports with original collection
   times, receipt times, schemas, units and loss evidence. Existing CSV archives and
   reports remain summary consumers.

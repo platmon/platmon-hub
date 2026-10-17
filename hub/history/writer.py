@@ -39,7 +39,8 @@ class HistoryWriter:
         self._raw_bytes = 0
         self._raw_in_flight = 0
         self._raw_stats = dict(committed_pages=0, persisted=0, duplicates=0, rejected=0,
-                               failed_pages=0, cursor_read_failures=0, last_error=None, retention_deleted=0)
+                               failed_pages=0, cursor_read_failures=0, last_error=None, retention_deleted=0,
+                               quota_evicted=0)
         self.path = Path(path).resolve()
         self.retention_ms = retention_days * 86400000
         self.store_factory = store_factory
@@ -145,6 +146,7 @@ class HistoryWriter:
                     self._raw_stats['committed_pages'] += 1
                     self._raw_stats['persisted'] += result['inserted']
                     self._raw_stats['duplicates'] += result['duplicates']
+                    self._raw_stats['quota_evicted'] += result['evicted']
                     self._raw_stats['last_error'] = None
             if notify:
                 future.set_result(result)
@@ -269,12 +271,15 @@ class HistoryWriter:
                     except Exception as exc:
                         self._error(exc)
                         next_retention = now + 3600
-                if self.raw_enabled and store is not None and now >= next_raw_retention and not self.snapshot()['clock_discontinuity']:
+                if self.raw_enabled and store is not None and now >= next_raw_retention:
                     try:
-                        deleted = store.prune_raw(int(wall*1000-self.raw_retention_ms))
+                        # Quota eviction does not depend on wall time, so it continues after a clock jump.
+                        deleted = 0 if self.snapshot()['clock_discontinuity'] else store.prune_raw(int(wall*1000-self.raw_retention_ms))
+                        evicted = store.evict_raw_over_quota(self.raw_quota_bytes)
                         with self._lock:
                             self._raw_stats['retention_deleted'] += deleted
-                        next_raw_retention = now + (0.1 if deleted >= 1000 else 60)
+                            self._raw_stats['quota_evicted'] += evicted
+                        next_raw_retention = now + (0.1 if deleted >= 1000 or evicted >= 1000 else 60)
                     except Exception as exc:
                         with self._lock:
                             self._raw_stats['last_error'] = type(exc).__name__
@@ -305,12 +310,14 @@ class HistoryWriter:
             self._count(dropped_storage_error=len(batch))
             self._update(in_flight=0)
         finally:
+            # Stop admission before draining so no raw future is enqueued after the drain.
+            with self._lock:
+                self._accepting = False
             while not self._raw_queue.empty():
                 self._raw_once(None)
             if store is not None:
                 store.close()
             with self._lock:
-                self._accepting = False
                 self._stats['state'] = 'stopped'
 
     def close(self, timeout=5.0):

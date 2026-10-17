@@ -184,8 +184,10 @@ SQLite schema 6 implements the decision with `raw_usage` accounting triggers.
 Raw retention/quota are required explicit operator choices; neither has a default.
 The independent encoded queue is 8 MiB (configurable 3–64 MiB), up to 16 commands/
 pages; decoded responses and allocator overhead are outside this encoded budget.
-Full-envelope metadata is limited to 16 KiB. Quota exhaustion rolls back the page
-and retries after backoff; it never silently evicts unexpired raw rows. Cursors
+Full-envelope metadata is limited to 16 KiB. Quota pressure evicts the oldest
+committed raw rows by receipt time, reported as `quota_evicted`, so capture continues
+when retention exceeds the quota or a wall-clock jump suspends time-based pruning;
+only a page that cannot fit on its own rolls back and retries after backoff. Cursors
 and loss metadata survive raw pruning and require separate disk capacity planning.
 
 `GET /api/replay/status` reports capture coverage and `history.raw` reports writer

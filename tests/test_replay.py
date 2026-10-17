@@ -179,6 +179,32 @@ class RawStoreTests(unittest.TestCase):
         self.assertEqual(self.store.connection.execute('SELECT count(*) FROM raw_publications').fetchone()[0], 0)
         self.assertIsNone(self.store.replay_cursor(NODE_ID, 'core'))
 
+    def test_quota_evicts_oldest_rows_and_keeps_metadata(self):
+        self.insert(page(document((1, 2)), received=1000))
+        usage = lambda: self.store.connection.execute('SELECT encoded_bytes FROM raw_usage').fetchone()[0]
+        quota = usage() + 10
+        later = page(document((3,), after=2), after=2, received=2000)
+        result = self.store.insert_raw_page(later, quota)
+        self.assertGreaterEqual(result['evicted'], 1)
+        self.assertLessEqual(usage(), quota)
+        ids = [row[0] for row in self.store.connection.execute('SELECT publication_id FROM raw_publications ORDER BY publication_id')]
+        self.assertEqual(ids[-1], 3)
+        self.assertNotIn(1, ids)
+        self.assertEqual(self.store.replay_cursor(NODE_ID, 'core'), (INSTANCE, 3))
+        # A page that cannot fit on its own still rolls back without evicting anything.
+        with self.assertRaisesRegex(ValueError, 'raw_quota'):
+            self.store.insert_raw_page(page(document((4,), after=3), after=3), 1)
+        self.assertEqual(self.store.replay_cursor(NODE_ID, 'core'), (INSTANCE, 3))
+        self.assertIn(3, [row[0] for row in self.store.connection.execute('SELECT publication_id FROM raw_publications')])
+
+    def test_maintenance_eviction_drains_lowered_quota(self):
+        self.insert(page(document((1, 2)), received=1000))
+        self.assertEqual(self.store.evict_raw_over_quota(64*1024**2), 0)
+        self.assertEqual(self.store.evict_raw_over_quota(0, limit=1), 1)
+        self.assertEqual(self.store.evict_raw_over_quota(0), 1)
+        self.assertEqual(self.store.replay_cursor(NODE_ID, 'core'), (INSTANCE, 2))
+        self.assertEqual(self.store.connection.execute('SELECT encoded_bytes FROM raw_usage').fetchone()[0], 0)
+
     def test_retention_preserves_cursors_and_loss_evidence(self):
         self.insert(page(document((2,)), received=1000))
         self.assertEqual(self.store.prune_raw(2000), 1)
@@ -337,6 +363,71 @@ class WriterAndSchedulingTests(unittest.TestCase):
             self.assertEqual(writer.snapshot()['raw']['committed_pages'], 1)
             self.assertEqual(fleet.replay.snapshot()['nodes'], {})
         finally:
+            fleet.close()
+
+    def test_quota_eviction_continues_after_clock_discontinuity(self):
+        store = HistoryStore(self.path).open()
+        store.insert_raw_page(page(document((1, 2))), 64*1024**2)
+        store.close()
+        wall, tick = [time.time()], [0.0]
+        writer = HistoryWriter(self.path, raw_retention_days=365, raw_quota_bytes=1024**2,
+                               wall=lambda: wall[0], clock=lambda: tick[0])
+        writer.start()
+        try:
+            wall[0] += 3600  # clock step: time-based pruning is suspended from here on
+            wait_for(lambda: writer.snapshot()['clock_discontinuity'], timeout=10)
+            self.assertEqual(writer.snapshot()['raw']['quota_evicted'], 0)
+            writer.raw_quota_bytes = 0  # below the CLI minimum, to force eviction without a large fixture
+            tick[0] += 61
+            wait_for(lambda: writer.snapshot()['raw']['quota_evicted'] == 2, timeout=10)
+            self.assertEqual(writer.replay_cursor(NODE_ID, 'core').result(10), (INSTANCE, 2))
+        finally:
+            writer.close()
+
+    def test_submit_during_final_drain_is_rejected_not_stranded(self):
+        late = []
+        class Closing(HistoryStore):
+            def close(self):
+                # A scheduler thread submitting while the writer thread is shutting down.
+                late.append(writer.replay_cursor(NODE_ID, 'core'))
+                super().close()
+        calls = []
+        def wall():
+            calls.append(1)
+            if len(calls) == 3:
+                raise OSError('clock read failed')  # crash the loop without close()
+            return time.time()
+        writer = self.writer(store_factory=Closing, wall=wall)
+        writer.start()
+        writer._thread.join(10)
+        self.assertFalse(writer._thread.is_alive())
+        self.assertEqual(len(late), 1)
+        self.assertTrue(late[0].done())
+        self.assertIsInstance(late[0].exception(), RuntimeError)
+        writer.close()
+
+    def test_inflight_replay_does_not_hold_live_slot(self):
+        blocked, release, polls = threading.Event(), threading.Event(), []
+        class Client:
+            def get(self, endpoint, path, deadline):
+                if path == '/api/stats':
+                    polls.append(path)
+                    return stats(len(polls))
+                return st()
+            def get_replay(self, endpoint, stream, instance, after, deadline):
+                blocked.set()
+                release.wait(10)
+                return document(stream=stream)
+        writer = self.writer()
+        fleet = Fleet([Node(NODE_ID, 'node', 'http://127.0.0.1:9797')], history=writer,
+                      client=Client(), core_interval=0.1)
+        fleet.start()
+        try:
+            self.assertTrue(blocked.wait(10))
+            before = len(polls)
+            wait_for(lambda: len(polls) > before + 1)
+        finally:
+            release.set()
             fleet.close()
 
     def test_round_robin_backlog_and_commit_wait(self):

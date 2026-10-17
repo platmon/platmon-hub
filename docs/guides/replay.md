@@ -48,8 +48,9 @@ and retention settings. These endpoints do not expose payloads or Agent URLs.
 Each turn confirms process identity with status, then reads one bounded replay page.
 A restart race (409 `instance_changed`) is retried after another status confirmation;
 the next successful new-generation commit records an unknown final extent for the
-old process. There is one active request chain per node and at most 16 workers;
-due Live work receives spare slots first. Each stream gets round-robin page turns.
+old process. Each node has at most one Live request chain and one replay turn in
+flight, sharing at most 16 workers. Due Live work receives slots first, and a replay
+turn does not hold the node's Live slot. Each stream gets round-robin page turns.
 Replay has 2 MiB responses and up to 100 records; Live retains its 512 KiB limit.
 The replay envelope is additionally limited to 16 KiB of metadata. Redirects and
 arbitrary paths/parameters are rejected. Replay never updates health or alerts.
@@ -72,8 +73,11 @@ A page is acknowledged after its records, loss evidence and cursor commit togeth
 Duplicates preserve the first payload and receipt time. On failure, none advances.
 
 The raw quota charges retained encoded payload/envelope bytes plus a 256-byte
-per-row reservation. At quota, the whole incoming page rolls back and capture
-backs off; committed cursors remain unchanged. Expired rows are deleted in chunks
+per-row reservation. At quota, a committing page first evicts the oldest committed
+raw rows (by Hub receipt time) to make room; retention is an upper bound, not a
+guarantee under quota pressure. Only a page too large to fit even after eviction rolls
+back, and capture backs off with committed cursors unchanged. If the quota is lowered,
+maintenance evicts excess rows in chunks of up to 1000. Expired rows are deleted in chunks
 of up to 1000, normally every minute, with shorter follow-up turns while draining.
 Cursor and loss metadata are retained independently so expired rows are not
 repeatedly fetched and earlier loss evidence stays available.
@@ -81,7 +85,7 @@ repeatedly fetched and earlier loss evidence stays available.
 The raw quota is not a hard SQLite file-size cap. Indexes, WAL, cursor/loss metadata,
 backups, exports and archives need separate filesystem capacity. There is no
 automatic VACUUM. A large wall-clock discontinuity suspends time-based pruning;
-correct the clock and restart Hub. Retention uses first Hub receipt time, so a
+correct the clock and restart Hub. Quota eviction does not use wall time and continues. Retention uses first Hub receipt time, so a
 recovered backlog is retained from its commit receipt, not its measurement age.
 
 ## Export committed raw data

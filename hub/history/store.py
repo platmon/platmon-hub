@@ -257,6 +257,7 @@ class HistoryStore:
             prior = c.execute('SELECT after_id FROM replay_cursors WHERE node_id=? AND instance_id=? AND stream=?', key).fetchone()
             if (prior is None and page.after != 0) or (prior is not None and page.after > prior[0]):
                 raise ValueError('replay cursor has unexplained advance')
+            newest_prior = c.execute('SELECT coalesce(max(rowid),0) FROM raw_publications').fetchone()[0]
             inserted = 0
             for pid, payload, gap, start, end in page.records:
                 size = len(payload.encode()) + len(page.envelope_json.encode()) + 256
@@ -267,17 +268,41 @@ class HistoryStore:
                 c.execute('INSERT INTO replay_losses VALUES (?,?,?,?,?,?,?) '
                           'ON CONFLICT(node_id,instance_id,stream,from_id,reason) DO UPDATE SET to_id=max(to_id,excluded.to_id)',
                           key + (start, end, reason, page.received_at_ms))
-            if c.execute('SELECT encoded_bytes FROM raw_usage WHERE singleton=1').fetchone()[0] > quota_bytes:
+            # Make room by evicting the oldest previously committed rows, never this page's.
+            evicted = 0
+            for _ in range(16):
+                if self._raw_usage() <= quota_bytes:
+                    break
+                deleted = self._evict_raw(1000, newest_prior)
+                if not deleted:
+                    break
+                evicted += deleted
+            if self._raw_usage() > quota_bytes:
                 raise ValueError('raw_quota_exceeded')
             c.execute('INSERT INTO replay_cursors VALUES (?,?,?,?,1,?) ON CONFLICT(node_id,instance_id,stream) '
                       'DO UPDATE SET after_id=max(after_id,excluded.after_id),active=1,received_at_ms=excluded.received_at_ms',
                       key + (page.next_after, page.received_at_ms))
             c.execute('COMMIT')
-            return {'inserted': inserted, 'duplicates': len(page.records)-inserted, 'after_id': max(page.next_after, prior[0] if prior else 0)}
+            return {'inserted': inserted, 'duplicates': len(page.records)-inserted, 'evicted': evicted,
+                    'after_id': max(page.next_after, prior[0] if prior else 0)}
         except BaseException:
             if c.in_transaction:
                 c.execute('ROLLBACK')
             raise
+
+    def _raw_usage(self):
+        return self.connection.execute('SELECT encoded_bytes FROM raw_usage WHERE singleton=1').fetchone()[0]
+
+    def _evict_raw(self, limit, max_rowid=None):
+        return self.connection.execute(
+            'DELETE FROM raw_publications WHERE rowid IN (SELECT rowid FROM raw_publications '
+            'WHERE rowid <= coalesce(?, rowid) ORDER BY received_at_ms, rowid LIMIT ?)', (max_rowid, limit)).rowcount
+
+    def evict_raw_over_quota(self, quota_bytes, limit=1000):
+        """Quota pressure removes the oldest raw rows; cursors and loss evidence remain."""
+        if self._raw_usage() <= quota_bytes:
+            return 0
+        return self._evict_raw(limit)
 
     def prune_raw(self, cutoff_ms, limit=1000):
         # Cursors and unavailable-range evidence survive raw-row pruning.
