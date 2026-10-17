@@ -525,6 +525,14 @@ class ReplayHttpTests(unittest.TestCase):
         self.reply = {'data': 'x'*(2*1024**2)}
         with self.assertRaises(protocol.ProtocolFailure): self.client.get_replay(self.endpoint, 'core', INSTANCE, 0, 1)
 
+    def test_duplicate_keys_rejected_only_for_replay(self):
+        self.reply = b'{"schema_version": 1, "schema_version": 2}'
+        with self.assertRaises(protocol.ProtocolFailure):
+            self.client.get_replay(self.endpoint, 'core', INSTANCE, 0, 1)
+        # Live reads keep the released json.loads behavior (last duplicate wins).
+        live = self.client._get(self.endpoint, '/api/samples', 1, self.client.max_bytes)
+        self.assertEqual(live, {'schema_version': 2})
+
     def test_conflict_unavailable_invalid_json_and_redirect(self):
         for code in ('instance_changed', 'cursor_ahead'):
             self.code, self.reply = 409, dict(code=code, instance_id='new')

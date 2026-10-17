@@ -43,16 +43,19 @@ class ReplayConflict(AgentFailure):
         self.code, self.instance_id = code, instance_id
 
 
-def decode_json(content):
-    def unique(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError('duplicate JSON key')
-            result[key] = value
-        return result
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('duplicate JSON key')
+        result[key] = value
+    return result
+
+
+def decode_json(content, strict_keys=False):
+    # Duplicate-key rejection is limited to replay; Live keeps its released parsing.
     try:
-        return json.loads(content.decode('utf-8'), object_pairs_hook=unique,
+        return json.loads(content.decode('utf-8'), object_pairs_hook=unique_object if strict_keys else None,
                           parse_constant=lambda name: (_ for _ in ()).throw(ValueError('non-finite JSON token')))
     except (ValueError, UnicodeDecodeError, RecursionError) as exc:
         raise ProtocolFailure('invalid JSON') from exc
@@ -162,7 +165,7 @@ class HttpAgentClient:
                     raise ProtocolFailure('replay error exceeds byte limit') from exc
                 if exc.code == 404:
                     raise OptionalUnsupported('replay stream unavailable') from exc
-                data = decode_json(body)
+                data = decode_json(body, strict_keys=True)
                 from .history.raw import instance
                 if (not isinstance(data, dict) or data.get('code') not in ('instance_changed', 'cursor_ahead') or
                         not instance(data.get('instance_id'))):
@@ -177,4 +180,4 @@ class HttpAgentClient:
             raise ServerFailure(f"HTTP {exc.code}") from exc
         except (TimeoutError, socket.timeout, urllib.error.URLError, ConnectionError, OSError) as exc:
             raise TransportFailure("connection/timeout error") from exc
-        return decode_json(content)
+        return decode_json(content, strict_keys=replay)

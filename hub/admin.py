@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 from dataclasses import asdict
 from urllib.parse import urlsplit
+from .protocol import unique_object  # noqa: F401  re-exported for hub.http
 from .registry import validate_registry
 
 from .nodes_cli import endpoint_for_host, failure_message, update_registry
@@ -90,12 +91,3 @@ class RegistryAdmin:
 def same_origin(first, second):
     a, b = urlsplit(first), urlsplit(second)
     return (a.hostname, a.port or 80) == (b.hostname, b.port or 80)
-
-
-def unique_object(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError('duplicate JSON key')
-        result[key] = value
-    return result
