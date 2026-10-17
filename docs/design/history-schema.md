@@ -15,6 +15,7 @@ The executable schema is [hub/history/schema.py](../../hub/history/schema.py); t
 | 5 | Nullable `core_samples.npu_percent`; existing rows retain NULL |
 | 6 | Opt-in `raw_publications`, `replay_cursors`, `replay_losses`, indexed encoded-byte accounting in `raw_usage` |
 | 7 | Nullable pressure and I/O rate columns on `core_samples`; existing rows retain NULL |
+| 8 | `raw_dictionaries` and `raw_publications.payload_zlib`/`dictionary_id`: new raw payloads are `zlib` with a shared, reference-counted dictionary ([ADR-0006](adr/0006-raw-payload-compression.md)); existing rows stay JSON |
 
 Core identity is `(node_id, instance_id, sequence)`. Columns store Hub receipt UTC
 milliseconds, reported `data_age_ms`, `stale_after_ms`, accepted core state

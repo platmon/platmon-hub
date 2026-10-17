@@ -40,7 +40,9 @@ class HistoryWriter:
         self._raw_in_flight = 0
         self._raw_stats = dict(committed_pages=0, persisted=0, duplicates=0, rejected=0,
                                failed_pages=0, cursor_read_failures=0, last_error=None, retention_deleted=0,
-                               quota_evicted=0, unflushed_pages=0)
+                               quota_evicted=0, unflushed_pages=0, compressed_rows=0, json_rows=0,
+                               compression_fallback=0, logical_bytes=0, stored_bytes=0, dictionaries=0,
+                               dictionary_bytes=0)
         self.path = Path(path).resolve()
         self.retention_ms = retention_days * 86400000
         self.store_factory = store_factory
@@ -107,7 +109,9 @@ class HistoryWriter:
                         pending_events=len(self._pending_events), raw=dict(self._raw_stats,
                         enabled=self.raw_enabled, queue_depth=self._raw_queue.qsize(), queue_capacity=self._raw_queue.maxsize, in_flight=self._raw_in_flight,
                         queued_bytes=self._raw_bytes, queue_byte_limit=self.raw_queue_bytes,
-                        quota_bytes=self.raw_quota_bytes, retention_ms=self.raw_retention_ms))
+                        quota_bytes=self.raw_quota_bytes, retention_ms=self.raw_retention_ms,
+                        stored_logical_ratio=(round(self._raw_stats['stored_bytes'] / self._raw_stats['logical_bytes'], 4)
+                                              if self._raw_stats['logical_bytes'] else None)))
 
     def raw_capacity(self):
         """Cheap raw-queue admission figures for the scheduler, without a full snapshot."""
@@ -153,6 +157,12 @@ class HistoryWriter:
                     self._raw_stats['persisted'] += result['inserted']
                     self._raw_stats['duplicates'] += result['duplicates']
                     self._raw_stats['quota_evicted'] += result['evicted']
+                    for name, total in (('compressed_rows', 'compressed'), ('json_rows', 'stored_json'),
+                                        ('compression_fallback', 'fallback'), ('logical_bytes', 'logical_bytes'),
+                                        ('stored_bytes', 'stored_bytes')):
+                        self._raw_stats[name] += result[total]
+                    self._raw_stats['dictionaries'] = result['dictionaries']
+                    self._raw_stats['dictionary_bytes'] = result['dictionary_bytes']
                     self._raw_stats['last_error'] = None
             if notify:
                 future.set_result(result)

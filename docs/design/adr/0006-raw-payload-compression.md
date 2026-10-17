@@ -2,7 +2,7 @@
 
 [Documentation index](../../README.md) · [Design reference](../README.md)
 
-- **Status:** Proposed (draft for review); not implemented
+- **Status:** Implemented in Hub as SQLite schema 8; see [implementation notes](#implementation-notes-2026-10-17)
 - **Date:** 2026-10-17
 - **Scope:** How `raw_publications.data_json` is stored; amends the storage section of ADR-0003
 - **Hub baseline:** `main` at `f4ba1b5e7bb5fe5795462e7ae4b11a5208747d46` (SQLite schema 7)
@@ -123,3 +123,18 @@ retries; quota accounting matching stored bytes; mixed legacy and compressed row
 migration from schema 7 with existing raw rows; writer throughput at 100 synthetic nodes; and
 compression ratio over at least 24 hours on an x86_64 host, a Jetson and a Raspberry Pi, on every
 interpreter supported under [ADR-0005](0005-os-and-python-support.md).
+
+## Implementation notes (2026-10-17)
+
+SQLite schema 8 implements the decision. Two details differ from the text above:
+`data_json` is `NOT NULL` in schema 6 and SQLite cannot relax it in place, so a compressed
+row stores `''` there rather than NULL; and `raw-export` keeps reporting `encoded_bytes` as
+the logical compact JSON size plus 256, so the export format is unchanged while the quota
+charges stored bytes.
+
+Measured on 2026-10-17 against the installed platmon 1.3.0 service on the x86_64 host, over
+four minutes and 1,046 rows (core, storage, Wi-Fi, battery): every row compressed with no
+fallback, four dictionaries totalled 23.9 KB, stored payload was 6.4 % of the logical bytes,
+and core rows averaged 1,234 bytes. The database file was 1.88 MB for 838 seconds of core
+data, about 185 MiB per node-day. Dictionary drift over hours, writer throughput at 100
+synthetic nodes and Jetson or Raspberry Pi payloads remain unmeasured acceptance items.

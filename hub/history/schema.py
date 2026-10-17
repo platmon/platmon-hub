@@ -149,3 +149,33 @@ ALTER TABLE core_samples ADD COLUMN disk_write_bytes_per_s REAL CHECK (disk_writ
 PRAGMA user_version=7;
 """
 VERSION = 7
+
+# New raw payloads are zlib with a shared, content-addressed dictionary (ADR-0006).
+# A row stores its payload once: data_json for legacy and fallback rows, otherwise
+# payload_zlib with data_json ''. Dictionaries are reference-counted and charged once.
+MIGRATION_8 = """
+CREATE TABLE raw_dictionaries (
+    dictionary_id INTEGER PRIMARY KEY, digest TEXT NOT NULL UNIQUE,
+    content BLOB NOT NULL, encoded_bytes INTEGER NOT NULL,
+    refs INTEGER NOT NULL DEFAULT 0 CHECK (refs >= 0)
+);
+ALTER TABLE raw_publications ADD COLUMN payload_zlib BLOB;
+ALTER TABLE raw_publications ADD COLUMN dictionary_id INTEGER;
+CREATE TRIGGER raw_dictionary_ref_insert AFTER INSERT ON raw_publications WHEN new.dictionary_id IS NOT NULL BEGIN
+    UPDATE raw_dictionaries SET refs=refs+1 WHERE dictionary_id=new.dictionary_id;
+END;
+CREATE TRIGGER raw_dictionary_ref_delete AFTER DELETE ON raw_publications WHEN old.dictionary_id IS NOT NULL BEGIN
+    UPDATE raw_dictionaries SET refs=refs-1 WHERE dictionary_id=old.dictionary_id;
+    DELETE FROM raw_dictionaries WHERE dictionary_id=old.dictionary_id AND refs=0;
+END;
+CREATE TRIGGER raw_dictionary_insert AFTER INSERT ON raw_dictionaries BEGIN
+    UPDATE raw_usage SET encoded_bytes=encoded_bytes+new.encoded_bytes WHERE singleton=1;
+END;
+CREATE TRIGGER raw_dictionary_delete AFTER DELETE ON raw_dictionaries BEGIN
+    UPDATE raw_usage SET encoded_bytes=encoded_bytes-old.encoded_bytes WHERE singleton=1;
+END;
+UPDATE raw_usage SET encoded_bytes=(SELECT coalesce(sum(encoded_bytes),0) FROM raw_publications)+
+    (SELECT coalesce(sum(encoded_bytes),0) FROM raw_envelopes) WHERE singleton=1;
+PRAGMA user_version=8;
+"""
+VERSION = 8
