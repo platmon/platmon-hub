@@ -7,6 +7,12 @@
   probe group's own freshness and is unknown when the group is stale or has no target.
 - Node summaries gain an additive nullable `probe_failure_percent` field.
 
+## Unreleased — pressure alerts
+
+- Add `psi_cpu_some_avg10`, `psi_memory_some_avg10` and `psi_io_some_avg10` alert
+  conditions from the Agent's pressure stall information, following core freshness.
+  Node summaries gain an additive `pressure` object with the same three values.
+
 ## Unreleased — battery and Wi-Fi alerts
 
 - Add `battery_percent` and `wifi_signal_dbm` alert conditions, where the low reading is
