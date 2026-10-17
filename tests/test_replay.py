@@ -462,13 +462,17 @@ class WriterAndSchedulingTests(unittest.TestCase):
     def test_round_robin_backlog_and_commit_wait(self):
         writer = self.writer()
         writer.start()
-        collector = ReplayCollector(writer)
+        # A frozen scheduling clock keeps a committed stream from falling due again (it would 50 ms
+        # later with has_more) while slower cursor reads complete, so the order cannot depend on
+        # runner speed (#54). Real time only bounds how long the writer may take.
+        collector = ReplayCollector(writer, clock=lambda: 100.0)
         token = object()
         seen = []
         try:
+            wait_for(lambda: writer.snapshot()['schema_version'] is not None)
             for _ in STREAMS:
                 job = None
-                deadline = time.monotonic()+3
+                deadline = time.monotonic()+15
                 while job is None and time.monotonic() < deadline:
                     job = collector.ready(NODE_ID, token)
                     threading.Event().wait(.01)
