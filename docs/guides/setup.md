@@ -120,7 +120,7 @@ handshake milliseconds and attempt/failure statistics; battery charge/energy,
 voltage, signed current/power, cycle count and external power state. Unknown fields are omitted.
 No probe is configured or triggered by Hub. Core sequence is never an optional ID.
 
-For platmon 1.2.0, device details include **Power & battery**, with separate battery
+For platmon 1.2.0 and later, device details include **Power & battery**, with separate battery
 freshness and `Current` / `Last-known` labeling, power rails and fans. GPU/NPU
 details show driver/provider and clocks, even when load is unavailable. Older
 agents remain supported without these additional fields. Battery has observation
