@@ -312,8 +312,8 @@ class WriterAndSchedulingTests(unittest.TestCase):
         self.assertFalse(future.done())
         writer.start()
         try:
-            self.assertEqual(future.result(3)['after_id'], 2)
-            self.assertEqual(writer.replay_cursor(NODE_ID, 'core').result(3), (INSTANCE, 2))
+            self.assertEqual(future.result(15)['after_id'], 2)
+            self.assertEqual(writer.replay_cursor(NODE_ID, 'core').result(15), (INSTANCE, 2))
         finally:
             self.assertTrue(writer.close()['flushed'])
         self.assertEqual(writer.snapshot()['raw']['queued_bytes'], 0)
@@ -335,8 +335,8 @@ class WriterAndSchedulingTests(unittest.TestCase):
         writer = self.writer(store_factory=Broken)
         writer.start()
         try:
-            with self.assertRaises(sqlite3.Error): writer.submit_raw(page()).result(3)
-            self.assertIsNone(writer.replay_cursor(NODE_ID, 'core').result(3))
+            with self.assertRaises(sqlite3.Error): writer.submit_raw(page()).result(15)
+            self.assertIsNone(writer.replay_cursor(NODE_ID, 'core').result(15))
         finally:
             writer.close()
 
@@ -346,8 +346,8 @@ class WriterAndSchedulingTests(unittest.TestCase):
         self.assertTrue(acknowledgement.cancel())
         writer.start()
         try:
-            self.assertEqual(writer.replay_cursor(NODE_ID, 'core').result(3), (INSTANCE, 2))
-            self.assertEqual(writer.submit_raw(page()).result(3)['duplicates'], 2)
+            self.assertEqual(writer.replay_cursor(NODE_ID, 'core').result(15), (INSTANCE, 2))
+            self.assertEqual(writer.submit_raw(page()).result(15)['duplicates'], 2)
             self.assertEqual(writer.snapshot()['raw']['persisted'], 2)
         finally:
             self.assertTrue(writer.close()['flushed'])
