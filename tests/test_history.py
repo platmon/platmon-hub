@@ -7,6 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
+from hub.history.schema import VERSION
 from hub.history.projector import CoreRecord
 from hub.history.store import HistoryStore, SchemaError, read_connection
 from hub.history.writer import HistoryWriter
@@ -21,7 +22,9 @@ def record(seq=1, instance='a'):
                       'ready', 25.0, None, 50.0, None, None)
 
 
-def wait_for(predicate, timeout=3):
+# An upper bound, not a pace: it returns as soon as the condition holds. Writer commits use WAL with
+# synchronous=FULL, which hosted Windows runners have taken over 3 s to complete (ADR 0002).
+def wait_for(predicate, timeout=15):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():
@@ -89,6 +92,14 @@ class StoreTests(unittest.TestCase):
         c = sqlite3.connect(str(self.path))
         self.assertEqual(c.execute('PRAGMA user_version').fetchone()[0], 99)
         c.close()
+
+    def test_new_database_takes_no_backups(self):
+        # setUp created this database: straight to the current schema, no backups of an empty one
+        self.assertEqual(self.store.connection.execute('PRAGMA user_version').fetchone()[0], VERSION)
+        self.assertEqual(list(self.path.parent.glob('*-backup-*')), [])
+        self.store.close()
+        self.store.open()  # reopening a current database migrates nothing
+        self.assertEqual(list(self.path.parent.glob('*-backup-*')), [])
 
     def test_initial_migration_rolls_back(self):
         self.store.close()

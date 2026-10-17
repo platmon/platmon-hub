@@ -116,7 +116,8 @@ For upgrade: preserve the previous wheel and config; take a verified backup;
 stop the service and verify all Hub processes exited; install the new wheel in
 the venv; start and check live/history/reload diagnostics and unchanged node UUIDs.
 Never store operational data inside the installed package. Schema migrations run
-before history ingestion, create their own pre-migration backup, and fail closed
+before history ingestion, create their own pre-migration backup of an existing
+database (a newly created one gets none), and fail closed
 for history without destroying old data. A newer unknown schema is rejected.
 
 For rollback: stop Hub, preserve the failed DB and its sidecars together for
