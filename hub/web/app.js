@@ -340,6 +340,9 @@
   }
   const historyMetric = document.getElementById("history-metric");
   const historyRate = () => historyMetric.value.endsWith("_bytes_per_s");
+  // Pressure is usually a few percent: scale to the data, on steps whose quarters read cleanly, at most 100.
+  const historyPressure = () => historyMetric.value.startsWith("psi_");
+  const pressureCeiling = top => [2, 4, 10, 20, 40, 100].find(step => step >= top) ?? 100;
   const historyRange = document.getElementById("history-range");
   const historyStatus = document.getElementById("history-status");
   const historyValue = document.getElementById("history-value");
@@ -377,7 +380,7 @@
     const values = data.points.flatMap(p => [p.minimum, p.maximum]).filter(numeric);
     const unbounded = historyMetric.value === "hottest_c" || historyRate();
     const low = historyMetric.value === "hottest_c" ? Math.min(0, ...values) : 0;
-    const high = unbounded ? Math.max(1, ...values) : 100;
+    const high = unbounded ? Math.max(1, ...values) : historyPressure() ? pressureCeiling(Math.max(0, ...values)) : 100;
     const left = historyRate() ? 66 : 38, right = width - 10, top = 12, bottom = height - 30;
     const x = time => left + (right-left) * (time-data.from_ms)/(data.to_ms-data.from_ms);
     const y = value => bottom - (bottom-top) * (value-low)/(high-low);
@@ -385,7 +388,7 @@
     for (let i = 0; i <= 4; i++) {
       const value = low + (high-low)*i/4;
       ctx.beginPath(); ctx.moveTo(left,y(value)); ctx.lineTo(right,y(value)); ctx.stroke();
-      ctx.fillText(historyRate() ? rate(value) : value.toFixed(0), 2, y(value)+4);
+      ctx.fillText(historyRate() ? rate(value) : value.toFixed(high < 10 ? 1 : 0), 2, y(value)+4);
     }
     for (const gap of data.gaps) {
       const a = x(Math.max(data.from_ms, gap.start_ms));
