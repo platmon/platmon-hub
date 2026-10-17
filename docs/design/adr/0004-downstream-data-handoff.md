@@ -2,7 +2,7 @@
 
 [Documentation index](../../README.md) · [Design reference](../README.md)
 
-- **Status:** Proposed (draft for review); not implemented
+- **Status:** Accepted; stage 1 (sequence and loss accounting) implemented as SQLite schema 9, stages 2–5 pending; see [implementation notes](#implementation-notes)
 - **Date:** 2026-10-17
 - **Scope:** A versioned, incremental, file-based contract through which a separate post-processing system receives committed Hub data
 - **Hub baseline:** `main` at `758d62f6f2b06d82b71f564d0b21c5e2914de848` (SQLite schema 7)
@@ -435,3 +435,23 @@ restore producing a new chain; Agents without replay; both start choices, includ
 timing on a raw table of the measured production size; segment and SQLite growth measured on a
 Jetson and a Raspberry Pi; Windows and Linux; every interpreter supported under
 [ADR-0005](0005-os-and-python-support.md).
+
+## Implementation notes
+
+**Stage 1 (2026-10-17), SQLite schema 9.** Sequence values are assigned by `AFTER INSERT` and
+`AFTER UPDATE OF <column>` triggers that consult `handoff_state.enabled`, so every write path
+is covered without per-call changes; nothing is numbered while handoff is disabled. Updated
+versions are created for a changed gap `end_ms` (including pruning truncation), an extended
+replay-loss `to_id`, a Hub session's `closed_at_ms`, and its `last_seen_ms` only once its
+current version is at or below `delivered_seq`. `gap_uid` and `loss_id` are 32 hexadecimal
+characters from a random 128-bit value, like Hub session IDs. `handoff_state` already holds the
+delivered and acknowledged sequence, the last segment and the start choice, so the later
+stages need no further schema change for them.
+
+Deletions in retention pruning, raw retention and raw quota eviction select their rows first
+and record the unacknowledged ones, or rows still awaiting an `existing` backfill, in the same
+transaction. A deletion extends the table's current unacknowledged loss for that reason
+instead of adding a row. Quota eviction removes acknowledged raw rows first, in sequence order,
+and only then the oldest rows. `enable_handoff('now')` records one `not_handed_off` loss per
+table for rows not numbered since the previous enable. The segment builder, spool,
+acknowledgement, backfill task, CLI options and diagnostics are stages 2–5.

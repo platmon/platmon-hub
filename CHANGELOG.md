@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Prepare downstream handoff (ADR-0004 stage 1, SQLite schema 9): a store identity, a
+  commit sequence assigned by triggers only while handoff is enabled, `gaps.gap_uid`, and
+  `handoff_losses` recording retention and quota deletions of unacknowledged rows. Quota
+  eviction prefers acknowledged rows once handoff is enabled. Handoff cannot be enabled
+  from the command line yet; with it disabled, storage behaves as before. Upgrading takes a
+  verified schema-8 backup.
+
 - Add a per-node raw capture level (ADR-0007): registry `capture` is `auto` (default),
   `replay`, `sampled` or `off`, set with `platmon-hub nodes set-capture`. Sampled capture
   stores the `/api/stats` and `/api/observations` documents Hub already polls under the

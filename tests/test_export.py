@@ -30,7 +30,7 @@ class ExportTests(unittest.TestCase):
                 (OTHER, 'other', 1, 3000, 10, 10)]:
             c.execute('INSERT INTO core_samples VALUES (' + ','.join('?' * 20) + ')',
                       (node, instance, sequence, received, 0, 5000, 'ready', cpu, gpu, 30, 40, 50, None) + (None,) * 7)
-        c.execute('INSERT INTO events VALUES (?,?,?,?,?,?,?)',
+        c.execute('INSERT INTO events (node_id,event_type,received_at_ms,previous_state,current_state,reason_code,event_id) VALUES (?,?,?,?,?,?,?)',
                   (NODE, 'core_state', 1500, 'live', 'offline', 'core_transport', 'event-1'))
         c.execute('INSERT INTO gaps (node_id,scope,instance_id,start_ms,end_ms,reason) VALUES (?,?,?,?,?,?)',
                   (NODE, 'core', 'first', 500, None, 'unobserved'))
@@ -79,7 +79,7 @@ class ExportTests(unittest.TestCase):
         def inject(value):
             if not committed:
                 committed.append(True)
-                self.store.connection.execute('INSERT INTO events VALUES (?,?,?,?,?,?,?)',
+                self.store.connection.execute('INSERT INTO events (node_id,event_type,received_at_ms,previous_state,current_state,reason_code,event_id) VALUES (?,?,?,?,?,?,?)',
                     (NODE, 'core_state', 1600, 'offline', 'live', 'current', 'event-new'))
             return original(value)
         with patch('hub.export.spreadsheet_cell', side_effect=inject):
