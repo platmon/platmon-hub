@@ -14,6 +14,7 @@ from unittest.mock import patch
 from hub import protocol
 from hub.__main__ import main
 from hub.export import ExportError
+from hub.history.codec import decode
 from hub.history.raw import validate_page, STREAMS
 from hub.history.schema import VERSION
 from hub.history.store import HistoryStore
@@ -147,9 +148,11 @@ class RawStoreTests(unittest.TestCase):
         doc = document()
         doc['records'][0]['data']['power']['rail'] = 99
         self.assertEqual(self.insert(page(doc))['duplicates'], 2)
-        row = self.store.connection.execute('SELECT data_json,received_at_ms FROM raw_publications WHERE publication_id=1').fetchone()
-        self.assertEqual(json.loads(row[0])['power']['rail'], 0)
-        self.assertEqual(row[1], first.received_at_ms)
+        row = self.store.connection.execute(
+            'SELECT data_json,payload_zlib,(SELECT content FROM raw_dictionaries d WHERE d.dictionary_id=p.dictionary_id),'
+            'received_at_ms FROM raw_publications p WHERE publication_id=1').fetchone()
+        self.assertEqual(json.loads(decode(*row[:3]))['power']['rail'], 0)
+        self.assertEqual(row[3], first.received_at_ms)
         self.store.close()
         self.store.open()
         self.assertEqual(self.store.replay_cursor(NODE_ID, 'core'), (INSTANCE, 2))
@@ -202,9 +205,11 @@ class RawStoreTests(unittest.TestCase):
         value = page(document(tuple(range(1, 11))))
         self.insert(value)
         self.assertEqual(c.execute('SELECT count(*), max(refs) FROM raw_envelopes').fetchone(), (1, 10))
-        payload = sum(len(row[1].encode()) + 256 for row in value.records)
+        # The quota charges stored bytes: each row once, and the envelope and dictionary once.
+        stored = c.execute('SELECT sum(encoded_bytes) FROM raw_publications').fetchone()[0]
+        shared = c.execute('SELECT sum(encoded_bytes) FROM raw_dictionaries').fetchone()[0] or 0
         usage = c.execute('SELECT encoded_bytes FROM raw_usage').fetchone()[0]
-        self.assertEqual(usage, payload + len(value.envelope_json.encode()) + 256)
+        self.assertEqual(usage, stored + shared + len(value.envelope_json.encode()) + 256)
         self.assertLessEqual(usage, value.encoded_bytes)
         # A duplicate-only retry with a different envelope leaves no orphan.
         retry = document(tuple(range(1, 11)))

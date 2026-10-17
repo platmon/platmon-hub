@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Store new raw publications compressed (ADR-0006, SQLite schema 8): `zlib` with a
+  shared, reference-counted dictionary per stream, verified to decode to the identical
+  JSON before commit, with JSON as the fallback. The raw quota charges stored bytes; on
+  one x86_64 host stored payload was 6.4 % of its JSON size, about 185 MiB per node-day
+  instead of about 1.7 GiB. Existing rows stay JSON. `raw-export` output is unchanged.
+  `history.raw` reports compression counters. Upgrading takes a verified schema-7 backup;
+  a downgrade needs that backup.
+
 ## 1.0.0 — 2026-10-17
 
 First release. From this version the Hub HTTP API (schema 1 routes and fields), the

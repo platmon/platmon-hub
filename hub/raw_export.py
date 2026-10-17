@@ -7,10 +7,12 @@ import sqlite3
 import tempfile
 import time
 import zipfile
+import zlib
 from pathlib import Path
 
 from .export import ExportError, identity, validate_range
 from .history.schema import VERSION
+from .history.codec import decode
 from .history.store import read_connection
 
 
@@ -69,8 +71,9 @@ def export_raw(database, output, start, end, node_ids=(), *, timeout=30,
                 check()
                 source = table
                 if table == 'raw_publications':
-                    source = ('(SELECT p.*,e.envelope_json FROM raw_publications p '
-                              'JOIN raw_envelopes e ON e.envelope_id=p.envelope_id)')
+                    source = ('(SELECT p.*,e.envelope_json,d.content AS dictionary_content FROM raw_publications p '
+                              'JOIN raw_envelopes e ON e.envelope_id=p.envelope_id '
+                              'LEFT JOIN raw_dictionaries d ON d.dictionary_id=p.dictionary_id)')
                 query = connection.execute('SELECT * FROM '+source+' WHERE '+where+' ORDER BY received_at_ms,node_id,instance_id,stream', args)
                 names = [col[0] for col in query.description]
                 rows = 0
@@ -79,8 +82,14 @@ def export_raw(database, output, start, end, node_ids=(), *, timeout=30,
                         check()
                         row = dict(zip(names, values))
                         if table == 'raw_publications':
-                            del row['envelope_id']
-                            row['data'] = json.loads(row.pop('data_json'))
+                            del row['envelope_id'], row['dictionary_id']
+                            try:
+                                payload = decode(row.pop('data_json'), row.pop('payload_zlib'), row.pop('dictionary_content'))
+                            except (ValueError, UnicodeDecodeError, zlib.error) as exc:
+                                raise ExportError('raw payload cannot be decoded') from exc
+                            # The exported size stays the logical compact JSON size, however it is stored.
+                            row['encoded_bytes'] = len(payload.encode()) + 256
+                            row['data'] = json.loads(payload)
                             row['envelope'] = json.loads(row.pop('envelope_json'))
                         data = encode(row)
                         count += 1

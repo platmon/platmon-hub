@@ -23,7 +23,10 @@ of 100 nodes publishing 10 KiB at 1 Hz produces about 82.4 GiB of payload per da
 before indexes, envelopes and WAL. Measure actual payloads first. Raw retention
 does not inherit the seven-day summary retention default.
 
-An ordered migration to SQLite schema 6 preserves a verified schema-5 backup.
+An ordered migration to SQLite schema 6 preserves a verified schema-5 backup. Schema 8
+stores new raw payloads compressed ([ADR-0006](../design/adr/0006-raw-payload-compression.md)):
+the writer verifies each row decodes to the identical JSON before committing it and
+otherwise stores the JSON. Exports decompress, so their content is unchanged.
 Protect raw data, migration backups and exports: complete publications can contain
 hostnames, sensor labels and device/probe metadata. The database is not encrypted.
 Restoring a backup is required for a code downgrade; never lower `user_version`.
@@ -33,7 +36,9 @@ Restoring a backup is required for a code downgrade; never lower `user_version`.
 Read `GET /api/replay/status` for per-node/per-stream state, last durable cursor,
 instance, backlog, committed-page count and last error. `GET /api/history/status`
 adds `history.raw` queue bytes/capacity, committed counts, storage errors, quota
-and retention settings. These endpoints do not expose payloads or Agent URLs.
+and retention settings, and compression counters: `compressed_rows`, `json_rows`,
+`compression_fallback`, live `dictionaries` and `dictionary_bytes` (as of the last
+committed page), `logical_bytes`, `stored_bytes` and `stored_logical_ratio` since start. These endpoints do not expose payloads or Agent URLs.
 
 - `captured`: the last page committed; it is not a promise of complete history.
 - `committing`: queue admission succeeded, but the cursor is not yet durable.
@@ -72,8 +77,9 @@ responses, Python objects and allocator overhead add memory outside that budget.
 A page is acknowledged after its records, loss evidence and cursor commit together.
 Duplicates preserve the first payload and receipt time. On failure, none advances.
 
-The raw quota charges retained encoded payload bytes plus a 256-byte per-row
-reservation, and each page envelope once (plus 256 bytes) however many rows share it. At quota, a committing page first evicts the oldest committed
+The raw quota charges retained stored payload bytes (compressed, or JSON for legacy and
+fallback rows) plus a 256-byte per-row reservation, each page envelope once (plus 256
+bytes) however many rows share it, and each compression dictionary once (plus 256 bytes). At quota, a committing page first evicts the oldest committed
 raw rows (by Hub receipt time) to make room; retention is an upper bound, not a
 guarantee under quota pressure. Only a page too large to fit even after eviction rolls
 back, and capture backs off with committed cursors unchanged. If the quota is lowered,

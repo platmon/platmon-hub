@@ -8,7 +8,8 @@ from pathlib import Path
 
 from ..filelock import FileLock
 from ..alerts import AlertRecord
-from .schema import SQL, VERSION, MIGRATION_2, MIGRATION_3, MIGRATION_4, MIGRATION_5, MIGRATION_6, MIGRATION_7
+from .schema import SQL, VERSION, MIGRATION_2, MIGRATION_3, MIGRATION_4, MIGRATION_5, MIGRATION_6, MIGRATION_7, MIGRATION_8
+from .codec import Dictionaries
 from .projector import LOAD_COLUMNS, ObservationRecord, ContinuityRecord, EventRecord
 
 
@@ -22,6 +23,7 @@ class HistoryStore:
         self.connection = None
         self.session_id = None
         self.lock = FileLock(str(self.path) + '.lock')
+        self.dictionaries = Dictionaries()
 
     def open(self):
         self.lock.acquire()
@@ -36,7 +38,7 @@ class HistoryStore:
             if created:
                 self._migrate(SQL)
                 version = 1
-            elif version not in (1, 2, 3, 4, 5, 6, VERSION):
+            elif version not in range(1, VERSION + 1):
                 raise SchemaError('unsupported_history_schema')
             columns = [r[1] for r in c.execute('PRAGMA table_info(core_samples)')]
             if columns != ['node_id', 'instance_id', 'sequence', 'received_at_ms', 'data_age_ms',
@@ -53,10 +55,12 @@ class HistoryStore:
                 expected.add('alert_states')
             if version >= 6:
                 expected.update(('raw_publications', 'raw_envelopes', 'replay_cursors', 'replay_losses', 'raw_usage'))
+            if version >= 8:
+                expected.add('raw_dictionaries')
             tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if tables != expected:
                 raise SchemaError('invalid_history_layout')
-            for target, script in ((2, MIGRATION_2), (3, MIGRATION_3), (4, MIGRATION_4), (5, MIGRATION_5), (6, MIGRATION_6), (7, MIGRATION_7)):
+            for target, script in ((2, MIGRATION_2), (3, MIGRATION_3), (4, MIGRATION_4), (5, MIGRATION_5), (6, MIGRATION_6), (7, MIGRATION_7), (8, MIGRATION_8)):
                 if version >= target:
                     continue
                 if not created:
@@ -269,13 +273,33 @@ class HistoryStore:
                       (digest, page.envelope_json, len(envelope)+256))
             envelope_id = c.execute('SELECT envelope_id FROM raw_envelopes WHERE digest=?', (digest,)).fetchone()[0]
             inserted = 0
+            counts = dict(compressed=0, stored_json=0, fallback=0, logical_bytes=0, stored_bytes=0)
+            dictionaries = {}
             for pid, payload, gap, start, end in page.records:
-                size = len(payload.encode()) + 256
-                inserted += c.execute('INSERT INTO raw_publications VALUES (?,?,?,?,?,?,?,?,?,?,?) '
-                                      'ON CONFLICT(node_id,instance_id,stream,publication_id) DO NOTHING',
-                                      key + (pid, page.received_at_ms, start, end, int(gap), payload, envelope_id, size)).rowcount
-            # Duplicate-only or loss-only pages leave no reference to their envelope.
+                blob, content, digest, failed = self.dictionaries.encode(page.node_id, page.instance_id, page.stream, payload)
+                if blob is None:
+                    stored, dictionary_id, size = payload, None, len(payload.encode()) + 256
+                else:
+                    if digest not in dictionaries:
+                        c.execute('INSERT INTO raw_dictionaries (digest,content,encoded_bytes) VALUES (?,?,?) '
+                                  'ON CONFLICT(digest) DO NOTHING', (digest, content, len(content)+256))
+                        dictionaries[digest] = c.execute('SELECT dictionary_id FROM raw_dictionaries WHERE digest=?',
+                                                         (digest,)).fetchone()[0]
+                    stored, dictionary_id, size = '', dictionaries[digest], len(blob) + 256
+                row = c.execute('INSERT INTO raw_publications VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) '
+                                'ON CONFLICT(node_id,instance_id,stream,publication_id) DO NOTHING',
+                                key + (pid, page.received_at_ms, start, end, int(gap), stored, envelope_id, size,
+                                       blob, dictionary_id)).rowcount
+                if row:
+                    inserted += 1
+                    counts['compressed' if blob is not None else 'stored_json'] += 1
+                    counts['fallback'] += failed
+                    counts['logical_bytes'] += len(payload.encode())
+                    counts['stored_bytes'] += size - 256
+            # Duplicate-only or loss-only pages leave no reference to their envelope or dictionary.
             c.execute('DELETE FROM raw_envelopes WHERE envelope_id=? AND refs=0', (envelope_id,))
+            for dictionary_id in dictionaries.values():
+                c.execute('DELETE FROM raw_dictionaries WHERE dictionary_id=? AND refs=0', (dictionary_id,))
             for start, end, reason in page.losses:
                 c.execute('INSERT INTO replay_losses VALUES (?,?,?,?,?,?,?) '
                           'ON CONFLICT(node_id,instance_id,stream,from_id,reason) DO UPDATE SET to_id=max(to_id,excluded.to_id)',
@@ -294,9 +318,11 @@ class HistoryStore:
             c.execute('INSERT INTO replay_cursors VALUES (?,?,?,?,1,?) ON CONFLICT(node_id,instance_id,stream) '
                       'DO UPDATE SET after_id=max(after_id,excluded.after_id),active=1,received_at_ms=excluded.received_at_ms',
                       key + (page.next_after, page.received_at_ms))
+            live = c.execute('SELECT count(*), coalesce(sum(encoded_bytes),0) FROM raw_dictionaries').fetchone()
             c.execute('COMMIT')
-            return {'inserted': inserted, 'duplicates': len(page.records)-inserted, 'evicted': evicted,
-                    'after_id': max(page.next_after, prior[0] if prior else 0)}
+            return dict(counts, inserted=inserted, duplicates=len(page.records)-inserted, evicted=evicted,
+                        after_id=max(page.next_after, prior[0] if prior else 0),
+                        dictionaries=live[0], dictionary_bytes=live[1])
         except BaseException:
             if c.in_transaction:
                 c.execute('ROLLBACK')
