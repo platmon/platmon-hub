@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 — 2026-10-18
+
+Compressed raw storage, per-node capture levels and downstream handoff. All changes are
+additive to the 1.0.0 contract. Upgrading migrates the history database from SQLite schema 7
+to 9 after a verified backup; returning to 1.0.0 requires restoring that backup. Handoff and
+sampled capture are opt-in; with neither configured, storage behaves as in 1.0.0 apart from
+compression of new raw rows.
 
 - Report downstream handoff at `GET /api/handoff/status` and on the Data tab: delivered and
   acknowledged positions, spool use, unacknowledged raw bytes and age, losses by table and
