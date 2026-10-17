@@ -53,6 +53,23 @@ def _overview(stats):
     return result
 
 
+def _probe_failure_percent(groups, elapsed_ms):
+    """Worst target's failed share of its recent connect attempts; unknown unless current."""
+    group = groups.get("probe")
+    if not isinstance(group, dict) or group.get("state") not in ("ok", "partial", "error"):
+        return None
+    observation = group.get("observation")
+    if observation is None or observation.get("stale") is True or observation["data_age_ms"] + elapsed_ms > group["stale_after_ms"]:
+        return None
+    data = group.get("data")
+    targets = data.get("targets") if isinstance(data, dict) else None
+    if not isinstance(targets, list):
+        return None
+    ratios = [t["failure_ratio"] for t in targets if isinstance(t, dict) and _finite(t.get("failure_ratio"))
+              and 0 <= t["failure_ratio"] <= 1]
+    return round(100 * max(ratios), 1) if ratios else None
+
+
 class NodeState:
     def __init__(self, node, *, clock=time.monotonic, core_interval=5.0, status_deadline=2.0, stats_deadline=2.0):
         self.node = node
@@ -226,6 +243,10 @@ class NodeState:
                             group["state"] = "stale"
                             obs["stale"] = True
             optional_alert_error = None
+            probe_failure_percent = None
+            if self._optional_error is None and self._last_observations is not None:
+                probe_failure_percent = _probe_failure_percent(self._last_observations["groups"],
+                                                               max(0, now - self._last_obs_tick) * 1000)
             if self._optional_error is not None:
                 # Contract: a missing or unknown optional endpoint is unsupported, not an error.
                 optional_alert_error = None if self._optional_error in OPTIONAL_UNSUPPORTED else True
@@ -238,6 +259,7 @@ class NodeState:
                     optional_alert_error = any(g['state'] in ('error', 'partial') for g in current_groups)
             return {
                 "optional_alert_error": optional_alert_error,
+                "probe_failure_percent": probe_failure_percent,
                 "node_id": self.node.node_id,
                 "name": self.node.name,
                 "enabled": self.node.enabled,

@@ -28,6 +28,10 @@ Detail `stats.gpu` / `stats.npu` preserve driver/provider and clocks (Hz), and
 Clients must distinguish unknown/null readings from numeric zero, and use the
 group's freshness rather than core freshness for battery data.
 
+Node summaries also carry an additive nullable `probe_failure_percent`: the highest
+`failure_ratio` × 100 among the probe targets of a current `probe` observation. It is
+null when the agent probes no target, or when the group is absent, starting, stale or unsupported.
+
 ## History
 
 Required query parameters are `metric`, `from_ms`, `to_ms`; optional `max_points`

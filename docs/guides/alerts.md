@@ -10,7 +10,15 @@ Edit the local configuration and restart the Hub to change rules. Registry hot r
 remains independent. Configuration is at most 64 KiB, with at most 32 unique rules.
 
 Numeric conditions: `cpu_percent`, `memory_percent`, `disk_percent`, `hottest_c`,
-`gpu_percent`. Require finite `warning <= critical`; percentages are 0..100.
+`gpu_percent`, `npu_percent`, `probe_failure_percent`. Require finite `warning <= critical`;
+percentages are 0..100.
+
+`probe_failure_percent` is the worst probe target's share of failed TCP connect attempts
+over the agent's last 10 attempts to that target, as a percentage. It follows the `probe`
+group's own freshness, not core freshness, so it keeps being evaluated while core data
+is stale. A stale or absent group, or one with no target, is unknown. One failure in
+10 is 10%, so a warning below 10 fires on any single failure. It measures failed
+connection attempts from the agent, not packet loss on the path.
 Boolean conditions: `offline`, `stale`, `optional_error` (no numeric thresholds).
 `optional_error` ignores agents that do not provide `/api/observations` (404) or
 report an unknown observations schema; those show as `unsupported` or `incompatible`.

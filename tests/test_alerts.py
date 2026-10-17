@@ -107,6 +107,40 @@ class AlertTests(unittest.TestCase):
                        {'rules':[{'id':'x','condition':'offline','warning':3}]}, {'rules':[self.rules[0]]*33}):
             with self.assertRaises(ValueError): validate_rules(source)
 
+    def test_npu_and_probe_failure_conditions(self):
+        rules = validate_rules({'rules':[dict(id='npu', condition='npu_percent', warning=80, critical=95, duration_seconds=0),
+            dict(id='probe', condition='probe_failure_percent', warning=20, critical=50, duration_seconds=0)]})
+        engine = AlertEngine(rules, self.history)
+        # Probe evidence has its own freshness: a stale core does not hide it.
+        self.node.update(overview={'npu_percent': 90}, data_current=False, probe_failure_percent=60)
+        engine.evaluate([self.node]); engine.evaluate([self.node])
+        states = {row['rule_id']: row for row in engine.snapshot()['alerts']}
+        self.assertNotIn('npu', states)
+        self.assertEqual((states['probe']['state'], states['probe']['severity']), ('Active', 'critical'))
+        self.node['probe_failure_percent'] = None
+        engine.evaluate([self.node])
+        self.assertEqual(engine._states[(NODE_ID, 'probe')]['state'], 'Active')
+        self.node['data_current'] = True
+        engine.evaluate([self.node]); engine.evaluate([self.node])
+        self.assertEqual(engine._states[(NODE_ID, 'npu')]['state'], 'Active')
+        with self.assertRaises(ValueError):
+            validate_rules({'rules':[dict(id='p', condition='probe_failure_percent', warning=20, critical=120)]})
+
+    def test_probe_failure_percent_projection(self):
+        from hub.state import _probe_failure_percent
+        def groups(state='ok', age=0, targets=None):
+            return {'probe': {'state': state, 'stale_after_ms': 30000, 'observation': {'id': 1, 'data_age_ms': age},
+                              'data': {'targets': targets if targets is not None else
+                                       [{'failure_ratio': 0.1}, {'failure_ratio': 0.3}, {'failure_ratio': None}]}}}
+        self.assertEqual(_probe_failure_percent(groups(), 0), 30.0)
+        self.assertEqual(_probe_failure_percent(groups('error'), 0), 30.0)
+        self.assertIsNone(_probe_failure_percent(groups(), 30001))
+        self.assertIsNone(_probe_failure_percent(groups(age=20000), 10001))
+        self.assertIsNone(_probe_failure_percent(groups('starting'), 0))
+        self.assertIsNone(_probe_failure_percent(groups(targets=[]), 0))
+        self.assertIsNone(_probe_failure_percent(groups(targets=[{'failure_ratio': 1.5}]), 0))
+        self.assertIsNone(_probe_failure_percent({}, 0))
+
     def test_writer_restores_state_and_api_reports_it(self):
         import threading
         import urllib.request

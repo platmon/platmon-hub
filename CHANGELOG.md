@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — NPU and probe alerts
+
+- Add `npu_percent` and `probe_failure_percent` alert conditions. The probe condition
+  is the worst target's failed share of its recent TCP connect attempts; it follows the
+  probe group's own freshness and is unknown when the group is stale or has no target.
+- Node summaries gain an additive nullable `probe_failure_percent` field.
+
 ## Unreleased — Agent replay and raw persistence
 
 - Add opt-in full core/slow publication replay with bounded fair catch-up, per-stream

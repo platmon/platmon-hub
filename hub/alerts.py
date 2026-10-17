@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .history.projector import EventRecord
 
-METRICS = ('cpu_percent', 'memory_percent', 'disk_percent', 'hottest_c', 'gpu_percent')
+METRICS = ('cpu_percent', 'memory_percent', 'disk_percent', 'hottest_c', 'gpu_percent', 'npu_percent', 'probe_failure_percent')
 CONDITIONS = METRICS + ('offline', 'stale', 'optional_error')
 STATES = ('Normal', 'Pending', 'Active', 'Recovering', 'Resolved')
 
@@ -167,6 +167,9 @@ class AlertEngine:
 
     @staticmethod
     def _value(node, condition):
+        if condition == 'probe_failure_percent':
+            # Probe is an optional group with its own freshness; core state does not gate it.
+            return node.get(condition) if node['enabled'] else None
         if condition in METRICS:
             return node['overview'].get(condition) if node['data_current'] else None
         if condition == 'offline':
