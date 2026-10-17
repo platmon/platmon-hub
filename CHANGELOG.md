@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased — NPU and probe alerts
+
+- Add `npu_percent` and `probe_failure_percent` alert conditions. The probe condition
+  is the worst target's failed share of its recent TCP connect attempts; it follows the
+  probe group's own freshness and is unknown when the group is stale or has no target.
+- Node summaries gain an additive nullable `probe_failure_percent` field.
+
+## Unreleased — battery and Wi-Fi alerts
+
+- Add `battery_percent` and `wifi_signal_dbm` alert conditions, where the low reading is
+  the bad one: `warning >= critical`, compared at or below, recovering above warning plus
+  hysteresis. They use the lowest present battery charge and the weakest connected signal
+  from current observations. Node summaries gain both as additive nullable fields.
+
+## Unreleased — pressure and I/O rate history
+
+- History schema 7 adds nullable CPU/memory/I/O pressure (`some avg10`), busiest-interface
+  network receive/send rates and summed physical-disk read/write rates to `core_samples`,
+  with a verified pre-upgrade backup. Existing rows keep NULL.
+- The History API, dashboard History chart, CSV export and report summaries include them.
+  Daily summaries move to `summary_format_version: 3`; formats 1 and 2 remain readable.
+
 ## Unreleased — Agent replay and raw persistence
 
 - Add opt-in full core/slow publication replay with bounded fair catch-up, per-stream

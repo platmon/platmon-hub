@@ -146,7 +146,7 @@ open gap, not new synthetic samples. A group failure never changes Core health.
 queries Hub receipt UTC milliseconds in the half-open range `[from_ms,to_ms)`.
 Use actual epoch milliseconds for an operating installation. Metrics are a fixed
 allowlist: `cpu_percent`, `gpu_percent`, `npu_percent`, `memory_percent`, `disk_percent`,
-`hottest_c`. The maximum span is seven days and the maximum point count is 1,200.
+`hottest_c`, `psi_cpu_some_avg10`, `psi_memory_some_avg10`, `psi_io_some_avg10`, `network_rx_busiest_bytes_per_s`, `network_tx_busiest_bytes_per_s`, `disk_read_bytes_per_s`, `disk_write_bytes_per_s`. The maximum span is seven days and the maximum point count is 1,200.
 Unknown/duplicate parameters, invalid bounds and metrics return 400; unregistered
 nodes return 404; disabled/unavailable history returns 503.
 

@@ -83,6 +83,23 @@ class Agent120Tests(unittest.TestCase):
             self.assertEqual(self.state.snapshot()['optional_alert_error'], expected)
             self.assertEqual(self.state.snapshot()['headline'], 'live')
 
+    def test_probe_failure_percent_ages_out_with_its_group(self):
+        self.core()
+        raw = self.document['observations']
+        # Shape from platmon docs/reference/probe.md.
+        raw['groups']['probe'] = {'state': 'ok', 'stale_after_ms': 30000, 'observation': {'id': 1, 'data_age_ms': 0},
+            'data': {'provider': 'tcp_connect', 'timeout_ms': 2000.0, 'targets': [
+                {'address': '192.0.2.10', 'port': 443, 'connect_ms': None, 'reason': 'timeout', 'attempts': 10, 'failures': 4, 'failure_ratio': 0.4},
+                {'address': '192.0.2.11', 'port': 22, 'connect_ms': 3.1, 'reason': None, 'attempts': 10, 'failures': 0, 'failure_ratio': 0.0}]}}
+        self.assertTrue(self.state.accept_observations(raw))
+        summary = self.state.snapshot(include_details=False)
+        self.assertEqual((summary['probe_failure_percent'], summary['battery_percent']), (40.0, 89))
+        self.clock.advance(31)
+        summary = self.state.snapshot(include_details=False)
+        # Each group ages on its own: probe (30 s) is stale, the battery (180 s) is still current.
+        self.assertEqual((summary['probe_failure_percent'], summary['battery_percent']), (None, 89))
+        self.assertIsNone(summary['wifi_signal_dbm'])  # the fixture reports no Wi-Fi group
+
     def test_battery_projection_sign_units_null_and_absent_bay(self):
         group = self.document['observations']['groups']['battery']
         battery = group['data']['batteries'][0]

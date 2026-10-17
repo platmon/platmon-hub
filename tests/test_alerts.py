@@ -107,6 +107,87 @@ class AlertTests(unittest.TestCase):
                        {'rules':[{'id':'x','condition':'offline','warning':3}]}, {'rules':[self.rules[0]]*33}):
             with self.assertRaises(ValueError): validate_rules(source)
 
+    def test_npu_and_probe_failure_conditions(self):
+        rules = validate_rules({'rules':[dict(id='npu', condition='npu_percent', warning=80, critical=95, duration_seconds=0),
+            dict(id='probe', condition='probe_failure_percent', warning=20, critical=50, duration_seconds=0)]})
+        engine = AlertEngine(rules, self.history)
+        # Probe evidence has its own freshness: a stale core does not hide it.
+        self.node.update(overview={'npu_percent': 90}, data_current=False, probe_failure_percent=60)
+        engine.evaluate([self.node]); engine.evaluate([self.node])
+        states = {row['rule_id']: row for row in engine.snapshot()['alerts']}
+        self.assertNotIn('npu', states)
+        self.assertEqual((states['probe']['state'], states['probe']['severity']), ('Active', 'critical'))
+        self.node['probe_failure_percent'] = None
+        engine.evaluate([self.node])
+        self.assertEqual(engine._states[(NODE_ID, 'probe')]['state'], 'Active')
+        self.node['data_current'] = True
+        engine.evaluate([self.node]); engine.evaluate([self.node])
+        self.assertEqual(engine._states[(NODE_ID, 'npu')]['state'], 'Active')
+        with self.assertRaises(ValueError):
+            validate_rules({'rules':[dict(id='p', condition='probe_failure_percent', warning=20, critical=120)]})
+
+    def test_observation_alert_projection(self):
+        from hub.state import _observation_alerts
+        def group(rows_key, rows, state='ok', age=0):
+            return {'state': state, 'stale_after_ms': 30000, 'observation': {'id': 1, 'data_age_ms': age}, 'data': {rows_key: rows}}
+        def groups(state='ok', age=0, targets=None):
+            return {'probe': group('targets', targets if targets is not None else
+                                   [{'failure_ratio': 0.1}, {'failure_ratio': 0.3}, {'failure_ratio': None}], state, age)}
+        probe = lambda *args, **kwargs: _observation_alerts(groups(*args, **kwargs), 0)['probe_failure_percent']
+        self.assertEqual(probe(), 30.0)
+        self.assertEqual(probe('error'), 30.0)
+        self.assertIsNone(_observation_alerts(groups(), 30001)['probe_failure_percent'])
+        self.assertIsNone(_observation_alerts(groups(age=20000), 10001)['probe_failure_percent'])
+        self.assertIsNone(probe('starting'))
+        self.assertIsNone(probe(targets=[]))
+        self.assertIsNone(probe(targets=[{'failure_ratio': 1.5}]))
+        self.assertEqual(_observation_alerts({}, 0), dict.fromkeys(('probe_failure_percent', 'battery_percent', 'wifi_signal_dbm')))
+        # Battery and Wi-Fi: the lowest reading; an empty bay or ended connection is no evidence.
+        observed = {'battery': group('batteries', [{'present': True, 'percent': 64}, {'present': True, 'percent': 31},
+                                                   {'present': False, 'percent': 2}, {'percent': None}, {'percent': 140}]),
+                    'wifi': group('interfaces', [{'connected': True, 'signal_dbm': -61}, {'connected': True, 'signal_dbm': -77},
+                                                 {'connected': False, 'signal_dbm': -95}, {'connected': True, 'signal_dbm': None}])}
+        result = _observation_alerts(observed, 0)
+        self.assertEqual((result['battery_percent'], result['wifi_signal_dbm']), (31, -77))
+        observed['battery']['state'] = 'stale'
+        observed['wifi']['observation']['stale'] = True
+        self.assertEqual(_observation_alerts(observed, 0)['battery_percent'], None)
+        self.assertEqual(_observation_alerts(observed, 0)['wifi_signal_dbm'], None)
+
+    def test_low_conditions(self):
+        rules = validate_rules({'rules':[dict(id='batt', condition='battery_percent', warning=20, critical=10, hysteresis=5,
+            duration_seconds=10, recovery_seconds=5, cooldown_seconds=0)]})
+        engine = AlertEngine(rules, self.history, clock=lambda:self.now, wall=lambda:1000+self.now)
+        def tick(seconds, value):
+            self.now = seconds
+            self.node.update(battery_percent=value, data_current=False)  # core freshness does not gate it
+            engine.evaluate([self.node])
+            state = engine._states[(NODE_ID, 'batt')]
+            return state['state'], state['severity']
+        self.assertEqual(tick(0, 21), ('Normal', None))
+        self.assertEqual(tick(1, 20), ('Pending', 'warning'))  # at the warning level
+        self.assertEqual(tick(11, 18), ('Active', 'warning'))
+        self.assertEqual(tick(12, 10), ('Active', 'critical'))  # at the critical level
+        self.assertEqual(tick(13, 24), ('Active', 'critical'))  # not above warning + hysteresis yet
+        self.assertEqual(tick(14, 26), ('Recovering', 'critical'))
+        self.assertEqual(tick(15, None), ('Active', 'critical'))  # unknown evidence is not recovery
+        self.assertEqual(tick(16, 26), ('Recovering', 'critical'))
+        self.assertEqual(tick(21, 26), ('Resolved', None))
+        rule = validate_rules({'rules':[dict(id='wifi', condition='wifi_signal_dbm', warning=-70, critical=-80, duration_seconds=0)]})
+        engine = AlertEngine(rule, self.history)
+        self.node['wifi_signal_dbm'] = -85
+        engine.evaluate([self.node]); engine.evaluate([self.node])
+        self.assertEqual((engine.snapshot()['alerts'][0]['state'], engine.snapshot()['alerts'][0]['severity']), ('Active', 'critical'))
+        for source in (dict(condition='battery_percent', warning=10, critical=20),     # wrong order for a low condition
+                       dict(condition='battery_percent', warning=20, critical=-1),
+                       dict(condition='battery_percent', warning=98, critical=10),     # 98 + 5 hysteresis cannot be reached
+                       dict(condition='wifi_signal_dbm', warning=-70, critical=-130),
+                       dict(condition='wifi_signal_dbm', warning=5, critical=-80),
+                       dict(condition='wifi_signal_dbm', warning=float('nan'), critical=-80)):
+            with self.assertRaises(ValueError, msg=source):
+                validate_rules({'rules':[dict(source, id='x')]})
+        validate_rules({'rules':[dict(id='x', condition='battery_percent', warning=10, critical=10, hysteresis=0)]})
+
     def test_writer_restores_state_and_api_reports_it(self):
         import threading
         import urllib.request

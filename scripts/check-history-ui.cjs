@@ -24,9 +24,10 @@ const os = require('node:os');
         if (fail) { await route.fulfill({status:503,json:{schema_version:1,error:'history_unavailable'}}); return; }
         const start = Number(url.searchParams.get('from_ms')), end = Number(url.searchParams.get('to_ms'));
         const metric = url.searchParams.get('metric');
+        const scale = metric.endsWith('_bytes_per_s') ? 1048576 : 1;
         const points = Array.from({length:12}, (_,i) => ({timestamp_ms:start+(end-start)*(i+1)/14,
-          instance_id:i<6?'a':'b',segment:i<6?0:1,average:metric==='gpu_percent'?null:20+i,
-          minimum:metric==='gpu_percent'?null:10,maximum:metric==='gpu_percent'?null:90,count:metric==='gpu_percent'?0:5}));
+          instance_id:i<6?'a':'b',segment:i<6?0:1,average:metric==='gpu_percent'?null:(20+i)*scale,
+          minimum:metric==='gpu_percent'?null:10*scale,maximum:metric==='gpu_percent'?null:90*scale,count:metric==='gpu_percent'?0:5}));
         await route.fulfill({json:{schema_version:1,node_id:url.pathname.split('/')[3],metric,
           from_ms:start,to_ms:end,points,gaps:[{start_ms:start+(end-start)*.4,end_ms:start+(end-start)*.5,reason:'agent_restart'},
             {start_ms:start+(end-start)*.8,end_ms:start+(end-start)*.85,reason:'offline'}]}}).catch(()=>{});
@@ -50,6 +51,20 @@ const os = require('node:os');
     await page.locator('#history-range').selectOption('168');
     await page.locator('#history-metric').selectOption('hottest_c');
     await page.waitForFunction(()=>document.getElementById('history-status').textContent.includes('history points'));
+    const metrics = await page.locator('#history-metric option').evaluateAll(options => options.map(o => o.value));
+    for (const name of ['psi_cpu_some_avg10','psi_memory_some_avg10','psi_io_some_avg10','network_rx_busiest_bytes_per_s',
+                        'network_tx_busiest_bytes_per_s','disk_read_bytes_per_s','disk_write_bytes_per_s']) assert(metrics.includes(name), name);
+    await page.locator('#history-metric').selectOption('psi_io_some_avg10');
+    await page.waitForFunction(()=>document.getElementById('history-status').textContent.includes('history points'));
+    await page.locator('#history-chart').focus();
+    await page.keyboard.press('ArrowRight');
+    assert.match(await page.locator('#history-value').textContent(), /Average \d+\.\d%/);
+    // Byte rates are unbounded: values above 100 must be shown in units, not clipped to a percent axis.
+    await page.locator('#history-metric').selectOption('disk_read_bytes_per_s');
+    await page.waitForFunction(()=>document.getElementById('history-status').textContent.includes('history points'));
+    await page.locator('#history-chart').focus();
+    await page.keyboard.press('ArrowRight');
+    assert.match(await page.locator('#history-value').textContent(), /Average \d+\.\d MiB\/s · Min 10\.0 MiB\/s · Max 90\.0 MiB\/s/);
     await page.emulateMedia({colorScheme:'dark'});
     await page.setViewportSize({width:390,height:844});
     assert(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth));
@@ -76,6 +91,6 @@ const os = require('node:os');
     await page.screenshot({path:path.join(os.tmpdir(), 'platmon-history-light.png'),fullPage:true});
     assert.deepEqual(errors, []);
     assert(aborted > 0, 'selection should abort an outstanding history request');
-    console.log('History UI passed: nulls, metrics/ranges, theme/mobile, failure isolation, cancellation, hidden-tab pause; requests=' + historyRequests);
+    console.log('History UI passed: nulls, metrics/ranges, byte-rate units, theme/mobile, failure isolation, cancellation, hidden-tab pause; requests=' + historyRequests);
   } finally { await browser.close(); }
 })().catch(error=>{console.error(error);process.exitCode=1;});

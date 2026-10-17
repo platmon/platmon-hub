@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from threading import RLock
 
 from . import protocol
-from .history.projector import Acceptance, CoreRecord
+from .history.projector import LOAD_COLUMNS, Acceptance, CoreRecord
 
 
 OPTIONAL_UNSUPPORTED = ("unsupported", "incompatible")
@@ -50,6 +50,74 @@ def _overview(stats):
         valid = [t for t in temps.values() if _finite(t)]
         if valid:
             result["hottest_c"] = round(max(valid), 1)
+    return result
+
+
+def _current_data(groups, name, elapsed_ms):
+    """A group's data while its observation is current; None when absent, starting, stale or unsupported."""
+    group = groups.get(name)
+    if not isinstance(group, dict) or group.get("state") not in ("ok", "partial", "error"):
+        return None
+    observation = group.get("observation")
+    if observation is None or observation.get("stale") is True or observation["data_age_ms"] + elapsed_ms > group["stale_after_ms"]:
+        return None
+    data = group.get("data")
+    return data if isinstance(data, dict) else None
+
+
+def _rows(data, key, accept, field):
+    rows = data.get(key) if data is not None else None
+    return [r[field] for r in rows if isinstance(r, dict) and accept(r) and _finite(r.get(field))] if isinstance(rows, list) else []
+
+
+def _observation_alerts(groups, elapsed_ms):
+    """Worst current value per alert condition from observations; each follows its own group's freshness.
+    probe: the target with the highest failed share; battery and Wi-Fi: the lowest reading."""
+    ratios = [r for r in _rows(_current_data(groups, "probe", elapsed_ms), "targets", lambda t: True, "failure_ratio")
+              if 0 <= r <= 1]
+    charges = [c for c in _rows(_current_data(groups, "battery", elapsed_ms), "batteries",
+                                lambda b: b.get("present") is not False, "percent") if 0 <= c <= 100]
+    # never the last signal of a connection that ended
+    signals = _rows(_current_data(groups, "wifi", elapsed_ms), "interfaces",
+                    lambda i: i.get("connected") is True, "signal_dbm")
+    return {"probe_failure_percent": round(100 * max(ratios), 1) if ratios else None,
+            "battery_percent": min(charges) if charges else None,
+            "wifi_signal_dbm": min(signals) if signals else None}
+
+
+def _load(stats):
+    """Pressure and I/O rates kept for history only; absent or partial evidence stays null."""
+    result = dict.fromkeys(LOAD_COLUMNS)
+    if not isinstance(stats, dict):
+        return result
+    pressure = stats.get("pressure")
+    resources = pressure.get("resources") if isinstance(pressure, dict) else None
+    if isinstance(resources, dict):
+        for name in ("cpu", "memory", "io"):
+            resource = resources.get(name)
+            some = resource.get("some") if isinstance(resource, dict) else None
+            value = some.get("avg10") if isinstance(some, dict) else None
+            if _finite(value) and 0 <= value <= 100:
+                result["psi_" + name + "_some_avg10"] = value
+    # Interfaces are not summed: a bridge and its port carry the same packets.
+    network = stats.get("network")
+    interfaces = network.get("interfaces") if isinstance(network, dict) else None
+    if isinstance(interfaces, list):
+        for direction in ("rx", "tx"):
+            rates = [i["rates"].get(direction + "_bytes_per_s") for i in interfaces
+                     if isinstance(i, dict) and i.get("name") != "lo" and isinstance(i.get("rates"), dict)]
+            rates = [r for r in rates if _finite(r) and r >= 0]
+            if rates:
+                result["network_" + direction + "_busiest_bytes_per_s"] = max(rates)
+    # Physical whole disks do not overlap, so they add up; one disk without a rate leaves the total unknown.
+    disk_io = stats.get("disk_io")
+    disks = disk_io.get("disks") if isinstance(disk_io, dict) else None
+    if isinstance(disks, list) and disks:
+        for direction in ("read", "write"):
+            rates = [d["rates"].get(direction + "_bytes_per_s") if isinstance(d, dict) and isinstance(d.get("rates"), dict)
+                     else None for d in disks]
+            if all(_finite(r) and r >= 0 for r in rates):
+                result["disk_" + direction + "_bytes_per_s"] = sum(rates)
     return result
 
 
@@ -139,7 +207,7 @@ class NodeState:
             record = CoreRecord(self.node.node_id, st["instance_id"], new_key[1],
                                 int(time.time() * 1000) if received_at_ms is None else received_at_ms,
                                 metrics["sample"]["data_age_ms"], metrics["sample"]["stale_after_ms"],
-                                st["state"], **_overview(metrics))
+                                st["state"], **_overview(metrics), **_load(metrics))
             return Acceptance("new", record)
 
     def fail_core(self, failure):
@@ -226,6 +294,10 @@ class NodeState:
                             group["state"] = "stale"
                             obs["stale"] = True
             optional_alert_error = None
+            observed_alerts = dict.fromkeys(("probe_failure_percent", "battery_percent", "wifi_signal_dbm"))
+            if self._optional_error is None and self._last_observations is not None:
+                observed_alerts = _observation_alerts(self._last_observations["groups"],
+                                                      max(0, now - self._last_obs_tick) * 1000)
             if self._optional_error is not None:
                 # Contract: a missing or unknown optional endpoint is unsupported, not an error.
                 optional_alert_error = None if self._optional_error in OPTIONAL_UNSUPPORTED else True
@@ -238,6 +310,7 @@ class NodeState:
                     optional_alert_error = any(g['state'] in ('error', 'partial') for g in current_groups)
             return {
                 "optional_alert_error": optional_alert_error,
+                **observed_alerts,
                 "node_id": self.node.node_id,
                 "name": self.node.name,
                 "enabled": self.node.enabled,

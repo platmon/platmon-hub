@@ -6,6 +6,9 @@
     {"id": "memory-high", "condition": "memory_percent", "warning": 85, "critical": 95},
     {"id": "disk-high", "condition": "disk_percent", "warning": 85, "critical": 95},
     {"id": "temperature-high", "condition": "hottest_c", "warning": 80, "critical": 90},
+    {"id": "probe-failures", "condition": "probe_failure_percent", "warning": 20, "critical": 50, "duration_seconds": 30},
+    {"id": "battery-low", "condition": "battery_percent", "warning": 20, "critical": 10, "duration_seconds": 60},
+    {"id": "wifi-weak", "condition": "wifi_signal_dbm", "warning": -70, "critical": -80, "duration_seconds": 60},
     {"id": "optional-error", "condition": "optional_error", "duration_seconds": 30}
   ]
 }

@@ -9,6 +9,7 @@ import test_export as fixtures
 from hub.archive import archive_once
 from hub.export import DAY_MS, ExportError, export_history
 from hub.report_cli import monthly_report
+from hub.history.projector import LOAD_COLUMNS
 from hub.reports import read_daily
 
 
@@ -18,8 +19,8 @@ class ReportTests(unittest.TestCase):
 
     def extra(self):
         for seq, received, cpu, hottest in ((2, 2500, 20, 50), (3, DAY_MS + 1000, 100, 60)):
-            self.store.connection.execute('INSERT INTO core_samples VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                (fixtures.NODE, 'first', seq, received, 0, 5000, 'ready', cpu, None, 30, 40, hottest, None))
+            self.store.connection.execute('INSERT INTO core_samples VALUES (' + ','.join('?' * 20) + ')',
+                (fixtures.NODE, 'first', seq, received, 0, 5000, 'ready', cpu, None, 30, 40, hottest, None) + (None,) * 7)
 
     def rows(self, archive, name):
         return list(csv.DictReader(io.StringIO(archive.read(name).decode('utf-8-sig'))))
@@ -78,7 +79,18 @@ class ReportTests(unittest.TestCase):
             archive_once(self.db, directory, now_ms=2 * DAY_MS)
         path = directory / 'summaries' / '1970-01-01.json'
         document = json.loads(path.read_text(encoding='utf-8'))
-        self.assertEqual(document['summary_format_version'], 2)
+        self.assertEqual(document['summary_format_version'], 3)
+        current = json.loads(json.dumps(document))
+        for row in document['metrics']:
+            for key in list(row):
+                if key.startswith(LOAD_COLUMNS):
+                    del row[key]
+        document['summary_format_version'] = 2
+        path.write_text(json.dumps(document), encoding='utf-8')
+        old = read_daily(path)['metrics'][0]
+        self.assertEqual(old['disk_read_bytes_per_s_count'], 0)
+        self.assertIsNone(old['psi_io_some_avg10_average'])
+        self.assertEqual(old['npu_percent_count'], current['metrics'][0]['npu_percent_count'])
         document['summary_format_version'] = 1
         for row in document['metrics']:
             for key in list(row):
@@ -88,6 +100,7 @@ class ReportTests(unittest.TestCase):
         old = read_daily(path)['metrics'][0]
         self.assertEqual(old['npu_percent_count'], 0)
         self.assertIsNone(old['npu_percent_average'])
+        self.assertEqual(old['psi_cpu_some_avg10_count'], 0)
         monthly_report(directory, self.root / 'mixed.zip', '1970-01')
         with zipfile.ZipFile(self.root / 'mixed.zip') as z:
             row = next(r for r in self.rows(z, 'summary-monthly.csv') if r['instance_id'] == 'first')
@@ -95,8 +108,8 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(row['npu_percent_count'], '1')
             self.assertEqual(float(row['npu_percent_average']), 70)
             self.assertEqual(row['hottest_at_ms'], str(DAY_MS + 1000))
-        # New summaries must carry all NPU statistics; only v1 is normalized.
-        document['summary_format_version'] = 2
+        # Only older formats are normalized; a current summary must carry every metric.
+        document['summary_format_version'] = 3
         path.write_text(json.dumps(document), encoding='utf-8')
         with self.assertRaises(ExportError):
             read_daily(path)

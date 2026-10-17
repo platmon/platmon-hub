@@ -10,7 +10,25 @@ Edit the local configuration and restart the Hub to change rules. Registry hot r
 remains independent. Configuration is at most 64 KiB, with at most 32 unique rules.
 
 Numeric conditions: `cpu_percent`, `memory_percent`, `disk_percent`, `hottest_c`,
-`gpu_percent`. Require finite `warning <= critical`; percentages are 0..100.
+`gpu_percent`, `npu_percent`, `probe_failure_percent`. Require finite `warning <= critical`;
+percentages are 0..100.
+
+`probe_failure_percent` is the worst probe target's share of failed TCP connect attempts
+over the agent's last 10 attempts to that target, as a percentage. It follows the `probe`
+group's own freshness, not core freshness, so it keeps being evaluated while core data
+is stale. A stale or absent group, or one with no target, is unknown. One failure in
+10 is 10%, so a warning below 10 fires on any single failure. It measures failed
+connection attempts from the agent, not packet loss on the path.
+
+Low conditions, where the low reading is the bad one: `battery_percent` (0..100, the
+lowest charge of the present batteries) and `wifi_signal_dbm` (-120..0, the weakest
+signal of the connected interfaces). They require `warning >= critical`. A value at or
+below warning enters Pending, at or below critical is critical severity, and recovery
+needs a value strictly above warning plus hysteresis, so `warning + hysteresis` must
+not exceed the ceiling. Like the probe condition, they follow their own observation
+group's freshness; an empty bay, an ended connection, or a stale or absent group is unknown.
+Agent `[thresholds] battery` and `wifi` only color the Agent's own viewers; Hub rules
+are configured here independently.
 Boolean conditions: `offline`, `stale`, `optional_error` (no numeric thresholds).
 `optional_error` ignores agents that do not provide `/api/observations` (404) or
 report an unknown observations schema; those show as `unsupported` or `incompatible`.

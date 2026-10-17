@@ -339,6 +339,7 @@
     }
   }
   const historyMetric = document.getElementById("history-metric");
+  const historyRate = () => historyMetric.value.endsWith("_bytes_per_s");
   const historyRange = document.getElementById("history-range");
   const historyStatus = document.getElementById("history-status");
   const historyValue = document.getElementById("history-value");
@@ -374,16 +375,17 @@
     }
     const data = historyData;
     const values = data.points.flatMap(p => [p.minimum, p.maximum]).filter(numeric);
+    const unbounded = historyMetric.value === "hottest_c" || historyRate();
     const low = historyMetric.value === "hottest_c" ? Math.min(0, ...values) : 0;
-    const high = historyMetric.value === "hottest_c" ? Math.max(1, ...values) : 100;
-    const left = 38, right = width - 10, top = 12, bottom = height - 30;
+    const high = unbounded ? Math.max(1, ...values) : 100;
+    const left = historyRate() ? 66 : 38, right = width - 10, top = 12, bottom = height - 30;
     const x = time => left + (right-left) * (time-data.from_ms)/(data.to_ms-data.from_ms);
     const y = value => bottom - (bottom-top) * (value-low)/(high-low);
     ctx.strokeStyle = color("--line");
     for (let i = 0; i <= 4; i++) {
       const value = low + (high-low)*i/4;
       ctx.beginPath(); ctx.moveTo(left,y(value)); ctx.lineTo(right,y(value)); ctx.stroke();
-      ctx.fillText(value.toFixed(0), 2, y(value)+4);
+      ctx.fillText(historyRate() ? rate(value) : value.toFixed(0), 2, y(value)+4);
     }
     for (const gap of data.gaps) {
       const a = x(Math.max(data.from_ms, gap.start_ms));
@@ -424,7 +426,7 @@
     if (!historyData || !historyData.points.length) return;
     hoverIndex = Math.max(0, Math.min(index, historyData.points.length-1));
     const p = historyData.points[hoverIndex];
-    const format = historyMetric.value === "hottest_c" ? degree : percent;
+    const format = historyMetric.value === "hottest_c" ? degree : historyRate() ? rate : percent;
     historyValue.textContent = new Date(p.timestamp_ms).toISOString() + " · Average " + format(p.average) +
       " · Min " + format(p.minimum) + " · Max " + format(p.maximum) + " · " + p.count + " samples · Instance " + p.instance_id;
   }

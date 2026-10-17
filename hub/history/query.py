@@ -5,10 +5,11 @@ import sqlite3
 import time
 from urllib.parse import parse_qs
 
+from .projector import LOAD_COLUMNS
 from .schema import VERSION
 from .store import read_connection
 
-METRICS = ('cpu_percent', 'gpu_percent', 'memory_percent', 'disk_percent', 'hottest_c', 'npu_percent')
+METRICS = ('cpu_percent', 'gpu_percent', 'memory_percent', 'disk_percent', 'hottest_c', 'npu_percent') + LOAD_COLUMNS
 MAX_SPAN_MS = 7 * 86400000
 MAX_POINTS = 1200
 

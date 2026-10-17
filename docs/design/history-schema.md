@@ -2,7 +2,7 @@
 
 [Documentation index](../README.md) · [Design reference](README.md)
 
-SQLite `PRAGMA user_version` is **6**, independent of application and HTTP versions.
+SQLite `PRAGMA user_version` is **7**, independent of application and HTTP versions.
 The executable schema is [hub/history/schema.py](../../hub/history/schema.py); the
 [ADR](adr/0002-hub-history-storage.md) records initial design decisions.
 
@@ -14,10 +14,26 @@ The executable schema is [hub/history/schema.py](../../hub/history/schema.py); t
 | 4 | `alert_states` with rule configuration and restoration state |
 | 5 | Nullable `core_samples.npu_percent`; existing rows retain NULL |
 | 6 | Opt-in `raw_publications`, `replay_cursors`, `replay_losses`, indexed encoded-byte accounting in `raw_usage` |
+| 7 | Nullable pressure and I/O rate columns on `core_samples`; existing rows retain NULL |
 
 Core identity is `(node_id, instance_id, sequence)`. Columns store Hub receipt UTC
 milliseconds, reported `data_age_ms`, `stale_after_ms`, accepted core state
 (`ready`/`degraded`), CPU/GPU/NPU/memory/disk percentages and highest Celsius temperature.
+
+Schema 7 adds load columns taken from the same accepted `/api/stats` sample:
+
+| Column | Source and meaning |
+| --- | --- |
+| `psi_cpu_some_avg10`, `psi_memory_some_avg10`, `psi_io_some_avg10` | `pressure.resources.<name>.some.avg10`, percent 0–100 |
+| `network_rx_busiest_bytes_per_s`, `network_tx_busiest_bytes_per_s` | Highest `rates.<dir>_bytes_per_s` of any interface except `lo`, per direction independently |
+| `disk_read_bytes_per_s`, `disk_write_bytes_per_s` | Sum of `rates.<dir>_bytes_per_s` over the reported physical whole disks |
+
+Network interfaces are never summed: one packet can cross a bridge and its port, so a
+total would not be the host's traffic; the receive and send maxima may come from different
+interfaces. Disk rates are summed because the Agent reports non-overlapping whole disks;
+if any listed disk has no rate (for example while its rate warms up), the total is NULL
+rather than an undercount. A disabled or unavailable Agent group, or PSI not built into the
+kernel, leaves its columns NULL. Network rates describe the Agent's network namespace.
 Optional identity is `(node_id, instance_id, group_name, observation_id)`; it never
 uses core sequence. Only selected storage/Wi-Fi/probe/battery fields are projected into a
 bounded JSON field (16 KiB per group). These summary tables do not persist responses wholesale; opt-in raw capture uses separate tables below.

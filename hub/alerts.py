@@ -10,7 +10,12 @@ from pathlib import Path
 
 from .history.projector import EventRecord
 
-METRICS = ('cpu_percent', 'memory_percent', 'disk_percent', 'hottest_c', 'gpu_percent')
+# A low reading is the bad one for these: warning at or above critical, compared at or below, in (floor, ceiling).
+LOW_METRICS = {'battery_percent': (0, 100), 'wifi_signal_dbm': (-120, 0)}
+# Evidence from an optional observation group, which has its own freshness, not core's.
+OBSERVED = ('probe_failure_percent',) + tuple(LOW_METRICS)
+METRICS = ('cpu_percent', 'memory_percent', 'disk_percent', 'hottest_c', 'gpu_percent', 'npu_percent',
+           'probe_failure_percent') + tuple(LOW_METRICS)
 CONDITIONS = METRICS + ('offline', 'stale', 'optional_error')
 STATES = ('Normal', 'Pending', 'Active', 'Recovering', 'Resolved')
 
@@ -42,7 +47,16 @@ def validate_rules(document):
             value = rule[key]
             if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 86400:
                 raise ValueError('invalid alert duration or hysteresis')
-        if condition in METRICS:
+        if condition in LOW_METRICS:
+            floor, ceiling = LOW_METRICS[condition]
+            for key in ('warning', 'critical'):
+                value = rule.get(key)
+                if type(value) not in (int, float) or not math.isfinite(value) or not floor <= value <= ceiling:
+                    raise ValueError('low alert thresholds must be finite and within %g..%g' % (floor, ceiling))
+            # Recovery needs a reading above warning + hysteresis, so that must be reachable.
+            if rule['critical'] > rule['warning'] or rule['warning'] + rule['hysteresis'] > ceiling:
+                raise ValueError('invalid alert threshold ordering')
+        elif condition in METRICS:
             for key in ('warning', 'critical'):
                 value = rule.get(key)
                 if type(value) not in (int, float) or not math.isfinite(value):
@@ -135,10 +149,15 @@ class AlertEngine:
                         if previous == 'Recovering': state['state'] = 'Active'
                         state['_since'] = now
                     else:
-                        numeric = rule['condition'] in METRICS
-                        high = value >= rule['warning'] if numeric else value
-                        recovered = value < rule['warning']-rule['hysteresis'] if numeric else not value
-                        level = ('critical' if value >= rule['critical'] else 'warning') if numeric else 'critical'
+                        numeric, low = rule['condition'] in METRICS, rule['condition'] in LOW_METRICS
+                        if low:
+                            high = value <= rule['warning']
+                            recovered = value > rule['warning']+rule['hysteresis']
+                            level = 'critical' if value <= rule['critical'] else 'warning'
+                        else:
+                            high = value >= rule['warning'] if numeric else value
+                            recovered = value < rule['warning']-rule['hysteresis'] if numeric else not value
+                            level = ('critical' if value >= rule['critical'] else 'warning') if numeric else 'critical'
                         if previous in ('Normal', 'Resolved'):
                             if high and now >= state['_cooldown']:
                                 state.update(state='Pending', severity=level, _since=now)
@@ -167,6 +186,9 @@ class AlertEngine:
 
     @staticmethod
     def _value(node, condition):
+        if condition in OBSERVED:
+            # Optional groups have their own freshness; core state does not gate them.
+            return node.get(condition) if node['enabled'] else None
         if condition in METRICS:
             return node['overview'].get(condition) if node['data_current'] else None
         if condition == 'offline':

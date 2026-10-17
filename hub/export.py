@@ -28,6 +28,12 @@ OBSERVATIONS = ('node_id', 'instance_id', 'group_name', 'observation_id',
                 'received_at_ms', 'data_age_ms', 'stale_after_ms', 'state', 'data_json')
 
 
+def unit(metric):
+    if metric == 'hottest_c':
+        return 'degrees Celsius'
+    return 'bytes per second' if metric.endswith('_bytes_per_s') else 'percent'
+
+
 class ExportError(ValueError):
     """Invalid request or bounded export failure; no published output."""
 
@@ -128,7 +134,7 @@ def export_history(database, output, start, end, node_ids=(), observations=False
                 'timestamp': 'Hub receipt UTC; not Agent collection time',
                 'null': 'empty CSV cell; numeric zero remains 0',
                 'text_escape': 'apostrophe prefixed to text starting with formula markers, whitespace/control characters or an apostrophe',
-                'units': {m: ('degrees Celsius' if m == 'hottest_c' else 'percent') for m in METRICS},
+                'units': {m: unit(m) for m in METRICS},
                 'observations_included': bool(observations and not summary_only), 'node_filter': list(nodes),
                 'reports_included': bool(reports or summary_only), 'summary_only': bool(summary_only),
                 'completeness': 'Persisted observations only; missing or expired data is not reconstructed. Open gaps may extend beyond the range.',

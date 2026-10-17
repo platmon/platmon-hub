@@ -136,3 +136,16 @@ END;
 PRAGMA user_version=6;
 """
 VERSION = 6
+
+# Pressure is a 0..100 share of time; rates are bytes per second, never negative.
+MIGRATION_7 = """
+ALTER TABLE core_samples ADD COLUMN psi_cpu_some_avg10 REAL CHECK (psi_cpu_some_avg10 BETWEEN 0 AND 100);
+ALTER TABLE core_samples ADD COLUMN psi_memory_some_avg10 REAL CHECK (psi_memory_some_avg10 BETWEEN 0 AND 100);
+ALTER TABLE core_samples ADD COLUMN psi_io_some_avg10 REAL CHECK (psi_io_some_avg10 BETWEEN 0 AND 100);
+ALTER TABLE core_samples ADD COLUMN network_rx_busiest_bytes_per_s REAL CHECK (network_rx_busiest_bytes_per_s >= 0);
+ALTER TABLE core_samples ADD COLUMN network_tx_busiest_bytes_per_s REAL CHECK (network_tx_busiest_bytes_per_s >= 0);
+ALTER TABLE core_samples ADD COLUMN disk_read_bytes_per_s REAL CHECK (disk_read_bytes_per_s >= 0);
+ALTER TABLE core_samples ADD COLUMN disk_write_bytes_per_s REAL CHECK (disk_write_bytes_per_s >= 0);
+PRAGMA user_version=7;
+"""
+VERSION = 7

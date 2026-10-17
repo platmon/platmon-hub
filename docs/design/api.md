@@ -2,7 +2,7 @@
 
 [Documentation index](../README.md) · [Design reference](README.md)
 
-Hub HTTP schema 1 is independent of Agent schemas and SQLite schema 6. JSON missing
+Hub HTTP schema 1 is independent of Agent schemas and SQLite schema 7. JSON missing
 measurements are `null`, never synthetic zero. UTC timestamps use Unix milliseconds.
 Responses disable caching. The browser contacts the Hub only.
 
@@ -28,12 +28,19 @@ Detail `stats.gpu` / `stats.npu` preserve driver/provider and clocks (Hz), and
 Clients must distinguish unknown/null readings from numeric zero, and use the
 group's freshness rather than core freshness for battery data.
 
+Node summaries also carry additive nullable alert evidence from current observations:
+`probe_failure_percent`, the highest `failure_ratio` × 100 among the probe targets;
+`battery_percent`, the lowest charge among present batteries; and `wifi_signal_dbm`,
+the weakest signal among connected Wi-Fi interfaces. Each is null when the group is
+absent, starting, stale or unsupported, or has no qualifying row.
+
 ## History
 
 Required query parameters are `metric`, `from_ms`, `to_ms`; optional `max_points`
 defaults to 1200 and must be 1–1200. The half-open interval `[from_ms, to_ms)` must
 be positive and at most 7 days. Metrics are a fixed allowlist: `cpu_percent`,
-`gpu_percent`, `npu_percent`, `memory_percent`, `disk_percent`, `hottest_c`.
+`gpu_percent`, `npu_percent`, `memory_percent`, `disk_percent`, `hottest_c`, and the
+schema-7 history-only `psi_cpu_some_avg10`, `psi_memory_some_avg10`, `psi_io_some_avg10`, `network_rx_busiest_bytes_per_s`, `network_tx_busiest_bytes_per_s`, `disk_read_bytes_per_s`, `disk_write_bytes_per_s` (see [history schema](history-schema.md)). Node summaries do not include them.
 
 The response includes `schema_version`, `node_id`, `metric`, `from_ms`, `to_ms`,
 `max_points`, `points`, `gaps`, `timestamp_meaning: hub_receipt_utc_ms` and

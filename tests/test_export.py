@@ -28,8 +28,8 @@ class ExportTests(unittest.TestCase):
                 (NODE, 'first', 1, 1000, 0, None),
                 (NODE, '=formula', 1, 2000, 90, 20),
                 (OTHER, 'other', 1, 3000, 10, 10)]:
-            c.execute('INSERT INTO core_samples VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                      (node, instance, sequence, received, 0, 5000, 'ready', cpu, gpu, 30, 40, 50, None))
+            c.execute('INSERT INTO core_samples VALUES (' + ','.join('?' * 20) + ')',
+                      (node, instance, sequence, received, 0, 5000, 'ready', cpu, gpu, 30, 40, 50, None) + (None,) * 7)
         c.execute('INSERT INTO events VALUES (?,?,?,?,?,?,?)',
                   (NODE, 'core_state', 1500, 'live', 'offline', 'core_transport', 'event-1'))
         c.execute('INSERT INTO gaps (node_id,scope,instance_id,start_ms,end_ms,reason) VALUES (?,?,?,?,?,?)',

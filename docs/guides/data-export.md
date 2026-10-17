@@ -33,13 +33,14 @@ The ZIP contains UTF-8 CSV files with a BOM and CRLF lines:
 
 The Core columns are `node_id`, `instance_id`, `sequence`, `received_at_ms`,
 `data_age_ms`, `stale_after_ms`, `core_state`, `cpu_percent`, `gpu_percent`,
-`memory_percent`, `disk_percent`, `hottest_c`, `npu_percent`. Percent values are 0–100;
-temperature is degrees Celsius. Receipt time is when Hub observed the sample,
+`memory_percent`, `disk_percent`, `hottest_c`, `npu_percent`, `psi_cpu_some_avg10`, `psi_memory_some_avg10`, `psi_io_some_avg10`, `network_rx_busiest_bytes_per_s`, `network_tx_busiest_bytes_per_s`, `disk_read_bytes_per_s`, `disk_write_bytes_per_s`.
+Percent values are 0–100; temperature is degrees Celsius; `*_bytes_per_s` columns are
+bytes (not bits) per second. Column meanings are in the [history schema](../design/history-schema.md). Receipt time is when Hub observed the sample,
 not an exact Agent collection timestamp. Instance changes remain separate rows
 and identities. Missing values are empty cells, numeric zero remains zero.
 
-`npu_percent` is appended to the format-1 CSV columns; consumers should use header
-names. Battery JSON retains µAh/µWh, µV, signed µA/µW, and true/false/null for
+`npu_percent` and the schema-7 load columns are appended to the format-1 CSV columns;
+consumers should use header names. Battery JSON retains µAh/µWh, µV, signed µA/µW, and true/false/null for
 presence and external supply state. It does not estimate remaining runtime or
 convert charge into energy.
 
@@ -187,9 +188,10 @@ rows. `report --help` describes the database form; the archive form is below.
 Automatic archives also keep `summaries/YYYY-MM-DD.json` separately from raw
 ZIPs. Default `--archive-summary-retention-days 365` preserves these daily
 summaries for a year; the standalone job uses `--summary-retention-days`.
-New summaries use `summary_format_version: 2` with NPU statistics. Monthly reports
-accept both formats 1 and 2; old summaries contribute zero NPU observations and
-null aggregates, never an invented idle reading. The raw ZIP format remains 1.
+New summaries use `summary_format_version: 3` with NPU, pressure and I/O rate statistics.
+Monthly reports accept formats 1, 2 and 3; metrics an older summary predates (NPU in
+format 1, pressure and rates in formats 1 and 2) contribute zero observations and null
+aggregates, never an invented idle reading. The raw ZIP format remains 1.
 The configured quota now covers recognized ZIPs **and** summaries together.
 When it is exhausted, older raw ZIPs are discarded first, then older summaries.
 Retention periods are upper bounds, not guaranteed under quota pressure.
