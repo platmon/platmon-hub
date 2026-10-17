@@ -93,7 +93,8 @@ Every segment contains the row versions committed in its sequence range:
 `core_samples` and `observations` are projections of raw data and are not handed off. A node
 whose Agent lacks replay still contributes gaps, events and Hub sessions, and `nodes.jsonl`
 shows its streams as unsupported, so the consumer can tell missing capability from missing
-data. Upgrading the Agent is the only way to obtain its measurements through handoff.
+data. Upgrading the Agent was the only way to obtain its measurements through handoff;
+[ADR-0007](0007-sampled-capture-level.md) supersedes this with sampled capture from live polls.
 `continuity` and `replay_cursors` are Hub working state; their effects reach the consumer
 through gaps, losses and publication IDs.
 
@@ -310,11 +311,12 @@ Hub planning figures with 24-hour raw retention, before WAL, backups, exports an
 | 100 nodes | 170 GiB | 9 GiB |
 
 The raw quota is sized from this table, and the spool retention is at most the raw retention.
-Two further reductions are separate decisions outside this ADR: deduplicating the static part
-of `sensor_meta` in raw storage (an ADR-0003 amendment, about half of L0 SQLite), and a
-per-node capture level that stores the full `/api/stats` payload Hub already polls every five
-seconds (about 0.32 GiB per node-day in SQLite) for nodes that need neither 1 Hz data nor
-outage recovery, which also works with Agents that lack replay.
+Two further reductions are separate decisions: compressed raw payload storage
+([ADR-0006](0006-raw-payload-compression.md), about 0.2 GiB instead of 1.7 GiB per node-day on
+the measured host; it replaced the `sensor_meta` deduplication first considered here), and a
+per-node capture level ([ADR-0007](0007-sampled-capture-level.md)) that stores the full documents
+Hub already polls every five seconds for nodes that need neither 1 Hz data nor outage recovery,
+which also works with Agents that lack replay.
 
 ## Status and diagnostics
 
