@@ -197,6 +197,25 @@ class RawStoreTests(unittest.TestCase):
         self.assertEqual(self.store.replay_cursor(NODE_ID, 'core'), (INSTANCE, 3))
         self.assertIn(3, [row[0] for row in self.store.connection.execute('SELECT publication_id FROM raw_publications')])
 
+    def test_envelope_stored_and_charged_once_per_page(self):
+        c = self.store.connection
+        value = page(document(tuple(range(1, 11))))
+        self.insert(value)
+        self.assertEqual(c.execute('SELECT count(*), max(refs) FROM raw_envelopes').fetchone(), (1, 10))
+        payload = sum(len(row[1].encode()) + 256 for row in value.records)
+        usage = c.execute('SELECT encoded_bytes FROM raw_usage').fetchone()[0]
+        self.assertEqual(usage, payload + len(value.envelope_json.encode()) + 256)
+        self.assertLessEqual(usage, value.encoded_bytes)
+        # A duplicate-only retry with a different envelope leaves no orphan.
+        retry = document(tuple(range(1, 11)))
+        retry['clock'] = {'source': 'retry'}
+        self.insert(page(retry))
+        self.assertEqual(c.execute('SELECT count(*) FROM raw_envelopes').fetchone()[0], 1)
+        self.assertEqual(c.execute('SELECT encoded_bytes FROM raw_usage').fetchone()[0], usage)
+        self.store.prune_raw(2**62)
+        self.assertEqual(c.execute('SELECT count(*) FROM raw_envelopes').fetchone()[0], 0)
+        self.assertEqual(c.execute('SELECT encoded_bytes FROM raw_usage').fetchone()[0], 0)
+
     def test_maintenance_eviction_drains_lowered_quota(self):
         self.insert(page(document((1, 2)), received=1000))
         self.assertEqual(self.store.evict_raw_over_quota(64*1024**2), 0)

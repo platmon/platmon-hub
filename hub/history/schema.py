@@ -89,8 +89,13 @@ CREATE TABLE raw_publications (
     publication_id INTEGER NOT NULL CHECK (publication_id > 0),
     received_at_ms INTEGER NOT NULL, reported_started_at REAL NOT NULL,
     reported_completed_at REAL NOT NULL, gap_before INTEGER NOT NULL,
-    data_json TEXT NOT NULL, envelope_json TEXT NOT NULL, encoded_bytes INTEGER NOT NULL,
+    data_json TEXT NOT NULL, envelope_id INTEGER NOT NULL, encoded_bytes INTEGER NOT NULL,
     PRIMARY KEY (node_id, instance_id, stream, publication_id)
+);
+CREATE TABLE raw_envelopes (
+    envelope_id INTEGER PRIMARY KEY, digest TEXT NOT NULL UNIQUE,
+    envelope_json TEXT NOT NULL, encoded_bytes INTEGER NOT NULL,
+    refs INTEGER NOT NULL DEFAULT 0 CHECK (refs >= 0)
 );
 CREATE INDEX raw_publications_time ON raw_publications (received_at_ms);
 CREATE INDEX raw_publications_node_time ON raw_publications (node_id, received_at_ms);
@@ -114,8 +119,18 @@ CREATE TABLE raw_usage (
 INSERT INTO raw_usage VALUES (1,0);
 CREATE TRIGGER raw_usage_insert AFTER INSERT ON raw_publications BEGIN
     UPDATE raw_usage SET encoded_bytes=encoded_bytes+new.encoded_bytes WHERE singleton=1;
+    UPDATE raw_envelopes SET refs=refs+1 WHERE envelope_id=new.envelope_id;
 END;
 CREATE TRIGGER raw_usage_delete AFTER DELETE ON raw_publications BEGIN
+    UPDATE raw_usage SET encoded_bytes=encoded_bytes-old.encoded_bytes WHERE singleton=1;
+    UPDATE raw_envelopes SET refs=refs-1 WHERE envelope_id=old.envelope_id;
+    DELETE FROM raw_envelopes WHERE envelope_id=old.envelope_id AND refs=0;
+END;
+-- A page envelope is stored and charged once, however many publications share it.
+CREATE TRIGGER raw_envelope_insert AFTER INSERT ON raw_envelopes BEGIN
+    UPDATE raw_usage SET encoded_bytes=encoded_bytes+new.encoded_bytes WHERE singleton=1;
+END;
+CREATE TRIGGER raw_envelope_delete AFTER DELETE ON raw_envelopes BEGIN
     UPDATE raw_usage SET encoded_bytes=encoded_bytes-old.encoded_bytes WHERE singleton=1;
 END;
 PRAGMA user_version=6;

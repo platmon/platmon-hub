@@ -72,8 +72,8 @@ responses, Python objects and allocator overhead add memory outside that budget.
 A page is acknowledged after its records, loss evidence and cursor commit together.
 Duplicates preserve the first payload and receipt time. On failure, none advances.
 
-The raw quota charges retained encoded payload/envelope bytes plus a 256-byte
-per-row reservation. At quota, a committing page first evicts the oldest committed
+The raw quota charges retained encoded payload bytes plus a 256-byte per-row
+reservation, and each page envelope once (plus 256 bytes) however many rows share it. At quota, a committing page first evicts the oldest committed
 raw rows (by Hub receipt time) to make room; retention is an upper bound, not a
 guarantee under quota pressure. Only a page too large to fit even after eviction rolls
 back, and capture backs off with committed cursors unchanged. If the quota is lowered,

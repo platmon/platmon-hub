@@ -79,6 +79,9 @@ envelope (schema, clock and capture bounds), original reported collection wall t
 Hub receipt milliseconds, `gap_before`, stream and publication ID. Identity is
 `(node_id, instance_id, stream, publication_id)`. Stale and older-than-Live samples
 are valid here; they never enter the live summary acceptance path.
+`raw_envelopes` stores each page envelope once, keyed by SHA-256 digest; publications
+reference it by `envelope_id`, and triggers keep a reference count so the envelope is
+deleted with its last publication. `raw-export` joins it back into each row.
 
 `replay_cursors` retains each generation's committed `after_id`; a unique partial
 index selects one active generation per node/stream. `replay_losses` stores
@@ -89,7 +92,7 @@ The writer returns a completion future after commit, never on queue admission.
 Cursor loads also execute on the writer thread; poll workers do no SQLite I/O.
 
 `raw_usage` and insert/delete triggers maintain transactional encoded-byte quota
-accounting without a fleet-size SUM on every page. At quota, a page commit evicts
+accounting (each envelope charged once) without a fleet-size SUM on every page. At quota, a page commit evicts
 the oldest previously committed raw rows (counted as `quota_evicted`); only a page
 that cannot fit on its own rolls back. Separate finite retention prunes raw rows in bounded turns; cursor/loss
 metadata survives. Metadata, indexes, WAL, backups and exports remain separate

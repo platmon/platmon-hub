@@ -67,7 +67,11 @@ def export_raw(database, output, start, end, node_ids=(), *, timeout=30,
                     ('replay_losses', condition+' AND '+node_condition, params+nodes),
                     ('replay_cursors', node_condition, nodes)):
                 check()
-                query = connection.execute('SELECT * FROM '+table+' WHERE '+where+' ORDER BY received_at_ms,node_id,instance_id,stream', args)
+                source = table
+                if table == 'raw_publications':
+                    source = ('(SELECT p.*,e.envelope_json FROM raw_publications p '
+                              'JOIN raw_envelopes e ON e.envelope_id=p.envelope_id)')
+                query = connection.execute('SELECT * FROM '+source+' WHERE '+where+' ORDER BY received_at_ms,node_id,instance_id,stream', args)
                 names = [col[0] for col in query.description]
                 rows = 0
                 with archive.open(table+'.jsonl', 'w', force_zip64=True) as member:
@@ -75,6 +79,7 @@ def export_raw(database, output, start, end, node_ids=(), *, timeout=30,
                         check()
                         row = dict(zip(names, values))
                         if table == 'raw_publications':
+                            del row['envelope_id']
                             row['data'] = json.loads(row.pop('data_json'))
                             row['envelope'] = json.loads(row.pop('envelope_json'))
                         data = encode(row)

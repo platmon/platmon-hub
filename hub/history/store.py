@@ -1,5 +1,6 @@
 """Synchronous SQLite operations, owned exclusively by the history writer."""
 
+import hashlib
 import sqlite3
 import time
 import uuid
@@ -48,7 +49,7 @@ class HistoryStore:
             if version >= 4:
                 expected.add('alert_states')
             if version >= 6:
-                expected.update(('raw_publications', 'replay_cursors', 'replay_losses', 'raw_usage'))
+                expected.update(('raw_publications', 'raw_envelopes', 'replay_cursors', 'replay_losses', 'raw_usage'))
             tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if tables != expected:
                 raise SchemaError('invalid_history_layout')
@@ -258,12 +259,19 @@ class HistoryStore:
             if (prior is None and page.after != 0) or (prior is not None and page.after > prior[0]):
                 raise ValueError('replay cursor has unexplained advance')
             newest_prior = c.execute('SELECT coalesce(max(rowid),0) FROM raw_publications').fetchone()[0]
+            envelope = page.envelope_json.encode()
+            digest = hashlib.sha256(envelope).hexdigest()
+            c.execute('INSERT INTO raw_envelopes (digest,envelope_json,encoded_bytes) VALUES (?,?,?) ON CONFLICT(digest) DO NOTHING',
+                      (digest, page.envelope_json, len(envelope)+256))
+            envelope_id = c.execute('SELECT envelope_id FROM raw_envelopes WHERE digest=?', (digest,)).fetchone()[0]
             inserted = 0
             for pid, payload, gap, start, end in page.records:
-                size = len(payload.encode()) + len(page.envelope_json.encode()) + 256
+                size = len(payload.encode()) + 256
                 inserted += c.execute('INSERT INTO raw_publications VALUES (?,?,?,?,?,?,?,?,?,?,?) '
                                       'ON CONFLICT(node_id,instance_id,stream,publication_id) DO NOTHING',
-                                      key + (pid, page.received_at_ms, start, end, int(gap), payload, page.envelope_json, size)).rowcount
+                                      key + (pid, page.received_at_ms, start, end, int(gap), payload, envelope_id, size)).rowcount
+            # Duplicate-only or loss-only pages leave no reference to their envelope.
+            c.execute('DELETE FROM raw_envelopes WHERE envelope_id=? AND refs=0', (envelope_id,))
             for start, end, reason in page.losses:
                 c.execute('INSERT INTO replay_losses VALUES (?,?,?,?,?,?,?) '
                           'ON CONFLICT(node_id,instance_id,stream,from_id,reason) DO UPDATE SET to_id=max(to_id,excluded.to_id)',

@@ -96,7 +96,7 @@ Agent and Hub HTTP schema versions.
 | `replay_cursors` | `(node_id, instance_id, stream)` and committed `after_id`; retained independently of raw-row pruning so expired history is not repeatedly downloaded |
 | `replay_losses` | Inclusive publication-ID bounds, stream, instance, reason and first receipt time; restart evidence may have an unknown final ID |
 
-SQLite schema 6 implements these interfaces, with an auxiliary `raw_usage` table and insert/delete triggers for transactional quota accounting. Preserve null, valid zero,
+SQLite schema 6 implements these interfaces, with auxiliary `raw_usage` and shared, reference-counted `raw_envelopes` tables and insert/delete triggers for transactional quota accounting. Preserve null, valid zero,
 units and source identities. Raw data need not satisfy the live `data_age_ms <= stale_after_ms`
 constraint. Never derive stable node identity from Agent hostname, endpoint or process ID.
 
