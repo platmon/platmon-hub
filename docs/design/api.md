@@ -14,6 +14,7 @@ Responses disable caching. The browser contacts the Hub only.
 | `/api/nodes/{node_id}/history` | Bounded core metric series |
 | `/api/history/status` | Writer, queue, drops, retention and storage diagnostics, including `history.raw` storage/byte-budget counters |
 | `/api/replay/status` | Replay coverage by stable node ID and stream; disabled unless raw capture is enabled |
+| `/api/handoff/status` | Downstream handoff positions, spool, losses and warnings; disabled unless `--handoff-spool` is set |
 | `/api/registry/status` | Reload diagnostics |
 | `/api/events` | Persisted transitions with filters and pagination |
 | `/api/alerts` | Current internal alerts and restoration/admission diagnostics |
@@ -101,6 +102,18 @@ and returns daily/monthly summaries of observed samples and recorded transitions
 `GET /api/data/archive/status` exposes opt-in archival state, failures and the
 last successful generation time, without private directory paths. Neither route
 permits writes or accepts an Agent/network URL.
+
+## Handoff diagnostics
+
+`GET /api/handoff/status` returns `{schema_version: 1, handoff: {enabled: false}}` without
+handoff. With it, `handoff` reports `store_id`, `next_seq`, `delivered_seq`, `acked_seq`,
+`last_segment`, `last_build_utc_ms`, counters `segments_built`, `segments_adopted`,
+`segments_deleted`, `segments_lost` and `rejected_acks`, `spool_bytes`, `spool_quota_bytes`,
+`spool_full`, `unacknowledged_segments`, `unacknowledged_bytes`, `unacknowledged_raw_bytes`,
+`raw_quota_bytes`, `oldest_unacknowledged_received_ms`, `spool_retention_ms`,
+`data_retention_ms`, `backfill_pending`, `losses` (`table`, `reason`, `records`, `rows`, with
+all segment losses as table `segment`), `warnings` and `last_error`. Values refresh every
+10 seconds; see the [handoff guide](../guides/handoff.md#monitoring) for the warnings.
 
 ## Replay diagnostics
 

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Report downstream handoff at `GET /api/handoff/status` and on the Data tab: delivered and
+  acknowledged positions, spool use, unacknowledged raw bytes and age, losses by table and
+  reason, and warnings before quota or retention deletes unacknowledged data. Add the
+  [handoff guide](docs/guides/handoff.md) with the consumer obligations, a reference consumer
+  test, and `scripts/benchmark-replay.py --handoff`. This completes ADR-0004.
+
 - Run downstream handoff inside the Hub (ADR-0004 stage 3): `--handoff-spool`,
   `--handoff-spool-quota-mib`, `--handoff-spool-retention-days` and `--handoff-start now|existing`.
   Segments are built every 15 minutes, back to back after a size-capped one and on clean

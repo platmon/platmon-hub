@@ -185,6 +185,9 @@ class HubHandler(BaseHTTPRequestHandler):
         elif path.path == "/api/history/status":
             history = self.server.fleet.history
             self._reply(200, {"schema_version": 1, "history": history.snapshot() if history else {"enabled": False, "state": "disabled"}})
+        elif path.path == '/api/handoff/status':
+            handoff = getattr(self.server, 'handoff', None)
+            self._reply(200, dict(schema_version=1, handoff=handoff.snapshot() if handoff else {'enabled': False}))
         elif path.path == '/api/replay/status':
             replay = self.server.fleet.replay
             self._reply(200, dict(schema_version=1, replay=replay.snapshot() if replay else {'enabled': False}))

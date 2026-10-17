@@ -29,5 +29,6 @@ Choose one Windows startup method. For a personal Windows PC, start with the log
 | [Troubleshooting](troubleshooting.md) | Startup, connectivity, history, registry, and alert failures. |
 | [Security](security.md) | Local access boundary, optional TLS/authentication proxy, and resource controls. |
 | [Full-publication replay](replay.md) | Opt-in raw capture, coverage, retention/quota and JSONL export. |
+| [Downstream handoff](handoff.md) | Spool segments for a post-processing system, consumer obligations, losses and monitoring. |
 | [Data exports and reports](data-export.md) | CSV downloads, daily archives, retained summaries, and monthly reports. |
 | [Internal alerts](alerts.md) | Rule evaluation, unknown data, transitions, and restoration. |
