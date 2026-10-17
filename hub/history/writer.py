@@ -5,6 +5,7 @@ import math
 import queue
 import threading
 import time
+from concurrent.futures import Future
 from pathlib import Path
 
 from .store import HistoryStore, SchemaError
@@ -16,7 +17,8 @@ LOG = logging.getLogger(__name__)
 
 class HistoryWriter:
     def __init__(self, path, *, capacity=2048, retention_days=7, store_factory=HistoryStore,
-                 retry_seconds=5.0, clock=time.monotonic, wall=time.time, event_retention_days=30):
+                 retry_seconds=5.0, clock=time.monotonic, wall=time.time, event_retention_days=30,
+                 raw_retention_days=None, raw_quota_bytes=None, raw_queue_bytes=8*1024**2):
         if type(capacity) is not int or capacity < 1:
             raise ValueError('invalid history queue capacity')
         if not math.isfinite(retention_days) or retention_days <= 0:
@@ -24,6 +26,20 @@ class HistoryWriter:
         if not math.isfinite(event_retention_days) or event_retention_days <= 0:
             raise ValueError('invalid event retention')
         self.event_retention_ms = event_retention_days * 86400000
+        self.raw_enabled = raw_retention_days is not None
+        if self.raw_enabled and (not math.isfinite(raw_retention_days) or not 0 < raw_retention_days <= 365 or
+                                 type(raw_quota_bytes) is not int or raw_quota_bytes < 1024**2):
+            raise ValueError('raw capture requires explicit finite retention and quota')
+        if type(raw_queue_bytes) is not int or not 3*1024**2 <= raw_queue_bytes <= 64*1024**2:
+            raise ValueError('invalid raw queue byte limit')
+        self.raw_retention_ms = raw_retention_days * 86400000 if self.raw_enabled else None
+        self.raw_quota_bytes = raw_quota_bytes
+        self.raw_queue_bytes = raw_queue_bytes
+        self._raw_queue = queue.Queue(16)
+        self._raw_bytes = 0
+        self._raw_in_flight = 0
+        self._raw_stats = dict(committed_pages=0, persisted=0, duplicates=0, rejected=0,
+                               failed_pages=0, cursor_read_failures=0, last_error=None, retention_deleted=0)
         self.path = Path(path).resolve()
         self.retention_ms = retention_days * 86400000
         self.store_factory = store_factory
@@ -86,7 +102,63 @@ class HistoryWriter:
 
     def snapshot(self):
         with self._lock:
-            return dict(self._stats, queue_depth=self.queue.qsize(), queue_capacity=self.queue.maxsize, pending_events=len(self._pending_events))
+            return dict(self._stats, queue_depth=self.queue.qsize(), queue_capacity=self.queue.maxsize,
+                        pending_events=len(self._pending_events), raw=dict(self._raw_stats,
+                        enabled=self.raw_enabled, queue_depth=self._raw_queue.qsize(), queue_capacity=self._raw_queue.maxsize, in_flight=self._raw_in_flight,
+                        queued_bytes=self._raw_bytes, queue_byte_limit=self.raw_queue_bytes,
+                        quota_bytes=self.raw_quota_bytes, retention_ms=self.raw_retention_ms))
+
+    def _raw_submit(self, operation, value, size):
+        future = Future()
+        with self._lock:
+            if (not self.raw_enabled or not self._accepting or self._raw_queue.full() or
+                    self._raw_bytes + size > self.raw_queue_bytes):
+                self._raw_stats['rejected'] += 1
+                future.set_exception(RuntimeError('raw_queue_unavailable'))
+            else:
+                self._raw_bytes += size
+                self._raw_queue.put_nowait((operation, value, size, future))
+        return future
+
+    def replay_cursor(self, node_id, stream):
+        return self._raw_submit('cursor', (node_id, stream), 256)
+
+    def submit_raw(self, page):
+        return self._raw_submit('page', page, page.encoded_bytes)
+
+    def _raw_once(self, store):
+        try:
+            operation, value, size, future = self._raw_queue.get_nowait()
+        except queue.Empty:
+            return
+        with self._lock:
+            self._raw_in_flight = 1
+        notify = future.set_running_or_notify_cancel()
+        try:
+            if store is None:
+                raise RuntimeError('raw_storage_unavailable')
+            if operation == 'cursor':
+                result = store.replay_cursor(*value)
+            else:
+                result = store.insert_raw_page(value, self.raw_quota_bytes)
+                with self._lock:
+                    self._raw_stats['committed_pages'] += 1
+                    self._raw_stats['persisted'] += result['inserted']
+                    self._raw_stats['duplicates'] += result['duplicates']
+                    self._raw_stats['last_error'] = None
+            if notify:
+                future.set_result(result)
+        except Exception as exc:
+            with self._lock:
+                self._raw_stats['failed_pages' if operation == 'page' else 'cursor_read_failures'] += 1
+                self._raw_stats['last_error'] = str(exc) if isinstance(exc, (ValueError, RuntimeError)) else type(exc).__name__
+            if notify:
+                future.set_exception(exc)
+        finally:
+            with self._lock:
+                self._raw_bytes -= size
+                self._raw_in_flight = 0
+        return operation == 'cursor'
 
     def alert_state(self):
         with self._lock:
@@ -114,9 +186,10 @@ class HistoryWriter:
         next_open = 0
         fatal = False
         next_retention = self.clock()
+        next_raw_retention = self.clock()
         last_wall, last_tick = self.wall(), self.clock()
         try:
-            while not self._stop.is_set() or batch or not self.queue.empty() or self._pending_events:
+            while not self._stop.is_set() or batch or not self.queue.empty() or self._pending_events or not self._raw_queue.empty():
                 now = self.clock()
                 wall = self.wall()
                 if abs((wall - last_wall) - (now - last_tick)) > 60:
@@ -143,7 +216,7 @@ class HistoryWriter:
                         next_open = now + 5
                 if not batch:
                     try:
-                        batch.append(self.queue.get(timeout=0.05))
+                        batch.append(self.queue.get(timeout=0 if not self._raw_queue.empty() else 0.05))
                     except queue.Empty:
                         pass
                     while len(batch) < 128:
@@ -196,6 +269,20 @@ class HistoryWriter:
                     except Exception as exc:
                         self._error(exc)
                         next_retention = now + 3600
+                if self.raw_enabled and store is not None and now >= next_raw_retention and not self.snapshot()['clock_discontinuity']:
+                    try:
+                        deleted = store.prune_raw(int(wall*1000-self.raw_retention_ms))
+                        with self._lock:
+                            self._raw_stats['retention_deleted'] += deleted
+                        next_raw_retention = now + (0.1 if deleted >= 1000 else 60)
+                    except Exception as exc:
+                        with self._lock:
+                            self._raw_stats['last_error'] = type(exc).__name__
+                        next_raw_retention = now + 60
+                # One bounded page turn after live writes; no polling worker touches SQLite.
+                for _ in range(16):
+                    if not self._raw_once(store):
+                        break
                 with self._lock:
                     events = dict(self._pending_events)
                 if store is not None and events:
@@ -218,6 +305,8 @@ class HistoryWriter:
             self._count(dropped_storage_error=len(batch))
             self._update(in_flight=0)
         finally:
+            while not self._raw_queue.empty():
+                self._raw_once(None)
             if store is not None:
                 store.close()
             with self._lock:
@@ -231,6 +320,6 @@ class HistoryWriter:
         if self._thread is not None:
             self._thread.join(timeout=max(0, timeout))
         state = self.snapshot()
-        remaining = state['queue_depth'] + state['in_flight'] + state['pending_events']
+        remaining = state['queue_depth'] + state['in_flight'] + state['pending_events'] + state['raw']['queue_depth'] + state['raw']['in_flight']
         return {'flushed': remaining == 0 and not (self._thread and self._thread.is_alive()) and
-                state['dropped_storage_error'] == 0, 'remaining': remaining}
+                state['dropped_storage_error'] == 0 and state['raw']['failed_pages'] == 0, 'remaining': remaining}

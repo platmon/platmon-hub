@@ -163,3 +163,12 @@ service reboots and live upgrade/restore tests, and a longer deployment-specific
 soak. Full seven-day/max-payload history queries, many concurrent viewers, flaky
 DNS/OS-level I/O stalls and storage exhaustion on the deployment filesystem remain
 unverified. These synthetic results do not close those operational acceptance gates.
+
+## Opt-in raw replay evidence
+
+The [raw replay synthetic results](benchmarks/replay.md) and
+[pre-run plan](benchmarks/replay-plan.md) cover separate schema-6 raw storage,
+queue memory, 10/50/100-node initial catch-up, commit latency, WAL and bounded
+cleanup. All final serial-run thresholds passed on Linux Python 3.12.3. This
+in-process fixture does not establish real network/device/Windows deployment
+capacity; retention and quota remain explicit operator choices without defaults.

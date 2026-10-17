@@ -4,7 +4,7 @@
 
 `0.2.0rc1` is a candidate application version, not an assertion of production
 acceptance. Versions follow PEP 440; candidate increments precede a stable release.
-Hub HTTP schema 1, SQLite schema 5 and Agent schemas remain separately versioned.
+Hub HTTP schema 1, SQLite schema 6 and Agent schemas remain separately versioned.
 A code downgrade never implicitly downgrades a database.
 
 ## Candidate artifacts
@@ -38,7 +38,7 @@ examples and operational documentation under `share/platmon-hub`.
    lost after the backup. Never modify `user_version` to force compatibility.
 
 The migration test starts with schema 1, preserves zero/null measurements through
-schema 5, makes an online backup, preserves UUID through CLI editing and restores
+schema 6, makes an online backup, preserves UUID through CLI editing and restores
 a schema-1 backup independently. It does not simulate an installed OS service upgrade.
 See [operations](../guides/operations.md) for service-specific paths and commands.
 

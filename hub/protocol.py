@@ -5,6 +5,7 @@ import math
 import socket
 import urllib.error
 import urllib.request
+from urllib.parse import urlencode
 
 
 class AgentFailure(Exception):
@@ -34,6 +35,27 @@ class NoCurrentData(AgentFailure):
 class OptionalUnsupported(AgentFailure):
     """Older agents answer 404 for an optional endpoint; not an error."""
     category = "unsupported"
+
+
+class ReplayConflict(AgentFailure):
+    def __init__(self, code, instance_id):
+        super().__init__(code)
+        self.code, self.instance_id = code, instance_id
+
+
+def decode_json(content):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate JSON key')
+            result[key] = value
+        return result
+    try:
+        return json.loads(content.decode('utf-8'), object_pairs_hook=unique,
+                          parse_constant=lambda name: (_ for _ in ()).throw(ValueError('non-finite JSON token')))
+    except (ValueError, UnicodeDecodeError, RecursionError) as exc:
+        raise ProtocolFailure('invalid JSON') from exc
 
 
 def _nonnegative(value):
@@ -110,15 +132,42 @@ class HttpAgentClient:
     def get(self, endpoint, path, deadline):
         if path not in ("/api/status", "/api/stats", "/api/observations"):
             raise ValueError("path is not an allowed read-only endpoint")
+        return self._get(endpoint, path, deadline, self.max_bytes)
+
+    def get_replay(self, endpoint, stream, instance_id, after, deadline, limit=100):
+        from .history.raw import STREAMS, integer, instance
+        if stream not in STREAMS or not instance(instance_id) or not integer(after) or not integer(limit, 1, 100):
+            raise ValueError('invalid replay request')
+        params = dict(instance_id=instance_id, after=after, limit=limit)
+        path = '/api/samples'
+        if stream != 'core':
+            path = '/api/observation-samples'
+            params['group'] = stream
+        return self._get(endpoint, path + '?' + urlencode(params), deadline, 2*1024**2, replay=True)
+
+    def _get(self, endpoint, path, deadline, max_bytes, replay=False):
         request = urllib.request.Request(endpoint + path, method="GET", headers={"Accept": "application/json", "Cache-Control": "no-store"})
         try:
             with self.opener.open(request, timeout=deadline) as response:
                 if response.status != 200:
                     raise ServerFailure("unexpected HTTP status")
-                content = response.read(self.max_bytes + 1)
-                if len(content) > self.max_bytes:
+                content = response.read(max_bytes + 1)
+                if len(content) > max_bytes:
                     raise ProtocolFailure("response exceeds byte limit")
         except urllib.error.HTTPError as exc:
+            if replay and exc.code in (404, 409):
+                with exc:
+                    body = exc.read(4097)
+                if len(body) > 4096:
+                    raise ProtocolFailure('replay error exceeds byte limit') from exc
+                if exc.code == 404:
+                    raise OptionalUnsupported('replay stream unavailable') from exc
+                data = decode_json(body)
+                from .history.raw import instance
+                if (not isinstance(data, dict) or data.get('code') not in ('instance_changed', 'cursor_ahead') or
+                        not instance(data.get('instance_id'))):
+                    raise ProtocolFailure('invalid replay conflict') from exc
+                raise ReplayConflict(data['code'], data['instance_id']) from exc
             if exc.code == 503 and path == "/api/stats":
                 raise NoCurrentData("no current stats") from exc
             if exc.code == 404 and path == "/api/observations":
@@ -128,7 +177,4 @@ class HttpAgentClient:
             raise ServerFailure(f"HTTP {exc.code}") from exc
         except (TimeoutError, socket.timeout, urllib.error.URLError, ConnectionError, OSError) as exc:
             raise TransportFailure("connection/timeout error") from exc
-        try:
-            return json.loads(content.decode("utf-8"), parse_constant=lambda name: (_ for _ in ()).throw(ValueError("non-finite JSON token")))
-        except (ValueError, UnicodeDecodeError) as exc:
-            raise ProtocolFailure("invalid JSON") from exc
+        return decode_json(content)

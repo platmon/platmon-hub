@@ -86,6 +86,9 @@ def registry_or_exit(parser, path):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == 'raw-export':
+        from .raw_export import main as raw_export_main
+        return raw_export_main(argv[1:])
     if argv and argv[0] == "report" and any(arg.split("=", 1)[0] == "--archive-dir" for arg in argv):
         from .report_cli import main as report_main
         return report_main(argv[1:])
@@ -113,6 +116,10 @@ def main(argv=None):
     parser.add_argument("--web-admin", action="store_true", help="enable device management for trusted local users (loopback only)")
     parser.add_argument("--alerts", help="local alert rules JSON (requires history)")
     parser.add_argument("--history-db", help="explicit local SQLite history path (disabled by default)")
+    parser.add_argument('--raw-capture', action='store_true', help='opt in to full Agent replay persistence (requires history, raw retention and quota)')
+    parser.add_argument('--raw-retention-days', type=positive_days, help='explicit raw receipt-time retention, at most 365 days')
+    parser.add_argument('--raw-quota-mib', type=int, help='explicit retained encoded raw data budget; not a SQLite file-size cap')
+    parser.add_argument('--raw-queue-mib', type=int, default=8, help='bounded encoded replay queue, 3–64 MiB (default: 8)')
     parser.add_argument("--archive-dir", help="opt-in dedicated daily CSV ZIP archive directory (requires history)")
     parser.add_argument("--archive-retention-days", type=int, default=90)
     parser.add_argument("--archive-summary-retention-days", type=int, default=365)
@@ -121,6 +128,12 @@ def main(argv=None):
     parser.add_argument("--history-retention-days", type=positive_days, default=7)
     parser.add_argument("--no-registry-reload", action="store_true", help="disable automatic registry reload")
     args = parser.parse_args(argv)
+    if args.raw_capture:
+        if (not args.history_db or args.raw_retention_days is None or args.raw_retention_days > 365 or
+                args.raw_quota_mib is None or not 1 <= args.raw_quota_mib <= 1048576 or not 3 <= args.raw_queue_mib <= 64):
+            parser.error('--raw-capture requires --history-db, --raw-retention-days (0–365], --raw-quota-mib (1–1048576) and --raw-queue-mib (3–64)')
+    elif args.raw_retention_days is not None or args.raw_quota_mib is not None or args.raw_queue_mib != 8:
+        parser.error('raw storage options require --raw-capture')
     if args.archive_dir and (not args.history_db or not 1 <= args.archive_retention_days <= 3650 or not 1 <= args.archive_summary_retention_days <= 3650 or not 1 <= args.archive_quota_mib <= 1048576):
         parser.error("--archive-dir requires history and valid retention/quota bounds")
     archive = None
@@ -140,7 +153,10 @@ def main(argv=None):
         alert_rules = load_rules(args.alerts) if args.alerts else None
     except (ValueError, OSError):
         parser.error('invalid or unreadable alert configuration')
-    history = HistoryWriter(args.history_db, retention_days=args.history_retention_days, event_retention_days=args.event_retention_days) if args.history_db else None
+    history = HistoryWriter(args.history_db, retention_days=args.history_retention_days, event_retention_days=args.event_retention_days,
+                            raw_retention_days=args.raw_retention_days if args.raw_capture else None,
+                            raw_quota_bytes=args.raw_quota_mib*1024**2 if args.raw_capture else None,
+                            raw_queue_bytes=args.raw_queue_mib*1024**2) if args.history_db else None
     fleet = Fleet(nodes, history=history, registry_path=None if args.no_registry_reload else args.nodes, alert_rules=alert_rules)
     try:
         server = bind_hub(args.bind, args.port, fleet, admin=admin)

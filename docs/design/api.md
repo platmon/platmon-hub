@@ -2,7 +2,7 @@
 
 [Documentation index](../README.md) · [Design reference](README.md)
 
-Hub HTTP schema 1 is independent of Agent schemas and SQLite schema 5. JSON missing
+Hub HTTP schema 1 is independent of Agent schemas and SQLite schema 6. JSON missing
 measurements are `null`, never synthetic zero. UTC timestamps use Unix milliseconds.
 Responses disable caching. The browser contacts the Hub only.
 
@@ -12,7 +12,8 @@ Responses disable caching. The browser contacts the Hub only.
 | `/api/nodes` | Current fleet summaries, `schema_version` and `nodes` |
 | `/api/nodes/{node_id}` | Detail, last-known readings and freshness |
 | `/api/nodes/{node_id}/history` | Bounded core metric series |
-| `/api/history/status` | Writer, queue, drops, retention and storage diagnostics |
+| `/api/history/status` | Writer, queue, drops, retention and storage diagnostics, including `history.raw` storage/byte-budget counters |
+| `/api/replay/status` | Replay coverage by stable node ID and stream; disabled unless raw capture is enabled |
 | `/api/registry/status` | Reload diagnostics |
 | `/api/events` | Persisted transitions with filters and pagination |
 | `/api/alerts` | Current internal alerts and restoration/admission diagnostics |
@@ -89,3 +90,23 @@ and returns daily/monthly summaries of observed samples and recorded transitions
 `GET /api/data/archive/status` exposes opt-in archival state, failures and the
 last successful generation time, without private directory paths. Neither route
 permits writes or accepts an Agent/network URL.
+
+## Replay diagnostics
+
+`GET /api/replay/status` returns `{schema_version: 1, replay: {enabled, nodes}}`.
+When disabled only `enabled: false` is returned. `nodes` is keyed by Hub node UUID,
+then by `core`, `storage`, `wifi`, `battery`, `probe`. Each stream reports `state`,
+`error`, last durable `instance_id` and acknowledged `after_id`,
+`has_more`, acknowledged `pages` and observed missing-range `losses` count. States
+include `starting`, `fetching`, `committing`, `captured`, `retrying`, `unavailable`
+and `stopped`. In-memory counters reset on Hub restart. The instance/cursor pair changes only after a durable cursor read or acknowledged
+commit; it remains unchanged while a new page is committing.
+
+`GET /api/history/status` additionally reports `history.raw`: `enabled`, encoded
+`queued_bytes`, `queue_byte_limit`, command/page `queue_depth`, `queue_capacity`,
+`in_flight`, explicit `quota_bytes`/`retention_ms`, `committed_pages`, `persisted`,
+`duplicates`, `rejected`, `failed_pages`, `cursor_read_failures`, `retention_deleted` and `last_error`. Admission is not a
+commit. Replay errors do not change the existing node health/alert fields.
+
+Full raw payloads are available through the bounded local `raw-export` CLI, not a
+browser-supplied Agent URL. See [raw capture/export](../guides/replay.md).

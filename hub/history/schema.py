@@ -82,3 +82,42 @@ ALTER TABLE core_samples ADD COLUMN npu_percent REAL CHECK (npu_percent BETWEEN 
 PRAGMA user_version=5;
 """
 VERSION = 5
+
+MIGRATION_6 = """
+CREATE TABLE raw_publications (
+    node_id TEXT NOT NULL, instance_id TEXT NOT NULL, stream TEXT NOT NULL,
+    publication_id INTEGER NOT NULL CHECK (publication_id > 0),
+    received_at_ms INTEGER NOT NULL, reported_started_at REAL NOT NULL,
+    reported_completed_at REAL NOT NULL, gap_before INTEGER NOT NULL,
+    data_json TEXT NOT NULL, envelope_json TEXT NOT NULL, encoded_bytes INTEGER NOT NULL,
+    PRIMARY KEY (node_id, instance_id, stream, publication_id)
+);
+CREATE INDEX raw_publications_time ON raw_publications (received_at_ms);
+CREATE INDEX raw_publications_node_time ON raw_publications (node_id, received_at_ms);
+CREATE TABLE replay_cursors (
+    node_id TEXT NOT NULL, instance_id TEXT NOT NULL, stream TEXT NOT NULL,
+    after_id INTEGER NOT NULL CHECK (after_id >= 0), active INTEGER NOT NULL,
+    received_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (node_id, instance_id, stream)
+);
+CREATE UNIQUE INDEX replay_active ON replay_cursors (node_id, stream) WHERE active=1;
+CREATE TABLE replay_losses (
+    node_id TEXT NOT NULL, instance_id TEXT NOT NULL, stream TEXT NOT NULL,
+    from_id INTEGER NOT NULL, to_id INTEGER, reason TEXT NOT NULL,
+    received_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (node_id, instance_id, stream, from_id, reason)
+);
+CREATE INDEX replay_losses_time ON replay_losses (received_at_ms);
+CREATE TABLE raw_usage (
+    singleton INTEGER PRIMARY KEY CHECK (singleton=1), encoded_bytes INTEGER NOT NULL
+);
+INSERT INTO raw_usage VALUES (1,0);
+CREATE TRIGGER raw_usage_insert AFTER INSERT ON raw_publications BEGIN
+    UPDATE raw_usage SET encoded_bytes=encoded_bytes+new.encoded_bytes WHERE singleton=1;
+END;
+CREATE TRIGGER raw_usage_delete AFTER DELETE ON raw_publications BEGIN
+    UPDATE raw_usage SET encoded_bytes=encoded_bytes-old.encoded_bytes WHERE singleton=1;
+END;
+PRAGMA user_version=6;
+"""
+VERSION = 6

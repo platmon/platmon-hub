@@ -12,4 +12,4 @@ These documents explain Hub architecture, interfaces, persistence, and design de
 | [History schema](history-schema.md) | Storage versions, writer semantics, migration, and recovery. |
 | [ADR-0001](adr/0001-http-pull-and-device-identity.md) | Independent agents, HTTP Pull, and Hub-owned identity. |
 | [ADR-0002](adr/0002-hub-history-storage.md) | Isolated SQLite writer, admission, continuity, and durability decisions. |
-| [ADR-0003](adr/0003-agent-replay-and-raw-publications.md) | Proposed Agent replay, full-publication storage, and transactional recovery cursors. |
+| [ADR-0003](adr/0003-agent-replay-and-raw-publications.md) | Opt-in Agent replay, full-publication storage, and transactional recovery cursors. |

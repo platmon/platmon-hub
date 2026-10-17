@@ -12,6 +12,10 @@ for service accounts and filesystem permissions.
 | `--bind ADDRESS` | `127.0.0.1`; retain loopback behind an authenticated proxy. IPv6 literals such as `::1` are supported |
 | `--port PORT` | `9787`; fixed integer 1–65535, no automatic fallback |
 | `--history-db PATH` | Disabled unless supplied; local SQLite database |
+| `--raw-capture` | Disabled; opt-in replay persistence, requires history and explicit raw retention/quota |
+| `--raw-retention-days DAYS` | Required for raw capture; finite positive, at most 365 days; based on receipt time |
+| `--raw-quota-mib MIB` | Required for raw capture; 1–1048576; encoded raw rows plus envelope/bookkeeping, not SQLite file size |
+| `--raw-queue-mib MIB` | 8; 3–64 MiB encoded replay queue, at most 16 pending commands/pages |
 | `--archive-dir PATH` | Opt-in daily archive directory; requires history; see [exports and reports](data-export.md) |
 | `--archive-retention-days DAYS` | 90; raw ZIP retention upper bound, subject to quota |
 | `--archive-summary-retention-days DAYS` | 365; daily-summary retention upper bound, subject to quota |

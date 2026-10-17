@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — Agent replay and raw persistence
+
+- Add opt-in full core/slow publication replay with bounded fair catch-up, per-stream
+  coverage diagnostics and isolation from Live monitoring and alerts.
+- SQLite schema 6 atomically commits raw pages, unavailable ranges, restart evidence
+  and durable cursors; acknowledge only committed pages and safely retry duplicates.
+- Require explicit raw retention/quota; bound the encoded ingress queue separately,
+  preserve cursor/loss metadata through raw pruning, and pause on quota/storage errors.
+- Add `raw-export` for bounded consistent JSONL ZIP exports with original collection
+  times, receipt times, schemas, units and loss evidence. Existing CSV archives and
+  reports remain summary consumers.
+
 ## Unreleased — platmon 1.2.0 compatibility
 
 - Consume the additive platmon v1.1.0/v1.2.0 fields while retaining v1.0.0

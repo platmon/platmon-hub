@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ..filelock import FileLock
 from ..alerts import AlertRecord
-from .schema import SQL, VERSION, MIGRATION_2, MIGRATION_3, MIGRATION_4, MIGRATION_5
+from .schema import SQL, VERSION, MIGRATION_2, MIGRATION_3, MIGRATION_4, MIGRATION_5, MIGRATION_6
 from .projector import ObservationRecord, ContinuityRecord, EventRecord
 
 
@@ -33,7 +33,7 @@ class HistoryStore:
             if version == 0 and not tables:
                 self._migrate(SQL)
                 version = 1
-            elif version not in (1, 2, 3, 4, VERSION):
+            elif version not in (1, 2, 3, 4, 5, VERSION):
                 raise SchemaError('unsupported_history_schema')
             columns = [r[1] for r in c.execute('PRAGMA table_info(core_samples)')]
             if columns != ['node_id', 'instance_id', 'sequence', 'received_at_ms', 'data_age_ms',
@@ -47,10 +47,12 @@ class HistoryStore:
                 expected.add('events')
             if version >= 4:
                 expected.add('alert_states')
+            if version >= 6:
+                expected.update(('raw_publications', 'replay_cursors', 'replay_losses', 'raw_usage'))
             tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if tables != expected:
                 raise SchemaError('invalid_history_layout')
-            for target, script in ((2, MIGRATION_2), (3, MIGRATION_3), (4, MIGRATION_4), (5, MIGRATION_5)):
+            for target, script in ((2, MIGRATION_2), (3, MIGRATION_3), (4, MIGRATION_4), (5, MIGRATION_5), (6, MIGRATION_6)):
                 if version >= target:
                     continue
                 backup_path = self.path.with_name(self.path.name + '.v' + str(version) + '-backup-' + uuid.uuid4().hex)
@@ -91,9 +93,14 @@ class HistoryStore:
         c = self.connection
         c.execute('BEGIN IMMEDIATE')
         try:
-            for statement in script.split(';'):
-                if statement.strip():
+            statement = ''
+            for line in script.splitlines(keepends=True):
+                statement += line
+                if sqlite3.complete_statement(statement):
                     c.execute(statement)
+                    statement = ''
+            if statement.strip():
+                c.execute(statement)
             c.execute('COMMIT')
         except BaseException:
             c.execute('ROLLBACK')
@@ -227,6 +234,54 @@ class HistoryStore:
             if c.in_transaction:
                 c.execute('ROLLBACK')
             raise
+
+    def replay_cursor(self, node_id, stream):
+        return self.connection.execute('SELECT instance_id,after_id FROM replay_cursors '
+                                       'WHERE node_id=? AND stream=? AND active=1', (node_id, stream)).fetchone()
+
+    def insert_raw_page(self, page, quota_bytes):
+        """Cursor, restart evidence and publications have one durable outcome."""
+        c = self.connection
+        c.execute('BEGIN IMMEDIATE')
+        try:
+            old = self.replay_cursor(page.node_id, page.stream)
+            key = (page.node_id, page.instance_id, page.stream)
+            if old is not None and old[0] != page.instance_id:
+                if old != (page.previous_instance, page.previous_after):
+                    raise ValueError('obsolete replay generation')
+                c.execute('INSERT INTO replay_losses VALUES (?,?,?,?,NULL,?,?) ON CONFLICT DO NOTHING',
+                          (page.node_id, old[0], page.stream, old[1]+1, 'agent_restart_unknown_extent', page.received_at_ms))
+                c.execute('UPDATE replay_cursors SET active=0 WHERE node_id=? AND stream=?', (page.node_id, page.stream))
+            prior = c.execute('SELECT after_id FROM replay_cursors WHERE node_id=? AND instance_id=? AND stream=?', key).fetchone()
+            if (prior is None and page.after != 0) or (prior is not None and page.after > prior[0]):
+                raise ValueError('replay cursor has unexplained advance')
+            inserted = 0
+            for pid, payload, gap, start, end in page.records:
+                size = len(payload.encode()) + len(page.envelope_json.encode()) + 256
+                inserted += c.execute('INSERT INTO raw_publications VALUES (?,?,?,?,?,?,?,?,?,?,?) '
+                                      'ON CONFLICT(node_id,instance_id,stream,publication_id) DO NOTHING',
+                                      key + (pid, page.received_at_ms, start, end, int(gap), payload, page.envelope_json, size)).rowcount
+            for start, end, reason in page.losses:
+                c.execute('INSERT INTO replay_losses VALUES (?,?,?,?,?,?,?) '
+                          'ON CONFLICT(node_id,instance_id,stream,from_id,reason) DO UPDATE SET to_id=max(to_id,excluded.to_id)',
+                          key + (start, end, reason, page.received_at_ms))
+            if c.execute('SELECT encoded_bytes FROM raw_usage WHERE singleton=1').fetchone()[0] > quota_bytes:
+                raise ValueError('raw_quota_exceeded')
+            c.execute('INSERT INTO replay_cursors VALUES (?,?,?,?,1,?) ON CONFLICT(node_id,instance_id,stream) '
+                      'DO UPDATE SET after_id=max(after_id,excluded.after_id),active=1,received_at_ms=excluded.received_at_ms',
+                      key + (page.next_after, page.received_at_ms))
+            c.execute('COMMIT')
+            return {'inserted': inserted, 'duplicates': len(page.records)-inserted, 'after_id': max(page.next_after, prior[0] if prior else 0)}
+        except BaseException:
+            if c.in_transaction:
+                c.execute('ROLLBACK')
+            raise
+
+    def prune_raw(self, cutoff_ms, limit=1000):
+        # Cursors and unavailable-range evidence survive raw-row pruning.
+        return self.connection.execute('DELETE FROM raw_publications WHERE rowid IN '
+                                       '(SELECT rowid FROM raw_publications WHERE received_at_ms < ? LIMIT ?)',
+                                       (cutoff_ms, limit)).rowcount
 
     def close(self):
         try:

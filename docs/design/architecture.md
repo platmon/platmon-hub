@@ -115,3 +115,21 @@ Installation/backup/restore are documented in [operations](../guides/operations.
 Cross-platform CI, actual three-device checks and synthetic experiments are evidence
 for the candidate, not proof of unattended production stability. See
 [resource budget](../development/resource-budget.md) and [remaining release gates](../development/release.md).
+
+## Opt-in replay boundary
+
+[ADR-0003](adr/0003-agent-replay-and-raw-publications.md) extends the original
+three-endpoint Live policy with two fixed replay GET resources only when raw
+capture is enabled. `replay.py` coordinates fair per-stream page turns in Fleet's
+existing per-node/shared worker bounds, after due Live work is admitted. It
+confirms process identity without feeding archived data to NodeState or alerts.
+
+Immutable validated raw pages and cursor-read commands enter a separate page/byte
+bounded queue on the existing SQLite writer. At most one raw page commits per
+writer turn after summary writes; lightweight cursor reads can share that turn.
+Durable completion, not admission, releases the stream for another page. Schema 6
+stores raw publications, transactional cursor/loss evidence and quota accounting;
+existing selected History/CSV/report consumers continue using summary tables.
+Read-only `raw-export` streams committed JSONL with bounded rows/bytes/time.
+See [raw capture](../guides/replay.md) for defaults, explicit capacity settings and
+coverage limits. Operational seven-day/fault/long-soak gates remain open.

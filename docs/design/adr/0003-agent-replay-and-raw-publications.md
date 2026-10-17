@@ -1,6 +1,6 @@
 # ADR-0003: Agent replay and durable full-publication storage
 
-- **Status:** Proposed; Hub implementation is pending
+- **Status:** Implemented locally; release and operational acceptance remain separate
 - **Date:** 2026-10-13
 - **Scope:** Opt-in recovery and persistence of complete Agent publications for historical analysis
 - **Hub baseline:** `main` at `fe00919da3cc4bafc51542b0e8a56a557ed4f542`
@@ -21,7 +21,7 @@ shared encoded payloads, additionally capped at 4096 records and 1 MiB per recor
 can shorten retention. Agent restart clears the buffer. Replay enables bounded catch-up;
 it does not guarantee complete history across outages or restarts.
 
-## Proposed decision
+## Decision
 
 Keep existing live polling, freshness, selected history and alerts. Add an opt-in replay
 collector and dedicated durable raw storage within Hub's existing SQLite writer ownership.
@@ -96,7 +96,7 @@ Agent and Hub HTTP schema versions.
 | `replay_cursors` | `(node_id, instance_id, stream)` and committed `after_id`; retained independently of raw-row pruning so expired history is not repeatedly downloaded |
 | `replay_losses` | Inclusive publication-ID bounds, stream, instance, reason and first receipt time; restart evidence may have an unknown final ID |
 
-The table names are proposed interfaces, not an installed migration. Preserve null, valid zero,
+SQLite schema 6 implements these interfaces, with an auxiliary `raw_usage` table and insert/delete triggers for transactional quota accounting. Preserve null, valid zero,
 units and source identities. Raw data need not satisfy the live `data_age_ms <= stale_after_ms`
 constraint. Never derive stable node identity from Agent hostname, endpoint or process ID.
 
@@ -175,5 +175,21 @@ real-device operational capacity requires separate measurements.
 Full raw retention enables later analysis of fields that were not selected at ingestion, but
 increases storage cost and preserves hostnames, sensor labels and device metadata. Keep it
 opt-in under existing local access boundaries, with explicit export and retention limits.
-Agent buffer expiration and restarts still cause unrecoverable gaps. This ADR proposes the
-Hub extension; it does not implement Hub ingestion, AI integration, a release or deployment.
+Agent buffer expiration and restarts still cause unrecoverable gaps. The Hub extension implements ingestion and bounded raw export. Historical projections,
+AI integration, a release and deployment remain outside this change.
+
+## Implementation notes (2026-10-17)
+
+SQLite schema 6 implements the decision with `raw_usage` accounting triggers.
+Raw retention/quota are required explicit operator choices; neither has a default.
+The independent encoded queue is 8 MiB (configurable 3–64 MiB), up to 16 commands/
+pages; decoded responses and allocator overhead are outside this encoded budget.
+Full-envelope metadata is limited to 16 KiB. Quota exhaustion rolls back the page
+and retries after backoff; it never silently evicts unexpired raw rows. Cursors
+and loss metadata survive raw pruning and require separate disk capacity planning.
+
+`GET /api/replay/status` reports capture coverage and `history.raw` reports writer
+budgets/errors. The bounded local `raw-export` command supplies JSONL ZIPs; browser
+raw exports, historical projections and AI access are subsequent consumers.
+[Replay guide](../../guides/replay.md) documents behavior and operator choices;
+[synthetic plan](../../development/benchmarks/replay-plan.md) sets pre-run budgets.
