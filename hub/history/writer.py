@@ -42,7 +42,7 @@ class HistoryWriter:
                                failed_pages=0, cursor_read_failures=0, last_error=None, retention_deleted=0,
                                quota_evicted=0, unflushed_pages=0, compressed_rows=0, json_rows=0,
                                compression_fallback=0, logical_bytes=0, stored_bytes=0, dictionaries=0,
-                               dictionary_bytes=0)
+                               dictionary_bytes=0, sampled_rows=0, sampled_duplicates=0, sampled_failures=0)
         self.path = Path(path).resolve()
         self.retention_ms = retention_days * 86400000
         self.store_factory = store_factory
@@ -137,6 +137,10 @@ class HistoryWriter:
     def submit_raw(self, page):
         return self._raw_submit('page', page, page.encoded_bytes)
 
+    def submit_sampled(self, record):
+        """Queue polled documents for sampled capture; rejected (and counted) when the raw queue is full."""
+        return self._raw_submit('sampled', record, record.encoded_bytes)
+
     def _raw_once(self, store):
         try:
             operation, value, size, future = self._raw_queue.get_nowait()
@@ -151,11 +155,16 @@ class HistoryWriter:
             if operation == 'cursor':
                 result = store.replay_cursor(*value)
             else:
-                result = store.insert_raw_page(value, self.raw_quota_bytes)
+                sampled = operation == 'sampled'
+                result = (store.insert_sampled if sampled else store.insert_raw_page)(value, self.raw_quota_bytes)
                 with self._lock:
-                    self._raw_stats['committed_pages'] += 1
-                    self._raw_stats['persisted'] += result['inserted']
-                    self._raw_stats['duplicates'] += result['duplicates']
+                    if sampled:
+                        self._raw_stats['sampled_rows'] += result['inserted']
+                        self._raw_stats['sampled_duplicates'] += result['duplicates']
+                    else:
+                        self._raw_stats['committed_pages'] += 1
+                        self._raw_stats['persisted'] += result['inserted']
+                        self._raw_stats['duplicates'] += result['duplicates']
                     self._raw_stats['quota_evicted'] += result['evicted']
                     for name, total in (('compressed_rows', 'compressed'), ('json_rows', 'stored_json'),
                                         ('compression_fallback', 'fallback'), ('logical_bytes', 'logical_bytes'),
@@ -168,7 +177,7 @@ class HistoryWriter:
                 future.set_result(result)
         except Exception as exc:
             with self._lock:
-                self._raw_stats['failed_pages' if operation == 'page' else 'cursor_read_failures'] += 1
+                self._raw_stats[dict(page='failed_pages', sampled='sampled_failures').get(operation, 'cursor_read_failures')] += 1
                 if operation == 'page' and (self._stop.is_set() or not self._accepting):
                     # Not retried by this process; the next Hub run refetches from the durable cursor.
                     self._raw_stats['unflushed_pages'] += 1

@@ -9,11 +9,10 @@ import sys
 import tempfile
 import time
 import uuid
-from dataclasses import asdict
 from pathlib import Path
 
 from .filelock import FileLock
-from .registry import load_registry, validate_registry
+from .registry import CAPTURE_LEVELS, load_registry, node_record, validate_registry
 
 
 def replace(source, target, attempts=20, delay=0.05):
@@ -46,14 +45,14 @@ def atomic_write(path, data, mode=0o600):
             temporary.unlink()
 
 
-def update_registry(path, action, *, node_id=None, name=None, endpoint=None, enabled=True, expected=None):
+def update_registry(path, action, *, node_id=None, name=None, endpoint=None, enabled=True, expected=None, capture=None):
     path = Path(path).resolve()
     with FileLock(str(path) + '.lock'):
         original = path.read_bytes() if path.exists() else None
         if original is None and action != 'add':
             raise ValueError('registry does not exist')
         nodes = [] if original is None else list(validate_registry(json.loads(original.decode('utf-8'))))
-        records = [asdict(node) for node in nodes]
+        records = [node_record(node) for node in nodes]
         if action == 'add':
             node_id = str(uuid.uuid4())
             records.append(dict(node_id=node_id, name=name, endpoint=endpoint, enabled=enabled))
@@ -67,10 +66,11 @@ def update_registry(path, action, *, node_id=None, name=None, endpoint=None, ena
             elif action == 'rename': item['name'] = name
             elif action == 'set-endpoint': item['endpoint'] = endpoint
             elif action in ('enable', 'disable'): item['enabled'] = action == 'enable'
+            elif action == 'set-capture': item['capture'] = capture
             elif action == 'remove': records.remove(item)
             else: raise ValueError('unknown registry action')
         result = validate_registry({'nodes': records})
-        data = (json.dumps({'nodes': [asdict(node) for node in result]}, indent=2, ensure_ascii=False) + '\n').encode('utf-8')
+        data = (json.dumps({'nodes': [node_record(node) for node in result]}, indent=2, ensure_ascii=False) + '\n').encode('utf-8')
         # Cooperative CLI writers share the lock; detect intervening manual edits too.
         if (path.read_bytes() if path.exists() else None) != original:
             raise ValueError('registry changed during update; retry from the latest file')
@@ -181,23 +181,24 @@ def main(argv=None):
     add.add_argument('--port', type=agent_port, help='Agent port for --host (default: 9797)')
     add.add_argument('--interactive', action='store_true', help='prompt locally and confirm before saving')
     add.add_argument('--disabled', action='store_true')
-    for action in ('rename', 'set-endpoint', 'enable', 'disable', 'remove'):
+    for action in ('rename', 'set-endpoint', 'set-capture', 'enable', 'disable', 'remove'):
         command = commands.add_parser(action)
         command.add_argument('node_id')
         if action == 'rename': command.add_argument('name')
         if action == 'set-endpoint': command.add_argument('endpoint')
+        if action == 'set-capture': command.add_argument('capture', choices=CAPTURE_LEVELS)
     args = parser.parse_args(argv)
     try:
         if args.action == 'add':
             add_arguments(args, parser)
         if args.action in ('list', 'validate'):
             nodes = load_registry(args.file)
-            print(json.dumps({'nodes': [asdict(n) for n in nodes]} if args.action == 'list' else
+            print(json.dumps({'nodes': [node_record(n) for n in nodes]} if args.action == 'list' else
                              {'valid': True, 'node_count': len(nodes)}, ensure_ascii=False))
         else:
             identity = update_registry(args.file, args.action, node_id=getattr(args, 'node_id', None),
                                        name=getattr(args, 'name', None), endpoint=getattr(args, 'endpoint', None),
-                                       enabled=not getattr(args, 'disabled', False))
+                                       enabled=not getattr(args, 'disabled', False), capture=getattr(args, 'capture', None))
             print(json.dumps({'action': args.action, 'node_id': identity}))
     except (OSError, ValueError, UnicodeError, argparse.ArgumentTypeError) as exc:
         # Do not include raw file content or endpoint credentials in errors.

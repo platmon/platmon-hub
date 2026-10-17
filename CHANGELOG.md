@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add a per-node raw capture level (ADR-0007): registry `capture` is `auto` (default),
+  `replay`, `sampled` or `off`, set with `platmon-hub nodes set-capture`. Sampled capture
+  stores the `/api/stats` and `/api/observations` documents Hub already polls under the
+  replay identity, marked `source: live_poll`, so Agents without replay (platmon 1.2.x)
+  contribute full measurements under `auto`. `/api/replay/status` reports each node's level
+  and each stream's source. The default level is not written to registry files.
+- Correct the Agent contract: with raw capture Hub may hold a replay request beside the live
+  request sequence, two connections per node at most.
+
 - Store new raw publications compressed (ADR-0006, SQLite schema 8): `zlib` with a
   shared, reference-counted dictionary per stream, verified to decode to the identical
   JSON before commit, with JSON as the fallback. The raw quota charges stored bytes; on

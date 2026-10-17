@@ -7,6 +7,11 @@ from . import protocol
 from .history.raw import STREAMS, validate_page
 
 
+def capture_level(token):
+    """The node's raw capture level; tokens without a registry node use the default."""
+    return getattr(getattr(token, 'node', None), 'capture', 'auto')
+
+
 class ReplayCollector:
     def __init__(self, writer, clock=time.monotonic):
         self.writer, self.clock = writer, clock
@@ -28,12 +33,14 @@ class ReplayCollector:
             node = dict(token=token, turn=0, streams={name: dict(
                 due=0, future=None, phase=None, loaded=False, cursor=None,
                 state='starting', error=None, failures=0, after_id=None,
-                instance_id=None, has_more=False, pages=0, losses=0) for name in STREAMS})
+                instance_id=None, has_more=False, pages=0, losses=0, supported=None) for name in STREAMS})
             self._nodes[node_id] = node
         return node
 
     def _failure(self, item, code, stopped=False, unavailable=False):
         item.update(future=None, loaded=False, state='stopped' if stopped else 'unavailable' if unavailable else 'retrying', error=code)
+        if unavailable:
+            item['supported'] = False
         item['failures'] = min(6, item['failures']+1)
         item['due'] = float('inf') if stopped else self.clock() + (60 if unavailable else min(60, 2**item['failures']))
 
@@ -41,6 +48,8 @@ class ReplayCollector:
         """Called by scheduler; asynchronous cursor reads and commits consume no workers."""
         with self._lock:
             node = self._node(node_id, token)
+            if capture_level(token) not in ('auto', 'replay'):
+                return None
             for offset in range(len(STREAMS)):
                 index = (node['turn']+offset) % len(STREAMS)
                 name = STREAMS[index]
@@ -57,7 +66,7 @@ class ReplayCollector:
                         else:
                             # The commit result is the durable cursor; only failures re-read it.
                             cursor = (item['pending_instance_id'], result['after_id'])
-                            item.update(future=None, loaded=True, cursor=cursor, state='captured', error=None, failures=0,
+                            item.update(future=None, loaded=True, cursor=cursor, state='captured', error=None, failures=0, supported=True,
                                         after_id=cursor[1], instance_id=cursor[0], pages=item['pages']+1,
                                         due=self.clock() + (0.05 if item['has_more'] else 5 if name == 'core' else 10))
                     except Exception as exc:
@@ -103,11 +112,32 @@ class ReplayCollector:
             code = exc.code if isinstance(exc, protocol.ReplayConflict) else exc.category if isinstance(exc, protocol.AgentFailure) else type(exc).__name__
             self._failure(node['streams'][stream], code, stopped, isinstance(exc, protocol.OptionalUnsupported))
 
+    def sampled_streams(self, node_id, token, streams):
+        """Streams whose polled documents are stored as sampled capture now (ADR-0007)."""
+        level = capture_level(token)
+        if level == 'sampled':
+            return tuple(streams)
+        if level != 'auto':
+            return ()
+        with self._lock:
+            node = self._nodes.get(node_id)
+            if node is None or node['token'] is not token:
+                return ()
+            return tuple(name for name in streams if node['streams'][name]['supported'] is False)
+
+    def _source(self, node, name):
+        level = capture_level(node['token'])
+        if level in ('sampled', 'off', 'replay'):
+            return level
+        return 'sampled' if node['streams'][name]['supported'] is False else 'replay'
+
     def snapshot(self):
         with self._lock:
-            return {'enabled': True, 'nodes': {node_id: {name: {k: value for k, value in item.items()
-                    if k in ('state', 'error', 'after_id', 'instance_id', 'has_more', 'pages', 'losses')}
-                    for name, item in node['streams'].items()} for node_id, node in self._nodes.items()}}
+            return {'enabled': True, 'nodes': {node_id: {name: dict({k: value for k, value in item.items()
+                    if k in ('state', 'error', 'after_id', 'instance_id', 'has_more', 'pages', 'losses')},
+                    source=self._source(node, name))
+                    for name, item in node['streams'].items()} for node_id, node in self._nodes.items()},
+                    'capture': {node_id: capture_level(node['token']) for node_id, node in self._nodes.items()}}
 
 
 def fetch_page(client, endpoint, node_id, stream, cursor, status_deadline=2, replay_deadline=3):

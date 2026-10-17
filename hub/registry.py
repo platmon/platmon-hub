@@ -2,9 +2,13 @@
 
 import json
 import uuid
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
+
+
+# Raw capture level per node (ADR-0007); only meaningful with --raw-capture.
+CAPTURE_LEVELS = ("auto", "replay", "sampled", "off")
 
 
 @dataclass(frozen=True)
@@ -13,6 +17,15 @@ class Node:
     name: str
     endpoint: str
     enabled: bool = True
+    capture: str = "auto"
+
+
+def node_record(node):
+    """Registry JSON for a node; the default capture level is omitted so files stay readable by older Hubs."""
+    record = asdict(node)
+    if record["capture"] == "auto":
+        del record["capture"]
+    return record
 
 
 def load_registry(path):
@@ -29,16 +42,19 @@ def validate_registry(raw):
     if len(raw["nodes"]) > 256:
         raise ValueError("registry exceeds 256 nodes")
     for record in raw["nodes"]:
-        if not isinstance(record, dict) or not {"node_id", "name", "endpoint"} <= set(record) or set(record) - {"node_id", "name", "endpoint", "enabled"}:
+        if not isinstance(record, dict) or not {"node_id", "name", "endpoint"} <= set(record) or set(record) - {"node_id", "name", "endpoint", "enabled", "capture"}:
             raise ValueError("invalid node record")
         identity, name, endpoint = record["node_id"], record["name"], record["endpoint"]
         enabled = record.get("enabled", True)
+        capture = record.get("capture", "auto")
         if not isinstance(identity, str) or str(uuid.UUID(identity)) != identity:
             raise ValueError("node_id must be canonical UUID")
         if not isinstance(name, str) or not (1 <= len(name) <= 100) or not name.strip():
             raise ValueError("node name must be nonempty and at most 100 characters")
         if type(enabled) is not bool:
             raise ValueError("enabled must be boolean")
+        if capture not in CAPTURE_LEVELS:
+            raise ValueError("capture must be one of auto, replay, sampled or off")
         if not isinstance(endpoint, str):
             raise ValueError("endpoint must be an HTTP origin")
         url = urlsplit(endpoint)
@@ -56,5 +72,5 @@ def validate_registry(raw):
             raise ValueError("duplicate node_id or agent endpoint")
         ids.add(identity)
         endpoints.add(origin)
-        nodes.append(Node(identity, name, endpoint.rstrip("/"), enabled))
+        nodes.append(Node(identity, name, endpoint.rstrip("/"), enabled, capture))
     return tuple(nodes)

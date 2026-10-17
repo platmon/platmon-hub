@@ -2,7 +2,7 @@
 
 [Documentation index](../../README.md) · [Design reference](../README.md)
 
-- **Status:** Proposed (draft for review); not implemented
+- **Status:** Implemented in Hub; see [implementation notes](#implementation-notes-2026-10-17)
 - **Date:** 2026-10-17
 - **Scope:** Which raw publications Hub persists for each node, and from which source
 - **Hub baseline:** `main` at `f4ba1b5e7bb5fe5795462e7ae4b11a5208747d46` (SQLite schema 7)
@@ -140,3 +140,18 @@ replay and back with overlapping IDs; slow groups polled more often than they pu
 losses for intentional holes; queue-full drops without live impact; registry validation, reload
 and rejection by an older registry parser; export of mixed sampled and replayed rows; and every
 interpreter supported under [ADR-0005](0005-os-and-python-support.md).
+
+## Implementation notes (2026-10-17)
+
+The registry accepts `capture`; `platmon-hub nodes set-capture` sets it, other CLI and web
+edits keep it, and the default `auto` is not written, so registries that never set a level
+stay readable by older Hubs. A capture-only change is recorded as a `registry_changed`
+event with reason `capture_changed`. `auto` switches a stream to sampled once its replay
+answered 404 and back after the next successful replay commit. `/api/replay/status` adds a
+`capture` map and a per-stream `source`; `history.raw` adds `sampled_rows`,
+`sampled_duplicates` and `sampled_failures`. `nodes.jsonl` fields wait for ADR-0004.
+
+Checked on 2026-10-17 against the installed platmon 1.3.0 service with `capture: sampled`
+for 32 seconds: no replay request, core rows every five seconds, slow groups deduplicated
+(four repeated observations), every envelope `live_poll`, stored compressed at 5.3 % of the
+JSON size.

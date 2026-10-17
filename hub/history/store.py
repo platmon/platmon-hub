@@ -267,58 +267,17 @@ class HistoryStore:
             if (prior is None and page.after != 0) or (prior is not None and page.after > prior[0]):
                 raise ValueError('replay cursor has unexplained advance')
             newest_prior = c.execute('SELECT coalesce(max(rowid),0) FROM raw_publications').fetchone()[0]
-            envelope = page.envelope_json.encode()
-            digest = hashlib.sha256(envelope).hexdigest()
-            c.execute('INSERT INTO raw_envelopes (digest,envelope_json,encoded_bytes) VALUES (?,?,?) ON CONFLICT(digest) DO NOTHING',
-                      (digest, page.envelope_json, len(envelope)+256))
-            envelope_id = c.execute('SELECT envelope_id FROM raw_envelopes WHERE digest=?', (digest,)).fetchone()[0]
-            inserted = 0
-            counts = dict(compressed=0, stored_json=0, fallback=0, logical_bytes=0, stored_bytes=0)
-            dictionaries = {}
-            for pid, payload, gap, start, end in page.records:
-                blob, content, digest, failed = self.dictionaries.encode(page.node_id, page.instance_id, page.stream, payload)
-                if blob is None:
-                    stored, dictionary_id, size = payload, None, len(payload.encode()) + 256
-                else:
-                    if digest not in dictionaries:
-                        c.execute('INSERT INTO raw_dictionaries (digest,content,encoded_bytes) VALUES (?,?,?) '
-                                  'ON CONFLICT(digest) DO NOTHING', (digest, content, len(content)+256))
-                        dictionaries[digest] = c.execute('SELECT dictionary_id FROM raw_dictionaries WHERE digest=?',
-                                                         (digest,)).fetchone()[0]
-                    stored, dictionary_id, size = '', dictionaries[digest], len(blob) + 256
-                row = c.execute('INSERT INTO raw_publications VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) '
-                                'ON CONFLICT(node_id,instance_id,stream,publication_id) DO NOTHING',
-                                key + (pid, page.received_at_ms, start, end, int(gap), stored, envelope_id, size,
-                                       blob, dictionary_id)).rowcount
-                if row:
-                    inserted += 1
-                    counts['compressed' if blob is not None else 'stored_json'] += 1
-                    counts['fallback'] += failed
-                    counts['logical_bytes'] += len(payload.encode())
-                    counts['stored_bytes'] += size - 256
-            # Duplicate-only or loss-only pages leave no reference to their envelope or dictionary.
-            c.execute('DELETE FROM raw_envelopes WHERE envelope_id=? AND refs=0', (envelope_id,))
-            for dictionary_id in dictionaries.values():
-                c.execute('DELETE FROM raw_dictionaries WHERE dictionary_id=? AND refs=0', (dictionary_id,))
+            inserted, counts = self._publications(page.node_id, page.instance_id, page.received_at_ms, page.envelope_json,
+                                                  [(page.stream,) + tuple(r) for r in page.records])
             for start, end, reason in page.losses:
                 c.execute('INSERT INTO replay_losses VALUES (?,?,?,?,?,?,?) '
                           'ON CONFLICT(node_id,instance_id,stream,from_id,reason) DO UPDATE SET to_id=max(to_id,excluded.to_id)',
                           key + (start, end, reason, page.received_at_ms))
-            # Make room by evicting the oldest previously committed rows, never this page's.
-            evicted = 0
-            for _ in range(16):
-                if self._raw_usage() <= quota_bytes:
-                    break
-                deleted = self._evict_raw(1000, newest_prior)
-                if not deleted:
-                    break
-                evicted += deleted
-            if self._raw_usage() > quota_bytes:
-                raise ValueError('raw_quota_exceeded')
+            evicted = self._make_room(quota_bytes, newest_prior)
             c.execute('INSERT INTO replay_cursors VALUES (?,?,?,?,1,?) ON CONFLICT(node_id,instance_id,stream) '
                       'DO UPDATE SET after_id=max(after_id,excluded.after_id),active=1,received_at_ms=excluded.received_at_ms',
                       key + (page.next_after, page.received_at_ms))
-            live = c.execute('SELECT count(*), coalesce(sum(encoded_bytes),0) FROM raw_dictionaries').fetchone()
+            live = self._dictionary_usage()
             c.execute('COMMIT')
             return dict(counts, inserted=inserted, duplicates=len(page.records)-inserted, evicted=evicted,
                         after_id=max(page.next_after, prior[0] if prior else 0),
@@ -327,6 +286,81 @@ class HistoryStore:
             if c.in_transaction:
                 c.execute('ROLLBACK')
             raise
+
+    def insert_sampled(self, record, quota_bytes):
+        """Polled documents under the replay identity; no cursor or replay loss changes (ADR-0007)."""
+        c = self.connection
+        c.execute('BEGIN IMMEDIATE')
+        try:
+            newest_prior = c.execute('SELECT coalesce(max(rowid),0) FROM raw_publications').fetchone()[0]
+            inserted, counts = self._publications(record.node_id, record.instance_id, record.received_at_ms,
+                                                  record.envelope_json,
+                                                  [(stream, pid, payload, False, start, end)
+                                                   for stream, pid, payload, start, end in record.rows])
+            evicted = self._make_room(quota_bytes, newest_prior)
+            live = self._dictionary_usage()
+            c.execute('COMMIT')
+            return dict(counts, inserted=inserted, duplicates=len(record.rows)-inserted, evicted=evicted,
+                        dictionaries=live[0], dictionary_bytes=live[1])
+        except BaseException:
+            if c.in_transaction:
+                c.execute('ROLLBACK')
+            raise
+
+    def _publications(self, node_id, instance_id, received_at_ms, envelope_json, rows):
+        """Insert (stream, id, payload, gap_before, start, end) rows in the caller's transaction."""
+        c = self.connection
+        envelope = envelope_json.encode()
+        digest = hashlib.sha256(envelope).hexdigest()
+        c.execute('INSERT INTO raw_envelopes (digest,envelope_json,encoded_bytes) VALUES (?,?,?) ON CONFLICT(digest) DO NOTHING',
+                  (digest, envelope_json, len(envelope)+256))
+        envelope_id = c.execute('SELECT envelope_id FROM raw_envelopes WHERE digest=?', (digest,)).fetchone()[0]
+        inserted = 0
+        counts = dict(compressed=0, stored_json=0, fallback=0, logical_bytes=0, stored_bytes=0)
+        dictionaries = {}
+        for stream, pid, payload, gap, start, end in rows:
+            blob, content, digest, failed = self.dictionaries.encode(node_id, instance_id, stream, payload)
+            if blob is None:
+                stored, dictionary_id, size = payload, None, len(payload.encode()) + 256
+            else:
+                if digest not in dictionaries:
+                    c.execute('INSERT INTO raw_dictionaries (digest,content,encoded_bytes) VALUES (?,?,?) '
+                              'ON CONFLICT(digest) DO NOTHING', (digest, content, len(content)+256))
+                    dictionaries[digest] = c.execute('SELECT dictionary_id FROM raw_dictionaries WHERE digest=?',
+                                                     (digest,)).fetchone()[0]
+                stored, dictionary_id, size = '', dictionaries[digest], len(blob) + 256
+            row = c.execute('INSERT INTO raw_publications VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) '
+                            'ON CONFLICT(node_id,instance_id,stream,publication_id) DO NOTHING',
+                            (node_id, instance_id, stream, pid, received_at_ms, start, end, int(gap), stored,
+                             envelope_id, size, blob, dictionary_id)).rowcount
+            if row:
+                inserted += 1
+                counts['compressed' if blob is not None else 'stored_json'] += 1
+                counts['fallback'] += failed
+                counts['logical_bytes'] += len(payload.encode())
+                counts['stored_bytes'] += size - 256
+        # Duplicate-only or loss-only pages leave no reference to their envelope or dictionary.
+        c.execute('DELETE FROM raw_envelopes WHERE envelope_id=? AND refs=0', (envelope_id,))
+        for dictionary_id in dictionaries.values():
+            c.execute('DELETE FROM raw_dictionaries WHERE dictionary_id=? AND refs=0', (dictionary_id,))
+        return inserted, counts
+
+    def _make_room(self, quota_bytes, newest_prior):
+        # Make room by evicting the oldest previously committed rows, never this transaction's.
+        evicted = 0
+        for _ in range(16):
+            if self._raw_usage() <= quota_bytes:
+                break
+            deleted = self._evict_raw(1000, newest_prior)
+            if not deleted:
+                break
+            evicted += deleted
+        if self._raw_usage() > quota_bytes:
+            raise ValueError('raw_quota_exceeded')
+        return evicted
+
+    def _dictionary_usage(self):
+        return self.connection.execute('SELECT count(*), coalesce(sum(encoded_bytes),0) FROM raw_dictionaries').fetchone()
 
     def _raw_usage(self):
         return self.connection.execute('SELECT encoded_bytes FROM raw_usage WHERE singleton=1').fetchone()[0]

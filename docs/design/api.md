@@ -104,11 +104,14 @@ permits writes or accepts an Agent/network URL.
 
 ## Replay diagnostics
 
-`GET /api/replay/status` returns `{schema_version: 1, replay: {enabled, nodes}}`.
+`GET /api/replay/status` returns `{schema_version: 1, replay: {enabled, nodes, capture}}`.
+`capture` maps each node UUID to its configured raw capture level (`auto`, `replay`,
+`sampled` or `off`; [ADR-0007](adr/0007-sampled-capture-level.md)), and every stream also
+reports its effective `source`: `replay`, `sampled` or `off`.
 When disabled only `enabled: false` is returned. `nodes` is keyed by Hub node UUID,
 then by `core`, `storage`, `wifi`, `battery`, `probe`. Each stream reports `state`,
 `error`, last durable `instance_id` and acknowledged `after_id`,
-`has_more`, acknowledged `pages` and observed missing-range `losses` count. States
+`has_more`, acknowledged `pages`, observed missing-range `losses` count and `source`. States
 include `starting`, `fetching`, `committing`, `captured`, `retrying`, `unavailable`
 and `stopped`. In-memory counters reset on Hub restart. The instance/cursor pair changes only after a durable cursor read or acknowledged
 commit; it remains unchanged while a new page is committing.

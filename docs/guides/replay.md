@@ -31,6 +31,26 @@ Protect raw data, migration backups and exports: complete publications can conta
 hostnames, sensor labels and device/probe metadata. The database is not encrypted.
 Restoring a backup is required for a code downgrade; never lower `user_version`.
 
+## Capture levels
+
+Each registry node may set `capture` ([ADR-0007](../design/adr/0007-sampled-capture-level.md));
+omitted means `auto`. Set it with `platmon-hub nodes --file ... set-capture NODE_UUID LEVEL`.
+
+| Level | Raw rows come from |
+| --- | --- |
+| `auto` | Replay where the Agent stream supports it; otherwise the documents Hub already polls |
+| `replay` | Replay only |
+| `sampled` | Live polls only: core every 5 s, each slow group at most every 10 s; no replay requests |
+| `off` | Nothing raw for this node; Live, history and alerts are unchanged |
+
+Sampled rows use the replay identity, so a publication captured both ways is stored once
+(the first copy). Their envelope says `source: live_poll` and `gap_before_observed: false`:
+`gap_before` is stored as 0 but is not evidence, and sampled core rows lack the
+`sample.stale` field that only replay adds. Holes between sampled IDs are not losses and
+produce no `replay_losses`. Sampled capture has no outage recovery. It shares the raw queue;
+a full queue drops the record and counts it in `history.raw.rejected`. Agents on platmon
+1.2.x and older answer replay with 404, so under `auto` they deliver sampled rows.
+
 ## Coverage and failure behavior
 
 Read `GET /api/replay/status` for per-node/per-stream state, last durable cursor,
@@ -38,7 +58,8 @@ instance, backlog, committed-page count and last error. `GET /api/history/status
 adds `history.raw` queue bytes/capacity, committed counts, storage errors, quota
 and retention settings, and compression counters: `compressed_rows`, `json_rows`,
 `compression_fallback`, live `dictionaries` and `dictionary_bytes` (as of the last
-committed page), `logical_bytes`, `stored_bytes` and `stored_logical_ratio` since start. These endpoints do not expose payloads or Agent URLs.
+committed page), `logical_bytes`, `stored_bytes` and `stored_logical_ratio` since start, and
+sampled capture's `sampled_rows`, `sampled_duplicates` and `sampled_failures`. These endpoints do not expose payloads or Agent URLs.
 
 - `captured`: the last page committed; it is not a promise of complete history.
 - `committing`: queue admission succeeded, but the cursor is not yet durable.
