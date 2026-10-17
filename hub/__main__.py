@@ -86,6 +86,9 @@ def registry_or_exit(parser, path):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == 'handoff':
+        from .handoff import main as handoff_main
+        return handoff_main(argv[1:])
     if argv and argv[0] == 'raw-export':
         from .raw_export import main as raw_export_main
         return raw_export_main(argv[1:])

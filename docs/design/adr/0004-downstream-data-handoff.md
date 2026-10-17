@@ -2,7 +2,7 @@
 
 [Documentation index](../../README.md) · [Design reference](../README.md)
 
-- **Status:** Accepted; stage 1 (sequence and loss accounting) implemented as SQLite schema 9, stages 2–5 pending; see [implementation notes](#implementation-notes)
+- **Status:** Accepted; stages 1 (sequence and loss accounting, SQLite schema 9) and 2 (segment builder) implemented, stages 3–5 pending; see [implementation notes](#implementation-notes)
 - **Date:** 2026-10-17
 - **Scope:** A versioned, incremental, file-based contract through which a separate post-processing system receives committed Hub data
 - **Hub baseline:** `main` at `758d62f6f2b06d82b71f564d0b21c5e2914de848` (SQLite schema 7)
@@ -127,8 +127,11 @@ never reused after deletes; SQLite rowids are not sufficient because they may be
 Because one writer commits transactions serially, a read snapshot that contains sequence `S`
 contains every smaller committed value.
 
-The unit of delivery is a **row version**: each assigned sequence value is delivered in
-exactly one segment, and a row changed after delivery is delivered again with its new value.
+The unit of delivery is a **row version**: a row's current sequence value is delivered in
+exactly one segment, and a row changed after delivery is delivered again with its new value. A
+row changed again before its segment was built is delivered once, at its latest version, so
+sequence values inside a segment can have holes; the chain of segment ranges, not contiguity of
+sequence values, proves completeness.
 
 | Table | New sequence value on | Consumer key (latest version wins) |
 | --- | --- | --- |
@@ -173,7 +176,8 @@ not depend on rescanning files after a restart.
 
 ## Spool, publication and acknowledgement
 
-- Segment file: `<spool>/<hub_store_id>/<from_seq+1>-<to_seq>.zip`, written to a temporary file
+- Segment file: `<spool>/<hub_store_id>/<from_seq+1>-<to_seq>.zip`, both numbers zero-padded to 20
+  digits so names sort in chain order, written to a temporary file
   in the same directory and published with a hard link, as the existing exports do. Existing
   files are never overwritten. Members use ZIP deflate.
 - A segment closes after **15 minutes** or **256 MiB of uncompressed members**, whichever comes
@@ -417,7 +421,7 @@ must run a replay-capable Agent before their measurements reach the consumer.
    above while enabled.
 2. Loss accounting and coalescing in raw retention, quota eviction and history/event pruning,
    including rows awaiting backfill, and quota eviction order (acknowledged first).
-3. Segment builder and CLI (`python -m hub handoff --once`) producing format 1 from a range.
+3. Segment builder and offline CLI (`python -m hub handoff --db DB build --spool DIR`) producing format 1.
 4. Background scheduler, startup validation and recovery, spool ownership and deletion,
    acknowledgement validation, the start choice and the `existing` backfill task.
 5. Status and dashboard diagnostics, documentation of retention/quota interaction, and a
@@ -455,3 +459,18 @@ instead of adding a row. Quota eviction removes acknowledged raw rows first, in 
 and only then the oldest rows. `enable_handoff('now')` records one `not_handed_off` loss per
 table for rows not numbered since the previous enable. The segment builder, spool,
 acknowledgement, backfill task, CLI options and diagnostics are stages 2–5.
+
+**Stage 2 (2026-10-17), segment builder.** `hub/handoff.py` builds format 1 from one read
+snapshot: rows of the six numbered tables merged in sequence order, raw payloads decoded with
+`encoded_bytes` as their logical JSON size like `raw-export`, `raw_envelopes.jsonl` with
+`{digest, envelope}` for exactly the envelopes its rows reference, an optional `nodes.jsonl`
+(`node_id`, `enabled`, `capture`) from a registry file, and a manifest with per-member row
+counts, sizes and SHA-256. The size limit cuts at a row boundary and always admits one row.
+The file is published by hard link and its SHA-256 then becomes the recorded chain head. Before
+building, a segment that continues the chain but whose delivery was not recorded is adopted;
+any other file stops handoff.
+
+The builder runs offline: `python -m hub handoff --db DB status|enable --start now|existing|disable|build`
+takes the history database's file lock, so it refuses while a Hub uses the database, and opens
+it without a Hub session or continuity reconciliation. Building inside a running Hub through
+its writer, acknowledgement, spool deletion and backfill are stage 3.

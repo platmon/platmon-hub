@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add the handoff segment builder (ADR-0004 stage 2) and an offline
+  `platmon-hub handoff --db DB status|enable|disable|build` command. `build` publishes the
+  next segment (decoded raw rows, referenced envelopes, replay losses, gaps, events, Hub
+  sessions, handoff losses, optional registry snapshot and a hashed, chained manifest) into
+  `<spool>/<store id>/` and records it as delivered. It requires that no Hub uses the
+  database; building inside a running Hub comes with acknowledgements in a later change.
+
 - Prepare downstream handoff (ADR-0004 stage 1, SQLite schema 9): a store identity, a
   commit sequence assigned by triggers only while handoff is enabled, `gaps.gap_uid`, and
   `handoff_losses` recording retention and quota deletions of unacknowledged rows. Quota
