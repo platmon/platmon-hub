@@ -5,7 +5,7 @@
 - **Status:** Proposed (draft for review)
 - **Date:** 2026-10-17
 - **Scope:** Interpreters and operating systems on which Hub runs, and the CI evidence required for them
-- **Hub baseline:** `main` at `9041ff4332be5d1f5a8b31dcd59ab6a3f060fbdf`
+- **Hub baseline:** `main` at `fb5f0eed5b6268a58d05077281ef7de2779a5d36`
 - **Related:** [platmon ADR 0001: Ubuntu LTS and Python support policy](https://github.com/platmon/platmon/blob/main/docs/development/adr/0001-ubuntu-lts-python-support.md), [hub ADR-0004](0004-downstream-data-handoff.md)
 
 ## Context
