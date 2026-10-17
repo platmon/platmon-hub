@@ -45,6 +45,22 @@ jobs:
           dpkg-deb -x ./*.deb extracted
           popd
           python scripts/check-proxy.py --nginx "$RUNNER_TEMP/nginx-check/extracted/usr/sbin/nginx"
+      - name: Browser History and Agent UI checks (synthetic, loopback only)
+        if: runner.os == 'Linux' && matrix.python == '3.13'
+        run: |
+          # Playwright (Apache-2.0) is verification tooling, installed outside the repository; Hub keeps no runtime dependency.
+          tools="$RUNNER_TEMP/browser-tools"
+          mkdir -p "$tools"
+          npm install --prefix "$tools" --no-save --no-audit --no-fund playwright@1.64.1
+          "$tools/node_modules/.bin/playwright" install --with-deps --only-shell chromium
+          python -m hub --nodes nodes.example.json --port 9788 > "$RUNNER_TEMP/browser-hub.log" 2>&1 &
+          hub=$!
+          trap 'kill "$hub"' EXIT
+          for i in $(seq 40); do curl -sf http://127.0.0.1:9788/healthz > /dev/null && break; sleep 0.25; done
+          curl -sf http://127.0.0.1:9788/healthz > /dev/null || { cat "$RUNNER_TEMP/browser-hub.log"; exit 1; }
+          export NODE_PATH="$tools/node_modules"
+          node scripts/check-history-ui.cjs http://127.0.0.1:9788
+          node scripts/check-agent-ui.cjs http://127.0.0.1:9788
       - name: Validate Windows launch and startup scripts
         if: runner.os == 'Windows'
         shell: pwsh
