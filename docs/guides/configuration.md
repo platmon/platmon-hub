@@ -16,6 +16,10 @@ for service accounts and filesystem permissions.
 | `--raw-retention-days DAYS` | Required for raw capture; finite positive, at most 365 days; based on receipt time |
 | `--raw-quota-mib MIB` | Required for raw capture; 1–1048576; encoded raw rows plus envelope/bookkeeping, not SQLite file size |
 | `--raw-queue-mib MIB` | 8; 3–64 MiB encoded replay queue, at most 16 pending commands/pages |
+| `--handoff-spool PATH` | Opt-in downstream handoff ([ADR-0004](../design/adr/0004-downstream-data-handoff.md)); an existing writable directory with hard links; requires raw capture and the two options below |
+| `--handoff-spool-quota-mib MIB` | Required for handoff; 1–1048576; segment production pauses while the spool holds this much |
+| `--handoff-spool-retention-days DAYS` | Required for handoff; keeps acknowledged segments; at most `--raw-retention-days` |
+| `--handoff-start now\|existing` | `now`; applies when handoff is first enabled: exclude existing rows (recorded as `not_handed_off`) or hand them off by backfill |
 | `--archive-dir PATH` | Opt-in daily archive directory; requires history; see [exports and reports](data-export.md) |
 | `--archive-retention-days DAYS` | 90; raw ZIP retention upper bound, subject to quota |
 | `--archive-summary-retention-days DAYS` | 365; daily-summary retention upper bound, subject to quota |

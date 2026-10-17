@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Run downstream handoff inside the Hub (ADR-0004 stage 3): `--handoff-spool`,
+  `--handoff-spool-quota-mib`, `--handoff-spool-retention-days` and `--handoff-start now|existing`.
+  Segments are built every 15 minutes, back to back after a size-capped one and on clean
+  shutdown; acknowledgement files advance the acknowledged sequence; acknowledged segments
+  expire with the spool retention and unacknowledged ones with the data retention, as a recorded
+  loss; production pauses at the spool quota; `existing` backfills earlier rows in batches. All
+  state changes go through the history writer. Startup validates the spool and retention.
+
 - Add the handoff segment builder (ADR-0004 stage 2) and an offline
   `platmon-hub handoff --db DB status|enable|disable|build` command. `build` publishes the
   next segment (decoded raw rows, referenced envelopes, replay losses, gaps, events, Hub

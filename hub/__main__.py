@@ -123,6 +123,11 @@ def main(argv=None):
     parser.add_argument('--raw-retention-days', type=positive_days, help='explicit raw receipt-time retention, at most 365 days')
     parser.add_argument('--raw-quota-mib', type=int, help='explicit retained encoded raw data budget; not a SQLite file-size cap')
     parser.add_argument('--raw-queue-mib', type=int, default=8, help='bounded encoded replay queue, 3–64 MiB (default: 8)')
+    parser.add_argument('--handoff-spool', help='existing directory for downstream handoff segments (ADR-0004; requires raw capture)')
+    parser.add_argument('--handoff-spool-quota-mib', type=int, help='spool budget; segment production pauses when reached')
+    parser.add_argument('--handoff-spool-retention-days', type=positive_days, help='keep acknowledged segments; at most the raw retention')
+    parser.add_argument('--handoff-start', choices=('now', 'existing'), default='now',
+                        help='when handoff is first enabled: exclude existing rows (now) or hand them off (existing)')
     parser.add_argument("--archive-dir", help="opt-in dedicated daily CSV ZIP archive directory (requires history)")
     parser.add_argument("--archive-retention-days", type=int, default=90)
     parser.add_argument("--archive-summary-retention-days", type=int, default=365)
@@ -137,6 +142,19 @@ def main(argv=None):
             parser.error('--raw-capture requires --history-db, --raw-retention-days (0–365], --raw-quota-mib (1–1048576) and --raw-queue-mib (3–64)')
     elif args.raw_retention_days is not None or args.raw_quota_mib is not None or args.raw_queue_mib != 8:
         parser.error('raw storage options require --raw-capture')
+    handoff_options = (args.handoff_spool, args.handoff_spool_quota_mib, args.handoff_spool_retention_days)
+    if any(option is not None for option in handoff_options):
+        if (not args.raw_capture or None in handoff_options or not 1 <= args.handoff_spool_quota_mib <= 1048576 or
+                args.handoff_spool_retention_days > args.raw_retention_days):
+            parser.error('--handoff-spool requires --raw-capture, --handoff-spool-quota-mib (1–1048576) and '
+                         '--handoff-spool-retention-days no longer than --raw-retention-days')
+        from .handoff import HandoffError, validate_spool
+        try:
+            validate_spool(args.handoff_spool)
+        except HandoffError as exc:
+            parser.error(str(exc))
+    elif args.handoff_start != 'now':
+        parser.error('--handoff-start requires --handoff-spool')
     if args.archive_dir and (not args.history_db or not 1 <= args.archive_retention_days <= 3650 or not 1 <= args.archive_summary_retention_days <= 3650 or not 1 <= args.archive_quota_mib <= 1048576):
         parser.error("--archive-dir requires history and valid retention/quota bounds")
     archive = None
@@ -171,6 +189,14 @@ def main(argv=None):
         from .archive import ArchiveScheduler
         archive = ArchiveScheduler(args.history_db, args.archive_dir, args.archive_retention_days, args.archive_quota_mib * 1024 ** 2, min(31, max(1, math.ceil(args.history_retention_days))), args.archive_summary_retention_days)
     server.archive = archive
+    handoff = None
+    if args.handoff_spool:
+        from .handoff import HandoffScheduler
+        days = min(args.raw_retention_days, args.history_retention_days, args.event_retention_days)
+        handoff = HandoffScheduler(history, args.handoff_spool, quota_bytes=args.handoff_spool_quota_mib * 1024**2,
+                                   retention_ms=args.handoff_spool_retention_days * 86400000,
+                                   data_retention_ms=days * 86400000, start=args.handoff_start, registry=args.nodes)
+    server.handoff = handoff
     previous_sigterm = signal.getsignal(signal.SIGTERM)
     def terminate(signum, frame):
         raise KeyboardInterrupt()
@@ -178,12 +204,14 @@ def main(argv=None):
     try:
         fleet.start()
         if archive is not None: archive.start()
+        if handoff is not None: handoff.start()
         logging.info("platmon-hub serving on %s:%s", *server.server_address[:2])
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
         pass
     finally:
         server.server_close()
+        if handoff is not None: handoff.close()
         if archive is not None: archive.close()
         fleet.close()
         signal.signal(signal.SIGTERM, previous_sigterm)

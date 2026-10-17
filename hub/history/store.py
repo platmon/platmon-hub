@@ -29,6 +29,7 @@ class HistoryStore:
         self.session_id = None
         self.lock = FileLock(str(self.path) + '.lock')
         self.dictionaries = Dictionaries()
+        self._backfill_position = {}
 
     def open(self):
         self.lock.acquire()
@@ -508,6 +509,76 @@ class HistoryStore:
 
     def disable_handoff(self):
         self.connection.execute('UPDATE handoff_state SET enabled=0')
+
+    def record_delivery(self, previous, to_seq, segment, digest):
+        """Advance the chain head after a segment was published; refuses a stale predecessor."""
+        c = self.connection
+        c.execute('BEGIN IMMEDIATE')
+        try:
+            if c.execute('SELECT delivered_seq FROM handoff_state').fetchone()[0] != previous:
+                raise ValueError('handoff_state_changed')
+            c.execute('UPDATE handoff_state SET delivered_seq=?, last_segment=?, last_digest=?', (to_seq, segment, digest))
+            c.execute('COMMIT')
+        except BaseException:
+            if c.in_transaction:
+                c.execute('ROLLBACK')
+            raise
+        return self.handoff_state()
+
+    def record_acknowledged(self, acked_seq):
+        """Acknowledgement only moves forward and never past what was delivered."""
+        self.connection.execute('UPDATE handoff_state SET acked_seq=max(acked_seq, min(?, delivered_seq))', (acked_seq,))
+        return self.handoff_state()
+
+    def record_segment_loss(self, segment, from_seq, to_seq, rows, first_ms, last_ms):
+        """An unacknowledged segment deleted under retention: record it and resolve its range."""
+        c = self.connection
+        c.execute('BEGIN IMMEDIATE')
+        try:
+            c.execute('INSERT INTO handoff_losses (loss_id,table_name,reason,from_seq,to_seq,from_received_ms,to_received_ms,rows) '
+                      'VALUES (?,?,?,?,?,?,?,?)', (uuid.uuid4().hex, 'segment:' + segment, 'retention', from_seq + 1, to_seq,
+                                                   first_ms, last_ms, rows))
+            c.execute('UPDATE handoff_state SET acked_seq=max(acked_seq, ?) WHERE acked_seq >= ?', (to_seq, from_seq))
+            c.execute('COMMIT')
+        except BaseException:
+            if c.in_transaction:
+                c.execute('ROLLBACK')
+            raise
+        return self.handoff_state()
+
+    def backfill_handoff(self, limit=1000):
+        """Number up to limit rows that existed when handoff started with 'existing'; 0 when done."""
+        c = self.connection
+        state = self.handoff_state()
+        bound = state['backfill_bound_ms']
+        if not state['enabled'] or bound is None:
+            return 0
+        c.execute('BEGIN IMMEDIATE')
+        try:
+            budget = limit
+            for table, time_column in HANDOFF_TABLES.items():
+                # Keyset over (receipt time, rowid) so each batch continues where the last one stopped.
+                position = self._backfill_position.get(table, (-2**63, -2**63))
+                rows = c.execute('SELECT ' + time_column + ', rowid FROM ' + table + ' WHERE handoff_seq IS NULL AND ' +
+                                 time_column + ' <= ? AND (' + time_column + ', rowid) > (?, ?) ORDER BY ' + time_column +
+                                 ', rowid LIMIT ?', (bound,) + position + (budget,)).fetchall()
+                for time_value, rowid in rows:
+                    c.execute('UPDATE handoff_state SET next_seq=next_seq+1')
+                    c.execute('UPDATE ' + table + ' SET handoff_seq=(SELECT next_seq FROM handoff_state) WHERE rowid=?', (rowid,))
+                if rows:
+                    self._backfill_position[table] = tuple(rows[-1])
+                budget -= len(rows)
+                if budget <= 0:
+                    break
+            if budget > 0:
+                c.execute('UPDATE handoff_state SET backfill_bound_ms=NULL')
+                self._backfill_position.clear()
+            c.execute('COMMIT')
+            return limit - budget
+        except BaseException:
+            if c.in_transaction:
+                c.execute('ROLLBACK')
+            raise
 
     def close(self):
         try:

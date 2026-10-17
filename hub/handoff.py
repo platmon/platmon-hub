@@ -11,6 +11,7 @@ import json
 import os
 import re
 import tempfile
+import threading
 import time
 import zipfile
 import zlib
@@ -95,19 +96,28 @@ def build_segment(database, spool, *, registry=None, max_bytes=MAX_SEGMENT_BYTES
         if not Path(spool).is_dir():
             raise HandoffError('spool directory does not exist')
         directory.mkdir(exist_ok=True)
-        adopted = recover(store, directory)
+        deliver = lambda *args: store.record_delivery(*args)
+        adopted = recover(state, directory, deliver)
         if adopted is not None:
             return adopted
-        state = store.handoff_state()
         nodes = load_registry(registry) if registry is not None else None
-        return _build(store, directory, state, nodes, max_bytes, now_ms)
+        return _build(store.path, directory, store.handoff_state(), nodes, max_bytes, now_ms, deliver)
     finally:
         store.close()
 
 
-def recover(store, directory):
+def segments(directory):
+    """(first sequence, last sequence, path) of published segments in chain order."""
+    found = []
+    for entry in sorted(directory.iterdir()):
+        match = NAME.match(entry.name)
+        if match:
+            found.append((int(match.group(1)), int(match.group(2)), entry))
+    return found
+
+
+def recover(state, directory, deliver):
     """Adopt a segment published before its delivery was recorded; refuse any other unknown file."""
-    state = store.handoff_state()
     for entry in sorted(directory.iterdir()):
         match = NAME.match(entry.name)
         if entry.name.startswith('.') or entry.is_dir():
@@ -124,8 +134,8 @@ def recover(store, directory):
                 (manifest.get('from_seq'), manifest.get('to_seq')) != (first - 1, last)):
             raise HandoffError('handoff spool segment does not match the recorded chain: ' + entry.name)
         digest = digest_file(entry)
-        _deliver(store, state['delivered_seq'], last, entry.name, digest)
-        return dict(segment=entry.name, from_seq=first - 1, to_seq=last, sha256=digest, adopted=True)
+        deliver(state['delivered_seq'], last, entry.name, digest)
+        return dict(segment=entry.name, from_seq=first - 1, to_seq=last, sha256=digest, adopted=True, complete=False)
     return None
 
 
@@ -137,22 +147,8 @@ def read_manifest(path):
         raise HandoffError('unreadable handoff segment: ' + Path(path).name) from exc
 
 
-def _deliver(store, previous, to_seq, name, digest):
-    c = store.connection
-    c.execute('BEGIN IMMEDIATE')
-    try:
-        if c.execute('SELECT delivered_seq FROM handoff_state').fetchone()[0] != previous:
-            raise HandoffError('handoff state changed during publication')
-        c.execute('UPDATE handoff_state SET delivered_seq=?, last_segment=?, last_digest=?', (to_seq, name, digest))
-        c.execute('COMMIT')
-    except BaseException:
-        if c.in_transaction:
-            c.execute('ROLLBACK')
-        raise
-
-
-def _build(store, directory, state, nodes, max_bytes, now_ms):
-    reader = read_connection(store.path)
+def _build(path, directory, state, nodes, max_bytes, now_ms, deliver):
+    reader = read_connection(path)
     scratch = tempfile.TemporaryDirectory(dir=str(directory), prefix='.platmon-handoff-')
     temp = None
     try:
@@ -164,11 +160,12 @@ def _build(store, directory, state, nodes, max_bytes, now_ms):
         envelopes, counts, sizes, handles = {}, {}, {}, {}
         hashers = {name: hashlib.sha256() for name in MEMBERS.values()}
         first_ms = last_ms = None
-        total, to_seq = 0, low
+        total, to_seq, complete = 0, low, True
         streams = [_rows(reader, table, low, high, envelopes) for table in MEMBERS]
         for seq, member, row in heapq.merge(*streams, key=lambda item: item[0]):
             data = encode(row)
             if total and total + len(data) > max_bytes:
+                complete = False
                 break
             if member not in handles:
                 handles[member] = open(os.path.join(scratch.name, member), 'wb')
@@ -233,14 +230,203 @@ def _build(store, directory, state, nodes, max_bytes, now_ms):
         # A hard link publishes the complete file exclusively; an existing name is never replaced.
         os.link(str(temp), str(target))
         digest = digest_file(target)
-        _deliver(store, low, to_seq, name, digest)
-        return dict(segment=name, from_seq=low, to_seq=to_seq, sha256=digest, adopted=False,
-                    rows=sum(f['rows'] for f in files), uncompressed_bytes=total)
+        deliver(low, to_seq, name, digest)
+        return dict(segment=name, from_seq=low, to_seq=to_seq, sha256=digest, adopted=False, complete=complete,
+                    rows=sum(f['rows'] for f in files), uncompressed_bytes=total,
+                    received_bounds_ms=dict(first=first_ms, last=last_ms))
     finally:
         reader.close()
         if temp is not None and temp.exists():
             temp.unlink()
         scratch.cleanup()
+
+
+def validate_spool(spool):
+    """Startup checks for a running Hub: an existing, writable directory with hard links."""
+    path = Path(spool)
+    if not path.is_dir():
+        raise HandoffError('handoff spool must be an existing directory')
+    try:
+        with tempfile.NamedTemporaryFile(dir=str(path), prefix='.platmon-handoff-check-', delete=False) as handle:
+            probe = Path(handle.name)
+        link = probe.with_name(probe.name + '.link')
+        try:
+            os.link(str(probe), str(link))
+            link.unlink()
+        finally:
+            probe.unlink()
+    except OSError as exc:
+        raise HandoffError('handoff spool must be writable and support hard links') from exc
+
+
+class HandoffScheduler:
+    """Builds segments inside a running Hub; every state change goes through its history writer."""
+
+    def __init__(self, writer, spool, *, quota_bytes, retention_ms, data_retention_ms, start='now',
+                 registry=None, interval_s=900.0, max_bytes=MAX_SEGMENT_BYTES, tick_s=10.0, timeout_s=60.0,
+                 clock=time.monotonic, wall=time.time):
+        self.writer, self.spool, self.registry = writer, Path(spool).resolve(), registry
+        self.quota_bytes, self.retention_ms, self.data_retention_ms = quota_bytes, retention_ms, data_retention_ms
+        self.start_mode, self.interval_s, self.max_bytes = start, interval_s, max_bytes
+        self.tick_s, self.timeout_s, self.clock, self.wall = tick_s, timeout_s, clock, wall
+        self.directory = None
+        self._digests, self._bounds = {}, {}
+        self._last_build = None
+        self._more = False
+        self._stop = threading.Event()
+        self._thread = None
+        self._lock = threading.Lock()
+        self._stats = dict(enabled=True, store_id=None, segments_built=0, segments_adopted=0, segments_deleted=0,
+                           segments_lost=0, rejected_acks=0, spool_bytes=0, unacknowledged_segments=0,
+                           unacknowledged_bytes=0, spool_full=False, backfill_pending=False, last_segment=None,
+                           last_build_utc_ms=None, last_error=None)
+
+    def _call(self, method, *args):
+        return self.writer.handoff(method, *args).result(self.timeout_s)
+
+    def _deliver(self, *args):
+        return self._call('record_delivery', *args)
+
+    def start(self):
+        state = self._call('enable_handoff', self.start_mode, int(self.wall() * 1000))
+        self.directory = self.spool / state['store_id']
+        self.directory.mkdir(exist_ok=True)
+        self._last_build = self.clock()
+        with self._lock:
+            self._stats['store_id'] = state['store_id']
+        self._thread = threading.Thread(target=self._run, name='hub-handoff', daemon=True)
+        self._thread.start()
+        return self
+
+    def close(self, final=True):
+        """Stop the thread; a clean shutdown publishes what is pending as a last segment."""
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(self.timeout_s)
+        if final and self.directory is not None:
+            self.tick(force=True)
+
+    def _run(self):
+        while not self._stop.wait(self.tick_s):
+            self.tick()
+
+    def snapshot(self):
+        with self._lock:
+            return dict(self._stats)
+
+    def tick(self, force=False):
+        try:
+            state = self._call('handoff_state')
+            if recover(state, self.directory, self._deliver) is not None:
+                with self._lock:
+                    self._stats['segments_adopted'] += 1
+                state = self._call('handoff_state')
+            state = self._acknowledge(state)
+            state = self._expire(state)
+            backfill = state['backfill_bound_ms'] is not None
+            if backfill:
+                self._call('backfill_handoff', 1000)
+                backfill = self._call('handoff_state')['backfill_bound_ms'] is not None
+            due = force or self._more or self.clock() - self._last_build >= self.interval_s
+            built = None
+            if due and not self.snapshot()['spool_full']:
+                nodes = None
+                if self.registry is not None:
+                    try:
+                        nodes = load_registry(self.registry)
+                    except (OSError, ValueError, UnicodeError):
+                        nodes = None
+                built = _build(self.writer.path, self.directory, self._call('handoff_state'), nodes,
+                               self.max_bytes, None, self._deliver)
+                self._last_build = self.clock()
+                self._more = built is not None and not built['complete']
+            with self._lock:
+                self._stats['backfill_pending'] = backfill
+                if built is not None:
+                    self._stats['segments_built'] += 1
+                    self._stats['last_segment'] = built['segment']
+                    self._stats['last_build_utc_ms'] = int(self.wall() * 1000)
+                    self._bounds[built['segment']] = built['received_bounds_ms']
+                    self._digests[built['segment']] = built['sha256']
+                self._stats['last_error'] = None
+            return built
+        except Exception as exc:  # reported and retried on the next tick; collection continues
+            with self._lock:
+                self._stats['last_error'] = str(exc) if isinstance(exc, (HandoffError, ValueError)) else type(exc).__name__
+            return None
+
+    def _digest(self, path):
+        if path.name not in self._digests:
+            self._digests[path.name] = digest_file(path)
+        return self._digests[path.name]
+
+    def _acknowledge(self, state):
+        """Advance acknowledgement over the longest prefix of segments with a matching .ack file."""
+        acks = self.directory / 'acks'
+        acked, rejected = state['acked_seq'], 0
+        for first, last, path in segments(self.directory):
+            if last <= acked:
+                continue
+            if first != acked + 1:
+                break
+            try:
+                content = (acks / (path.name + '.ack')).read_text(encoding='ascii').strip()
+            except (OSError, UnicodeError):
+                break
+            if content != self._digest(path):
+                rejected += 1  # partial or tampered; checked again on the next tick
+                break
+            acked = last
+        with self._lock:
+            self._stats['rejected_acks'] = rejected
+        if acked > state['acked_seq']:
+            state = self._call('record_acknowledged', acked)
+        return state
+
+    def _expire(self, state):
+        """Spool retention for acknowledged segments; data retention for unacknowledged ones, as a loss."""
+        now_ms = self.wall() * 1000
+        total = unacked = unacked_bytes = deleted = lost = 0
+        for first, last, path in segments(self.directory):
+            size = path.stat().st_size
+            if last <= state['acked_seq']:
+                if now_ms - path.stat().st_mtime * 1000 > self.retention_ms:
+                    self._remove(path)
+                    deleted += 1
+                    continue
+            else:
+                bounds = self._bounds.get(path.name)
+                if bounds is None:
+                    manifest = read_manifest(path)
+                    bounds = self._bounds[path.name] = dict(manifest['received_bounds_ms'],
+                                                            rows=sum(f['rows'] for f in manifest['files']))
+                newest = bounds.get('last')
+                if first == state['acked_seq'] + 1 and newest is not None and newest < now_ms - self.data_retention_ms:
+                    if 'rows' not in bounds:
+                        bounds['rows'] = sum(f['rows'] for f in read_manifest(path)['files'])
+                    state = self._call('record_segment_loss', path.name, first - 1, last, bounds['rows'],
+                                       bounds.get('first'), newest)
+                    self._remove(path)
+                    lost += 1
+                    continue
+                unacked += 1
+                unacked_bytes += size
+            total += size
+        with self._lock:
+            self._stats.update(spool_bytes=total, unacknowledged_segments=unacked, unacknowledged_bytes=unacked_bytes,
+                               spool_full=total >= self.quota_bytes)
+            self._stats['segments_deleted'] += deleted
+            self._stats['segments_lost'] += lost
+        return state
+
+    def _remove(self, path):
+        for target in (path, self.directory / 'acks' / (path.name + '.ack')):
+            try:
+                target.unlink()
+            except FileNotFoundError:
+                pass
+        self._digests.pop(path.name, None)
+        self._bounds.pop(path.name, None)
 
 
 def main(argv=None):

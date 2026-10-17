@@ -42,7 +42,8 @@ class HistoryWriter:
                                failed_pages=0, cursor_read_failures=0, last_error=None, retention_deleted=0,
                                quota_evicted=0, unflushed_pages=0, compressed_rows=0, json_rows=0,
                                compression_fallback=0, logical_bytes=0, stored_bytes=0, dictionaries=0,
-                               dictionary_bytes=0, sampled_rows=0, sampled_duplicates=0, sampled_failures=0)
+                               dictionary_bytes=0, sampled_rows=0, sampled_duplicates=0, sampled_failures=0,
+                               handoff_failures=0)
         self.path = Path(path).resolve()
         self.retention_ms = retention_days * 86400000
         self.store_factory = store_factory
@@ -137,6 +138,13 @@ class HistoryWriter:
     def submit_raw(self, page):
         return self._raw_submit('page', page, page.encoded_bytes)
 
+    def handoff(self, method, *args):
+        """Run one handoff bookkeeping method of the store on the writer thread (ADR-0004)."""
+        if method not in ('handoff_state', 'enable_handoff', 'record_delivery', 'record_acknowledged',
+                          'record_segment_loss', 'backfill_handoff'):
+            raise ValueError('unknown handoff operation')
+        return self._raw_submit('handoff', (method, args), 256)
+
     def submit_sampled(self, record):
         """Queue polled documents for sampled capture; rejected (and counted) when the raw queue is full."""
         return self._raw_submit('sampled', record, record.encoded_bytes)
@@ -154,6 +162,8 @@ class HistoryWriter:
                 raise RuntimeError('raw_storage_unavailable')
             if operation == 'cursor':
                 result = store.replay_cursor(*value)
+            elif operation == 'handoff':
+                result = getattr(store, value[0])(*value[1])
             else:
                 sampled = operation == 'sampled'
                 result = (store.insert_sampled if sampled else store.insert_raw_page)(value, self.raw_quota_bytes)
@@ -177,7 +187,8 @@ class HistoryWriter:
                 future.set_result(result)
         except Exception as exc:
             with self._lock:
-                self._raw_stats[dict(page='failed_pages', sampled='sampled_failures').get(operation, 'cursor_read_failures')] += 1
+                self._raw_stats[dict(page='failed_pages', sampled='sampled_failures',
+                                     handoff='handoff_failures').get(operation, 'cursor_read_failures')] += 1
                 if operation == 'page' and (self._stop.is_set() or not self._accepting):
                     # Not retried by this process; the next Hub run refetches from the durable cursor.
                     self._raw_stats['unflushed_pages'] += 1
@@ -188,7 +199,7 @@ class HistoryWriter:
             with self._lock:
                 self._raw_bytes -= size
                 self._raw_in_flight = 0
-        return operation == 'cursor'
+        return operation in ('cursor', 'handoff')
 
     def alert_state(self):
         with self._lock:
