@@ -2,7 +2,7 @@
 
 [Documentation index](../../README.md) · [Design reference](../README.md)
 
-- **Status:** Accepted; stages 1–3 (sequence and loss accounting in SQLite schema 9, segment builder, in-Hub scheduling with acknowledgement, spool deletion and backfill) implemented, stages 4–5 pending; see [implementation notes](#implementation-notes)
+- **Status:** Implemented in Hub (SQLite schema 9), stages 1–5; see [implementation notes](#implementation-notes)
 - **Date:** 2026-10-17
 - **Scope:** A versioned, incremental, file-based contract through which a separate post-processing system receives committed Hub data
 - **Hub baseline:** `main` at `758d62f6f2b06d82b71f564d0b21c5e2914de848` (SQLite schema 7)
@@ -494,3 +494,18 @@ the Hub session's closing time is written after it and therefore travels in the 
 first segment. Backfill numbers rows in (receipt time, rowid) order per table, a keyset that
 lets each batch continue where the previous one stopped, rather than the ADR's
 (receipt time, node, instance, stream, ID).
+
+**Stages 4–5 (2026-10-18), diagnostics and acceptance.** `GET /api/handoff/status` and a line on
+the Data tab report the positions, spool, unacknowledged raw bytes against the raw quota, the
+oldest unacknowledged receipt time, losses grouped by table and reason, and warnings
+(`spool_full`, `spool_near_quota`, `unacknowledged_raw_near_quota`,
+`unacknowledged_near_retention`, `rejected_acknowledgement`, `error`), refreshed by the scheduler
+from a read snapshot. The [handoff guide](../../guides/handoff.md) documents operation and the
+consumer obligations; `tests/test_handoff_consumer.py` is the reference consumer, which rebuilds
+the committed rows from segments alone and whose acknowledgements Hub accepts.
+
+With handoff enabled, the 100-node synthetic replay benchmark (`scripts/benchmark-replay.py
+--nodes 100 --seconds 20 --handoff`, two runs each on the development host) kept commit p95 at
+11.7 and 13.8 ms against 10.8 and 13.7 ms disabled, and stored 373–375 instead of 369 database
+bytes per row; every gate passed. Jetson and Raspberry Pi hosts, long runs and a real consumer
+remain unmeasured.

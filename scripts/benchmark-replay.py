@@ -48,6 +48,7 @@ def main():
     parser.add_argument('--output', required=True)
     parser.add_argument('--smoke', action='store_true',
                         help='check correctness/resource bounds without host-dependent latency gates')
+    parser.add_argument('--handoff', action='store_true', help='enable downstream handoff numbering (ADR-0004) before the run')
     args = parser.parse_args()
     if not 3 <= args.seconds <= 60:
         parser.error('--seconds must be 3–60')
@@ -104,6 +105,8 @@ def main():
         live_polls = 0
         try:
             fleet.start()
+            if args.handoff:
+                writer.handoff('enable_handoff', 'now', int(time.time()*1000)).result(15)
             while time.monotonic()-start < args.seconds:
                 status = writer.snapshot()
                 peak_queue = max(peak_queue, status['raw']['queued_bytes'])

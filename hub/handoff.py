@@ -279,7 +279,10 @@ class HandoffScheduler:
         self._stats = dict(enabled=True, store_id=None, segments_built=0, segments_adopted=0, segments_deleted=0,
                            segments_lost=0, rejected_acks=0, spool_bytes=0, unacknowledged_segments=0,
                            unacknowledged_bytes=0, spool_full=False, backfill_pending=False, last_segment=None,
-                           last_build_utc_ms=None, last_error=None)
+                           last_build_utc_ms=None, last_error=None, spool_quota_bytes=quota_bytes,
+                           spool_retention_ms=retention_ms, data_retention_ms=data_retention_ms, next_seq=None,
+                           delivered_seq=None, acked_seq=None, unacknowledged_raw_bytes=None, raw_quota_bytes=None,
+                           oldest_unacknowledged_received_ms=None, losses=[], warnings=[])
 
     def _call(self, method, *args):
         return self.writer.handoff(method, *args).result(self.timeout_s)
@@ -340,7 +343,9 @@ class HandoffScheduler:
                                self.max_bytes, None, self._deliver)
                 self._last_build = self.clock()
                 self._more = built is not None and not built['complete']
+            measured = self._measure()
             with self._lock:
+                self._stats.update(measured)
                 self._stats['backfill_pending'] = backfill
                 if built is not None:
                     self._stats['segments_built'] += 1
@@ -349,11 +354,52 @@ class HandoffScheduler:
                     self._bounds[built['segment']] = built['received_bounds_ms']
                     self._digests[built['segment']] = built['sha256']
                 self._stats['last_error'] = None
+                self._stats['warnings'] = self._warnings(self._stats)
             return built
         except Exception as exc:  # reported and retried on the next tick; collection continues
             with self._lock:
                 self._stats['last_error'] = str(exc) if isinstance(exc, (HandoffError, ValueError)) else type(exc).__name__
+                self._stats['warnings'] = self._warnings(self._stats)
             return None
+
+    def _measure(self):
+        """Read-only figures for diagnostics: sequence positions, unacknowledged data and losses."""
+        reader = read_connection(self.writer.path)
+        try:
+            reader.execute('BEGIN')
+            next_seq, delivered, acked = reader.execute('SELECT next_seq, delivered_seq, acked_seq FROM handoff_state').fetchone()
+            raw_bytes = reader.execute('SELECT coalesce(sum(encoded_bytes),0) FROM raw_publications WHERE handoff_seq > ?',
+                                       (acked,)).fetchone()[0]
+            oldest = [reader.execute('SELECT min(' + column + ') FROM ' + table + ' WHERE handoff_seq > ?', (acked,)).fetchone()[0]
+                      for table, column in HANDOFF_TABLES.items()]
+            losses = [dict(table=table, reason=reason, records=records, rows=rows) for table, reason, records, rows in reader.execute(
+                "SELECT CASE WHEN table_name LIKE 'segment:%' THEN 'segment' ELSE table_name END AS kind, reason, "
+                'count(*), sum(rows) FROM handoff_losses GROUP BY kind, reason ORDER BY kind, reason')]
+            return dict(next_seq=next_seq, delivered_seq=delivered, acked_seq=acked, unacknowledged_raw_bytes=raw_bytes,
+                        raw_quota_bytes=getattr(self.writer, 'raw_quota_bytes', None),
+                        oldest_unacknowledged_received_ms=min((v for v in oldest if v is not None), default=None),
+                        losses=losses)
+        finally:
+            reader.close()
+
+    def _warnings(self, stats):
+        """Conditions an operator should act on before data is lost or production stops."""
+        warnings = []
+        if stats['spool_full']:
+            warnings.append('spool_full')
+        elif stats['spool_quota_bytes'] and stats['spool_bytes'] >= 0.8 * stats['spool_quota_bytes']:
+            warnings.append('spool_near_quota')
+        quota = stats['raw_quota_bytes']
+        if quota and stats['unacknowledged_raw_bytes'] is not None and stats['unacknowledged_raw_bytes'] >= 0.8 * quota:
+            warnings.append('unacknowledged_raw_near_quota')
+        oldest = stats['oldest_unacknowledged_received_ms']
+        if oldest is not None and self.wall() * 1000 - oldest >= 0.8 * self.data_retention_ms:
+            warnings.append('unacknowledged_near_retention')
+        if stats['rejected_acks']:
+            warnings.append('rejected_acknowledgement')
+        if stats['last_error']:
+            warnings.append('error')
+        return warnings
 
     def _digest(self, path):
         if path.name not in self._digests:

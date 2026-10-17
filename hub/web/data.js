@@ -42,7 +42,7 @@
     controller = new AbortController();
     const timeout = setTimeout(() => { if (current === ticket && controller) controller.abort(); }, 5000);
     try {
-      const [nodes, history, archives] = await Promise.all(["/api/nodes", "/api/history/status", "/api/data/archive/status"].map(async path => {
+      const [nodes, history, archives, handoffs] = await Promise.all(["/api/nodes", "/api/history/status", "/api/data/archive/status", "/api/handoff/status"].map(async path => {
         const response = await fetch(path, {cache:"no-store", credentials:"omit", signal:controller.signal});
         if (!response.ok) throw new Error("Could not load data options.");
         return response.json();
@@ -51,6 +51,12 @@
       if (nodes.schema_version !== 1 || !Array.isArray(nodes.nodes)) throw new Error("Unsupported node response.");
       const archive = archives.archive;
       document.getElementById("data-archive-status").textContent = archive && archive.enabled ? "Automatic archives: " + archive.state + (archive.created ? " · " + archive.created : "") + " · failures: " + archive.failures : "Automatic archives are disabled. Enable --archive-dir to keep daily files.";
+      const handoff = handoffs.handoff;
+      document.getElementById("data-handoff-status").textContent = handoff && handoff.enabled ?
+        "Downstream handoff: delivered " + handoff.delivered_seq + " · acknowledged " + handoff.acked_seq + " · " +
+        handoff.unacknowledged_segments + " unacknowledged segments" +
+        (handoff.warnings && handoff.warnings.length ? " · attention: " + handoff.warnings.join(", ") : "") :
+        "Downstream handoff is disabled. Enable --handoff-spool to deliver data to a post-processing system.";
       const selected = select.value;
       select.replaceChildren(option("All stored devices", ""));
       for (const node of nodes.nodes) select.append(option(node.name, node.node_id));
