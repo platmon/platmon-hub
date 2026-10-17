@@ -16,6 +16,19 @@ from .history.codec import decode
 from .history.store import read_connection
 
 
+TIMESTAMPS = {'received_at_ms': 'Hub receipt UTC milliseconds',
+              'reported_started_at': 'Agent reported Unix seconds; clock may jump',
+              'reported_completed_at': 'Agent reported Unix seconds; clock may jump'}
+PAYLOAD_SCHEMAS = {'core': 1, 'storage': 2, 'wifi': 2, 'battery': 2, 'probe': 2}
+UNITS = {'elapsed_ages_and_durations': 'milliseconds',
+         'cpu_gpu_npu_freq_and_max_freq': 'hertz',
+         'cpu_gpu_npu_usage': 'percent', 'temperature_values': 'degrees Celsius',
+         'power_rails': 'watts', 'fans_rpm': 'revolutions per minute',
+         'battery_fields': 'preserve explicit _ua/_uv/_uw/_uah/_uwh units (micro units)',
+         'sensor_meta': 'per-value unit and source metadata retained verbatim',
+         'other_fields': 'Agent-defined; no unit inference or conversion'}
+
+
 def export_raw(database, output, start, end, node_ids=(), *, timeout=30,
                max_rows=100000, max_bytes=512*1024**2):
     validate_range(start, end)
@@ -31,18 +44,9 @@ def export_raw(database, output, start, end, node_ids=(), *, timeout=30,
     count, size = 0, 0
     manifest = dict(format_version=1, database_schema_version=VERSION, from_ms=start, to_ms=end,
                     range='[from_ms,to_ms), filtered by Hub receipt UTC milliseconds', node_filter=list(nodes),
-                    timestamps={'received_at_ms': 'Hub receipt UTC milliseconds',
-                                'reported_started_at': 'Agent reported Unix seconds; clock may jump',
-                                'reported_completed_at': 'Agent reported Unix seconds; clock may jump'},
-                    payload_schemas={'core': 1, 'storage': 2, 'wifi': 2, 'battery': 2, 'probe': 2},
+                    timestamps=TIMESTAMPS, payload_schemas=PAYLOAD_SCHEMAS,
                     agent_contract='47e384970324d71d9590c231504350ec2d40c863 replay envelope schema 1',
-                    units={'elapsed_ages_and_durations': 'milliseconds',
-                           'cpu_gpu_npu_freq_and_max_freq': 'hertz',
-                           'cpu_gpu_npu_usage': 'percent', 'temperature_values': 'degrees Celsius',
-                           'power_rails': 'watts', 'fans_rpm': 'revolutions per minute',
-                           'battery_fields': 'preserve explicit _ua/_uv/_uw/_uah/_uwh units (micro units)',
-                           'sensor_meta': 'per-value unit and source metadata retained verbatim',
-                           'other_fields': 'Agent-defined; no unit inference or conversion'},
+                    units=UNITS,
                     completeness='Committed raw publications only. Missing ranges denote unavailable publications; gap_before denotes failed/unpublished core attempts. No interpolation. Restart loss ends may be unknown. Retention/quota may limit capture.',
                     cursors='Committed cursor snapshot for selected nodes, independent of receipt-time filter and raw pruning.',
                     files=[])

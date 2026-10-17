@@ -106,6 +106,28 @@ class HistoryStore:
             self.close()
             raise
 
+    def open_for_maintenance(self):
+        """Exclusive access for an offline command while no Hub runs: no migration, Hub session
+        or continuity reconciliation, which belong to a running Hub."""
+        try:
+            self.lock.acquire()
+        except OSError as exc:
+            raise SchemaError('history_database_in_use') from exc
+        try:
+            self.connection = sqlite3.connect(str(self.path), timeout=0.25, isolation_level=None)
+            c = self.connection
+            c.execute('PRAGMA busy_timeout=250')
+            if c.execute('PRAGMA user_version').fetchone()[0] != VERSION:
+                raise SchemaError('history_schema_not_current')
+            if c.execute('PRAGMA journal_mode=WAL').fetchone()[0] != 'wal':
+                raise SchemaError('wal_unavailable')
+            c.execute('PRAGMA synchronous=FULL')
+            c.execute('CREATE TEMP TABLE IF NOT EXISTS doomed (id INTEGER PRIMARY KEY)')
+            return self
+        except BaseException:
+            self.close()
+            raise
+
     def _migrate(self, script):
         c = self.connection
         c.execute('BEGIN IMMEDIATE')
