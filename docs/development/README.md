@@ -76,6 +76,8 @@ The fixtures use synthetic schema-1 status/stats, schema-2 observations, local H
 Run `python scripts/check-package.py` (Linux: `python3`) to build twice, compare wheel hashes, and validate an isolated installation, CLI, docs, and assets. The script uses temporary directories and installs setuptools/wheel there; it needs access to the package index. Use `--output-dir PATH` only when you want to retain candidate artifacts outside the checkout.
 
 With Playwright available and an empty Hub on an explicit loopback test port, `node scripts/check-history-ui.cjs http://127.0.0.1:PORT` validates synthetic History interactions and layout. Replace `PORT` with the running test port. Playwright is development tooling, not a runtime dependency. Screenshots go to the OS temporary directory.
+CI runs this check and `check-agent-ui.cjs` on Linux with Python 3.13 only, installing a pinned Playwright
+outside the repository.
 
 `node scripts/check-agent-ui.cjs http://127.0.0.1:PORT` checks the pinned 1.2.0
 GPU/NPU/battery fixture, independent freshness, missing/zero/signed readings,
