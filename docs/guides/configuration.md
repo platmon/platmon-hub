@@ -42,6 +42,7 @@ platmon-hub nodes --file /private/nodes.json list
 platmon-hub nodes --file /private/nodes.json add --name Example --endpoint http://192.0.2.1:9797 --disabled
 platmon-hub nodes --file /private/nodes.json rename NODE_UUID "New name"
 platmon-hub nodes --file /private/nodes.json set-endpoint NODE_UUID http://192.0.2.2:9797
+platmon-hub nodes --file /private/nodes.json set-capture NODE_UUID sampled
 platmon-hub nodes --file /private/nodes.json enable NODE_UUID
 platmon-hub nodes --file /private/nodes.json disable NODE_UUID
 platmon-hub nodes --file /private/nodes.json remove NODE_UUID

@@ -1,10 +1,9 @@
 """Opt-in local registry management; no sessions, discovery or Agent requests."""
 import json
 from pathlib import Path
-from dataclasses import asdict
 from urllib.parse import urlsplit
 from .protocol import unique_object  # noqa: F401  re-exported for hub.http
-from .registry import validate_registry
+from .registry import node_record, validate_registry
 
 from .nodes_cli import endpoint_for_host, failure_message, update_registry
 
@@ -25,7 +24,7 @@ class RegistryAdmin:
             if len(raw) > 1024 * 1024:
                 raise ValueError('registry exceeds byte limit')
             nodes = validate_registry(json.loads(raw.decode('utf-8')))
-            return dict(schema_version=1, nodes=[asdict(node) for node in nodes])
+            return dict(schema_version=1, nodes=[node_record(node) for node in nodes])
         except (OSError, ValueError, UnicodeError) as exc:
             raise AdminError(503, 'registry_unavailable', failure_message(exc)) from None
 
@@ -46,7 +45,9 @@ class RegistryAdmin:
 
     def _expected(self, data, node_id):
         expected = data.get('expected') if isinstance(data, dict) else None
-        if not isinstance(expected, dict) or set(expected) != {'node_id', 'name', 'endpoint', 'enabled'} or expected['node_id'] != node_id:
+        # The page does not edit capture; a loaded record carries it only when it is not the default.
+        if (not isinstance(expected, dict) or set(expected) - {'capture'} != {'node_id', 'name', 'endpoint', 'enabled'} or
+                expected['node_id'] != node_id):
             raise AdminError(400, 'invalid_device', 'Refresh Devices and use the loaded device record.')
         try:
             validate_registry({'nodes': [expected]})

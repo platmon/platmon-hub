@@ -12,6 +12,7 @@ from .registry import validate_registry
 from .reload import RegistryWatcher
 from dataclasses import asdict
 from .history.projector import ContinuityRecord, project_observation, EventRecord, OBSERVATION_GROUPS
+from .history.raw import sampled_core, sampled_observations
 
 LOG = logging.getLogger(__name__)
 
@@ -49,6 +50,11 @@ class Fleet:
                      for node_id in self.nodes}
         self._started = False
 
+    def _sampled_submit(self, record):
+        # Sampled capture never waits for the writer; a full raw queue drops and counts the record.
+        if record is not None:
+            self.history.submit_sampled(record)
+
     def _history_submit(self, record):
         if self.history is not None and record is not None:
             try:
@@ -76,7 +82,9 @@ class Fleet:
             for node in nodes:
                 old = self.nodes.get(node.node_id)
                 if old is None or old.node != node:
-                    reason = 'added' if old is None else 'endpoint_changed' if old.node.endpoint != node.endpoint else 'enabled_changed' if old.node.enabled != node.enabled else 'renamed'
+                    reason = ('added' if old is None else 'endpoint_changed' if old.node.endpoint != node.endpoint else
+                              'enabled_changed' if old.node.enabled != node.enabled else
+                              'capture_changed' if old.node.capture != node.capture else 'renamed')
                     self._history_submit(EventRecord.create(node.node_id, 'registry_changed', int(time.time()*1000),
                                                            None if old is None else ('enabled' if old.node.enabled else 'disabled'),
                                                            'enabled' if node.enabled else 'disabled', reason))
@@ -119,6 +127,8 @@ class Fleet:
                     if not self._current(node_id, state): return
                     accepted = state.accept_core(status, stats, received_at_ms=received)
                     self._history_submit(accepted.record)
+                    if self.replay is not None and self.replay.sampled_streams(node_id, state, ('core',)):
+                        self._sampled_submit(sampled_core(node_id, stats, received, self.core_interval*1000))
         except protocol.AgentFailure as exc:
             with self._registry_lock:
                 if self._current(node_id, state): state.fail_core(exc)
@@ -144,7 +154,13 @@ class Fleet:
             received = int(time.time()*1000)
             with self._registry_lock:
                 if not self._current(node_id, state): return
-                if state.accept_observations(raw) and self.history is not None:
+                accepted = state.accept_observations(raw)
+                if accepted and self.replay is not None:
+                    streams = self.replay.sampled_streams(node_id, state, OBSERVATION_GROUPS)
+                    if streams:
+                        self._sampled_submit(sampled_observations(node_id, raw, streams, received,
+                                                                  self.observations_interval*1000))
+                if accepted and self.history is not None:
                     for name in OBSERVATION_GROUPS:
                         group = raw['groups'].get(name)
                         reason, threshold = 'absent', 30000

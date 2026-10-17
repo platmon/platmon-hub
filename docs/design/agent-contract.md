@@ -123,8 +123,10 @@ the original units. No charge control, low-charge alert or battery graph is adde
 - `/api/status` `levels` gains `battery` and `wifi` warning/critical pairs. Hub does not read
   `levels`; its alerts use Hub's own rules, so the additional keys are ignored.
 - The Agent HTTP server allows at most 32 active connections and times out reads and writes
-  after 10 seconds without progress. Hub issues at most one request per node at a time
-  ([architecture](architecture.md#default-polling-and-state-semantics)), within that limit.
+  after 10 seconds without progress. Hub keeps one live request sequence per node and, with
+  raw capture, at most one replay request beside it
+  ([architecture](architecture.md#default-polling-and-state-semantics)): two connections per
+  node at most, within that limit.
 - Full-publication replay is released; see the replay section below. Live endpoint schemas
   and fields are unchanged.
 

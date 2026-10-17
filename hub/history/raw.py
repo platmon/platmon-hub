@@ -128,3 +128,55 @@ def validate_page(document, node_id, expected_instance, stream, after, received_
         return page
     except (KeyError, TypeError, ValueError, AttributeError, OverflowError, RecursionError) as exc:
         raise protocol.ProtocolFailure('invalid replay page') from exc
+
+
+@dataclass(frozen=True)
+class SampledRecord:
+    """Complete documents Hub already polled, stored under the replay identity (ADR-0007)."""
+    node_id: str
+    instance_id: str
+    received_at_ms: int
+    envelope_json: str
+    rows: tuple  # (stream, publication id, payload JSON, reported start, reported end)
+
+    @property
+    def encoded_bytes(self):
+        return len(self.envelope_json.encode()) + sum(len(r[2].encode()) + 256 for r in self.rows) + 1024
+
+
+def sampled_envelope(path, poll_interval_ms):
+    # gap_before is not part of a live document; sampled rows store 0 and declare it unobserved.
+    return compact(dict(source='live_poll', path=path, capture='sampled',
+                        gap_before_observed=False, poll_interval_ms=int(poll_interval_ms)))
+
+
+def _row(stream, timing, payload):
+    pid = timing.get('sequence' if stream == 'core' else 'id') if isinstance(timing, dict) else None
+    if (not integer(pid, 1) or not finite(timing.get('started_at')) or not finite(timing.get('completed_at')) or
+            len(payload.encode()) > 1024**2):
+        return None
+    return (stream, pid, payload, timing['started_at'], timing['completed_at'])
+
+
+def sampled_core(node_id, stats, received_at_ms, poll_interval_ms):
+    """A validated /api/stats document as one sampled core row, or None when it cannot be identified."""
+    row = _row('core', stats.get('sample'), compact(stats))
+    if row is None:
+        return None
+    return SampledRecord(node_id, stats['sample']['instance_id'], received_at_ms,
+                         sampled_envelope('/api/stats', poll_interval_ms), (row,))
+
+
+def sampled_observations(node_id, document, streams, received_at_ms, poll_interval_ms):
+    """Group entries of a validated /api/observations document for the requested streams."""
+    rows = []
+    for name in streams:
+        group = document['groups'].get(name)
+        if isinstance(group, dict) and group.get('observation') is not None:
+            row = _row(name, group['observation'], compact(group))
+            if row is not None:
+                rows.append(row)
+    if not rows:
+        return None
+    return SampledRecord(node_id, document['instance_id'], received_at_ms,
+                         sampled_envelope('/api/observations', poll_interval_ms), tuple(rows))
