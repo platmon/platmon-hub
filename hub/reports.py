@@ -6,11 +6,14 @@ import math
 from datetime import datetime, timezone
 
 from .export import CsvMember, DAY_MS, ExportError, METRICS, identity
+from .history.projector import LOAD_COLUMNS
 
 STAT_NAMES = ('count', 'average', 'minimum', 'maximum')
 SUMMARY_COLUMNS = ('period_utc', 'granularity', 'node_id', 'instance_id', 'from_ms', 'to_ms',
                    'sample_count', 'first_received_at_ms', 'last_received_at_ms', 'hottest_at_ms') + tuple(m + '_' + s for m in METRICS for s in STAT_NAMES)
 EVENT_COLUMNS = ('period_utc', 'node_id', 'event_type', 'previous_state', 'current_state', 'reason_code', 'recorded_count')
+# Metrics each older daily summary format predates; they are read as never observed.
+LEGACY_MISSING = {1: ('npu_percent',) + LOAD_COLUMNS, 2: LOAD_COLUMNS}
 GAP_COLUMNS = ('id', 'node_id', 'scope', 'instance_id', 'start_ms', 'end_ms', 'reason', 'approximate', 'clipped_overlap_ms')
 
 
@@ -68,7 +71,7 @@ def gap_rows(connection, start, end, nodes, as_of):
 def write_reports(connection, archive, manifest, budget, start, end, nodes, check, as_of):
     # Daily archives also contain a bounded machine-readable summary so monthly
     # material remains available after raw archives expire.
-    daily = {'summary_format_version': 2, 'from_ms': start, 'to_ms': end,
+    daily = {'summary_format_version': 3, 'from_ms': start, 'to_ms': end,
              'as_of_ms': as_of, 'metrics': [], 'events': [], 'gaps': []}
     sources = [('summary-daily.csv', SUMMARY_COLUMNS, metric_rows(connection, start, end, nodes, 'day'), 'metrics'),
                ('summary-monthly.csv', SUMMARY_COLUMNS, metric_rows(connection, start, end, nodes, 'month'), None),
@@ -105,16 +108,17 @@ def read_daily(path):
     document = json.loads(path.read_text(encoding='utf-8'))
     start, end = period_bounds(path.stem, 'day')
     if (not isinstance(document, dict) or type(document.get('summary_format_version')) is not int or
-            document['summary_format_version'] not in (1, 2) or document.get('from_ms') != start or document.get('to_ms') != end or
+            document['summary_format_version'] not in (1, 2, 3) or document.get('from_ms') != start or document.get('to_ms') != end or
             any(not isinstance(document.get(key), list) for key in ('metrics', 'events', 'gaps')) or
             sum(len(document[key]) for key in ('metrics', 'events', 'gaps')) > 10000):
         raise ExportError('invalid daily summary')
     for row in document['metrics']:
-        if document['summary_format_version'] == 1:
-            legacy = set(SUMMARY_COLUMNS) - {'npu_percent_' + stat for stat in STAT_NAMES}
+        missing = LEGACY_MISSING.get(document['summary_format_version'], ())
+        if missing:
+            legacy = set(SUMMARY_COLUMNS) - {metric + '_' + stat for metric in missing for stat in STAT_NAMES}
             if not isinstance(row, dict) or set(row) != legacy:
                 raise ExportError('invalid legacy metric summary')
-            row.update({'npu_percent_' + stat: 0 if stat == 'count' else None for stat in STAT_NAMES})
+            row.update({metric + '_' + stat: 0 if stat == 'count' else None for metric in missing for stat in STAT_NAMES})
         if not isinstance(row, dict) or set(row) != set(SUMMARY_COLUMNS):
             raise ExportError('invalid metric summary')
         identity(row['node_id'])

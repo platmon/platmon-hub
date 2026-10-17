@@ -7,6 +7,14 @@
   probe group's own freshness and is unknown when the group is stale or has no target.
 - Node summaries gain an additive nullable `probe_failure_percent` field.
 
+## Unreleased — pressure and I/O rate history
+
+- History schema 7 adds nullable CPU/memory/I/O pressure (`some avg10`), busiest-interface
+  network receive/send rates and summed physical-disk read/write rates to `core_samples`,
+  with a verified pre-upgrade backup. Existing rows keep NULL.
+- The History API, dashboard History chart, CSV export and report summaries include them.
+  Daily summaries move to `summary_format_version: 3`; formats 1 and 2 remain readable.
+
 ## Unreleased — Agent replay and raw persistence
 
 - Add opt-in full core/slow publication replay with bounded fair catch-up, per-stream

@@ -5,6 +5,10 @@ import uuid
 from dataclasses import dataclass, astuple
 
 OBSERVATION_GROUPS = ('storage', 'wifi', 'probe', 'battery')
+PRESSURE_COLUMNS = ('psi_cpu_some_avg10', 'psi_memory_some_avg10', 'psi_io_some_avg10')
+RATE_COLUMNS = ('network_rx_busiest_bytes_per_s', 'network_tx_busiest_bytes_per_s',
+                'disk_read_bytes_per_s', 'disk_write_bytes_per_s')
+LOAD_COLUMNS = PRESSURE_COLUMNS + RATE_COLUMNS
 
 
 @dataclass(frozen=True)
@@ -22,6 +26,13 @@ class CoreRecord:
     disk_percent: object
     hottest_c: object
     npu_percent: object = None
+    psi_cpu_some_avg10: object = None
+    psi_memory_some_avg10: object = None
+    psi_io_some_avg10: object = None
+    network_rx_busiest_bytes_per_s: object = None
+    network_tx_busiest_bytes_per_s: object = None
+    disk_read_bytes_per_s: object = None
+    disk_write_bytes_per_s: object = None
 
     def values(self):
         return astuple(self)
@@ -38,7 +49,10 @@ class CoreRecord:
                     self.core_state in ('ready', 'degraded') and
                     all(x is None or (type(x) in (int, float) and math.isfinite(x) and 0 <= x <= 100)
                         for x in (self.cpu_percent, self.gpu_percent, self.memory_percent,
-                                  self.disk_percent, self.npu_percent)) and
+                                  self.disk_percent, self.npu_percent) +
+                        tuple(getattr(self, name) for name in PRESSURE_COLUMNS)) and
+                    all(x is None or (type(x) in (int, float) and math.isfinite(x) and x >= 0)
+                        for x in (getattr(self, name) for name in RATE_COLUMNS)) and
                     (self.hottest_c is None or (type(self.hottest_c) in (int, float) and
                                                math.isfinite(self.hottest_c))))
         except (ValueError, TypeError, AttributeError, OverflowError):

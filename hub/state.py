@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from threading import RLock
 
 from . import protocol
-from .history.projector import Acceptance, CoreRecord
+from .history.projector import LOAD_COLUMNS, Acceptance, CoreRecord
 
 
 OPTIONAL_UNSUPPORTED = ("unsupported", "incompatible")
@@ -68,6 +68,42 @@ def _probe_failure_percent(groups, elapsed_ms):
     ratios = [t["failure_ratio"] for t in targets if isinstance(t, dict) and _finite(t.get("failure_ratio"))
               and 0 <= t["failure_ratio"] <= 1]
     return round(100 * max(ratios), 1) if ratios else None
+
+
+def _load(stats):
+    """Pressure and I/O rates kept for history only; absent or partial evidence stays null."""
+    result = dict.fromkeys(LOAD_COLUMNS)
+    if not isinstance(stats, dict):
+        return result
+    pressure = stats.get("pressure")
+    resources = pressure.get("resources") if isinstance(pressure, dict) else None
+    if isinstance(resources, dict):
+        for name in ("cpu", "memory", "io"):
+            resource = resources.get(name)
+            some = resource.get("some") if isinstance(resource, dict) else None
+            value = some.get("avg10") if isinstance(some, dict) else None
+            if _finite(value) and 0 <= value <= 100:
+                result["psi_" + name + "_some_avg10"] = value
+    # Interfaces are not summed: a bridge and its port carry the same packets.
+    network = stats.get("network")
+    interfaces = network.get("interfaces") if isinstance(network, dict) else None
+    if isinstance(interfaces, list):
+        for direction in ("rx", "tx"):
+            rates = [i["rates"].get(direction + "_bytes_per_s") for i in interfaces
+                     if isinstance(i, dict) and i.get("name") != "lo" and isinstance(i.get("rates"), dict)]
+            rates = [r for r in rates if _finite(r) and r >= 0]
+            if rates:
+                result["network_" + direction + "_busiest_bytes_per_s"] = max(rates)
+    # Physical whole disks do not overlap, so they add up; one disk without a rate leaves the total unknown.
+    disk_io = stats.get("disk_io")
+    disks = disk_io.get("disks") if isinstance(disk_io, dict) else None
+    if isinstance(disks, list) and disks:
+        for direction in ("read", "write"):
+            rates = [d["rates"].get(direction + "_bytes_per_s") if isinstance(d, dict) and isinstance(d.get("rates"), dict)
+                     else None for d in disks]
+            if all(_finite(r) and r >= 0 for r in rates):
+                result["disk_" + direction + "_bytes_per_s"] = sum(rates)
+    return result
 
 
 class NodeState:
@@ -156,7 +192,7 @@ class NodeState:
             record = CoreRecord(self.node.node_id, st["instance_id"], new_key[1],
                                 int(time.time() * 1000) if received_at_ms is None else received_at_ms,
                                 metrics["sample"]["data_age_ms"], metrics["sample"]["stale_after_ms"],
-                                st["state"], **_overview(metrics))
+                                st["state"], **_overview(metrics), **_load(metrics))
             return Acceptance("new", record)
 
     def fail_core(self, failure):
