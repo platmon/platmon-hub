@@ -58,6 +58,17 @@ def run(args):
             worker.start();processes.append(worker)
             if not reader.poll(30): raise RuntimeError('Hub startup timeout')
             port=reader.recv()
+            # Measure only once the history writer has opened and migrated a new database: before
+            # that, History answers 503 history_unavailable, which is startup, not load (#50).
+            ready_by=time.monotonic()+30
+            while True:
+                try:
+                    with urllib.request.urlopen('http://127.0.0.1:'+str(port)+'/api/history/status',timeout=3) as response:
+                        if json.load(response)['history'].get('schema_version') is not None: break
+                except (OSError,urllib.error.URLError,ValueError,KeyError):
+                    pass
+                if time.monotonic()>ready_by: raise RuntimeError('history did not become ready')
+                time.sleep(.1)
             if args.ready_file: write_json(Path(args.ready_file),dict(port=port))
             began=time.monotonic()
             deadline=began+args.seconds+45
@@ -104,7 +115,14 @@ def run(args):
                         timings[kind].append((time.monotonic()-started)*1000)
                         counts[kind]+=1
                     except (OSError,urllib.error.URLError) as exc:
-                        category=str(getattr(exc,'code',type(exc).__name__))
+                        # Name the read and, for an HTTP error, Hub's error code, so a report tells
+                        # admission rejection from an unavailable history apart.
+                        category=kind+':'+str(getattr(exc,'code',type(exc).__name__))
+                        try:
+                            body=json.loads(exc.read(4096)) if hasattr(exc,'read') else {}
+                            if isinstance(body,dict) and body.get('error'): category+=':'+str(body['error'])
+                        except (OSError,ValueError):
+                            pass
                         failures[category]=failures.get(category,0)+1
             worker.join(timeout=10)
             if worker.exitcode!=0: raise RuntimeError('Hub process failed')
