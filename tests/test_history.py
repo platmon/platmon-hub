@@ -101,6 +101,22 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall(), [])
         c.close()
 
+    def test_migration_splits_statements_without_breaking_trigger_or_literals(self):
+        self.store._migrate("""-- A comment with a semicolon;
+CREATE TABLE marker (value TEXT); CREATE TABLE audit (value TEXT);
+CREATE TRIGGER marker_insert AFTER INSERT ON marker BEGIN
+    INSERT INTO audit VALUES ('first;value'); INSERT INTO audit VALUES (new.value);
+END; INSERT INTO marker VALUES ('quoted;value'); -- trailing comment;
+""")
+        self.assertEqual(self.store.connection.execute('SELECT value FROM audit').fetchall(),
+                         [('first;value',), ('quoted;value',)])
+        # Earlier statements and trigger writes must roll back on a later error.
+        with self.assertRaises(sqlite3.OperationalError):
+            self.store._migrate("INSERT INTO marker VALUES ('rollback'); CREATE TABLE partial (x); BAD SQL;")
+        self.assertEqual(self.store.connection.execute('SELECT count(*) FROM marker').fetchone()[0], 1)
+        self.assertIsNone(self.store.connection.execute(
+            "SELECT name FROM sqlite_master WHERE name='partial'").fetchone())
+
 
 class WriterTests(unittest.TestCase):
     def setUp(self):

@@ -23,11 +23,31 @@ def rss_bytes():
     return None
 
 
+def acceptance_checks(result, smoke=False):
+    """Portable correctness/resource smoke; timed budgets need a benchmark host."""
+    checks = dict(
+        backlog_captured=result['captured_nodes'] == result['nodes'],
+        live_collected=result['live_nodes'] == result['nodes'],
+        integrity=result['integrity'] == 'ok',
+        encoded_queue_bounded=result['peak_encoded_queue_bytes'] <= 8*1024**2,
+        rss_bounded=result['peak_rss_bytes'] is None or result['peak_rss_bytes'] <= 256*1024**2,
+        no_live_queue_drops=result['dropped_queue_full'] == 0,
+        no_raw_rejections=result['raw']['rejected'] == 0,
+        no_raw_failures=result['raw']['failed_pages'] == 0 and result['raw']['cursor_read_failures'] == 0,
+    )
+    if not smoke:
+        checks['commit_latency'] = result['commit_p95_ms'] is not None and result['commit_p95_ms'] < 250
+        checks['cleanup_latency'] = result['cleanup_ms'] < 250
+    return checks
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--nodes', type=int, choices=(10, 50, 100), default=10)
     parser.add_argument('--seconds', type=float, default=10)
     parser.add_argument('--output', required=True)
+    parser.add_argument('--smoke', action='store_true',
+                        help='check correctness/resource bounds without host-dependent latency gates')
     args = parser.parse_args()
     if not 3 <= args.seconds <= 60:
         parser.error('--seconds must be 3–60')
@@ -115,10 +135,11 @@ def main():
                       baseline_rss_bytes=baseline_rss, peak_rss_bytes=peak_rss, peak_wal_bytes=peak_wal,
                       commit_p95_ms=p95, cleanup_rows=removed, cleanup_ms=cleanup_ms,
                       live_nodes=live_polls, integrity=integrity, raw=writer.snapshot()['raw'],
+                      dropped_queue_full=writer.snapshot()['dropped_queue_full'],
+                      mode='smoke' if args.smoke else 'benchmark',
                       scope='In-process synthetic 10 KiB core payload; no real HTTP, device, concurrent export or operational capacity claim')
-        result['passed'] = (covered == args.nodes and live_polls == args.nodes and integrity == 'ok' and
-                            peak_queue <= 8*1024**2 and (peak_rss is None or peak_rss <= 256*1024**2) and
-                            p95 is not None and p95 < 250 and cleanup_ms < 250 and writer.snapshot()['dropped_queue_full'] == 0)
+        result['checks'] = acceptance_checks(result, args.smoke)
+        result['passed'] = all(result['checks'].values())
         Path(args.output).write_text(json.dumps(result, indent=2)+'\n', encoding='utf-8')
         print(json.dumps(result))
         return 0 if result['passed'] else 1

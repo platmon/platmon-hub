@@ -24,3 +24,19 @@ cleanup cost. It excludes HTTP/network costs, real collector payload distributio
 long-term memory, simultaneous exports and real Windows storage behavior. Compare
 operational retention/quota choices against actual deployment measurements; no raw
 retention or quota default is selected from this short synthetic workload.
+
+
+## CI smoke and host-specific timing
+
+The Ubuntu/Windows Python 3.9/3.13 CI matrix runs the same replay workload with
+`--smoke --nodes 10 --seconds 5`. Smoke requires backlog capture, Live collection,
+SQLite integrity, encoded queue/RSS bounds where measurable, no Live queue drops,
+and no raw admission, cursor-read or commit failures. JSON output names each check
+and retains commit/cleanup timings for diagnosis. RSS remains Linux-only.
+
+The default benchmark mode retains the original 250 ms commit/cleanup budgets.
+These timed gates belong to controlled host measurements; they are not portable
+latency guarantees for shared CI runners. The first Windows 3.13 CI run captured
+all ten nodes with no raw failures but measured 735.7 ms commit p95, exceeding the
+Linux/WSL2 baseline budget. Smoke success does not establish Windows performance
+acceptance; that requires separate measurements on the deployment filesystem.

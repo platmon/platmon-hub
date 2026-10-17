@@ -94,9 +94,11 @@ class HistoryStore:
         c.execute('BEGIN IMMEDIATE')
         try:
             statement = ''
-            for line in script.splitlines(keepends=True):
-                statement += line
-                if sqlite3.complete_statement(statement):
+            # complete_statement understands quoted semicolons and trigger bodies.
+            # A line may contain several statements, including in rollback fixtures.
+            for character in script:
+                statement += character
+                if character == ';' and sqlite3.complete_statement(statement):
                     c.execute(statement)
                     statement = ''
             if statement.strip():

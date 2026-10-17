@@ -237,9 +237,18 @@ os._exit(0)
         self.assertEqual(manifest['format_version'], 1)
         with self.assertRaises(FileExistsError): export_raw(self.path, output, 0, 2000)
         failed = output.with_name('failed.zip')
-        for budgets in ({'max_rows': 1}, {'max_bytes': 100}, {'timeout': 0.000001}):
+        for budgets in ({'max_rows': 1}, {'max_bytes': 100}):
             with self.assertRaises(ExportError): export_raw(self.path, failed, 0, 2000, **budgets)
             self.assertFalse(failed.exists())
+        self.assertFalse(list(output.parent.glob('.platmon-raw-*')))
+
+    def test_raw_export_deadline_cleans_temporary_file(self):
+        self.insert(page(document((2,)), received=1000))
+        output = self.path.with_suffix('.zip')
+        with patch('hub.raw_export.time.perf_counter', side_effect=[100, 101]):
+            with self.assertRaisesRegex(ExportError, 'deadline exceeded'):
+                export_raw(self.path, output, 0, 2000, timeout=1)
+        self.assertFalse(output.exists())
         self.assertFalse(list(output.parent.glob('.platmon-raw-*')))
 
 

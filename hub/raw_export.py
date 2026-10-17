@@ -24,7 +24,7 @@ def export_raw(database, output, start, end, node_ids=(), *, timeout=30,
     target = Path(output).resolve()
     if target.exists():
         raise FileExistsError('output already exists')
-    deadline = time.monotonic()+timeout
+    deadline = time.perf_counter()+timeout
     connection, temp = None, None
     count, size = 0, 0
     manifest = dict(format_version=1, database_schema_version=VERSION, from_ms=start, to_ms=end,
@@ -45,7 +45,7 @@ def export_raw(database, output, start, end, node_ids=(), *, timeout=30,
                     cursors='Committed cursor snapshot for selected nodes, independent of receipt-time filter and raw pruning.',
                     files=[])
     def check():
-        if time.monotonic() >= deadline:
+        if time.perf_counter() >= deadline:
             raise ExportError('raw export deadline exceeded')
         return 0
     def encode(value):
