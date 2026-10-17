@@ -471,6 +471,55 @@ class WriterAndSchedulingTests(unittest.TestCase):
         finally:
             writer.close()
 
+    def test_commit_reuses_durable_cursor_without_snapshot(self):
+        writer, reads = self.writer(), []
+        class Scheduler:
+            # No snapshot(): ready() must use the cheap raw_capacity() accessor.
+            raw_capacity, submit_raw = writer.raw_capacity, writer.submit_raw
+            def replay_cursor(self, *args):
+                reads.append(args)
+                return writer.replay_cursor(*args)
+        writer.start()
+        collector = ReplayCollector(Scheduler())
+        token = object()
+        def next_job():
+            job, deadline = None, time.monotonic()+10
+            while job is None and time.monotonic() < deadline:
+                job = collector.ready(NODE_ID, token)
+                threading.Event().wait(.01)
+            return job
+        try:
+            self.assertEqual(next_job(), ('core', None))  # first turn loads the cursor
+            collector.accept(NODE_ID, token, 'core', page(), True)
+            future = collector._nodes[NODE_ID]['streams']['core']['future']
+            self.assertEqual(future.result(10)['after_id'], 2)
+            before = reads.count((NODE_ID, 'core'))
+            job = next_job()
+            while job is not None and job[0] != 'core':  # other streams' round-robin turns
+                collector.fail(NODE_ID, token, job[0], protocol.OptionalUnsupported('404'))
+                job = next_job()
+            self.assertEqual(job, ('core', (INSTANCE, 2)))
+            self.assertEqual(reads.count((NODE_ID, 'core')), before)
+        finally:
+            writer.close()
+
+    def test_recovered_page_failure_still_flushes(self):
+        failed = []
+        class Flaky(HistoryStore):
+            def insert_raw_page(self, *args):
+                if not failed:
+                    failed.append(1)
+                    raise ValueError('raw_quota_exceeded')
+                return super().insert_raw_page(*args)
+        writer = self.writer(store_factory=Flaky)
+        writer.start()
+        with self.assertRaises(ValueError): writer.submit_raw(page()).result(10)
+        self.assertEqual(writer.submit_raw(page()).result(10)['after_id'], 2)
+        result = writer.close()
+        self.assertEqual(writer.snapshot()['raw']['failed_pages'], 1)
+        self.assertEqual(writer.snapshot()['raw']['unflushed_pages'], 0)
+        self.assertTrue(result['flushed'])
+
     def test_conflicts_unsupported_and_schema_failures_visible(self):
         collector = ReplayCollector(self.writer())
         token = object()

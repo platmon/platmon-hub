@@ -55,8 +55,10 @@ class ReplayCollector:
                             item.update(cursor=result, loaded=True, future=None,
                                         instance_id=result[0] if result else None, after_id=result[1] if result else None)
                         else:
-                            item.update(future=None, loaded=False, state='captured', error=None, failures=0,
-                                        after_id=result['after_id'], instance_id=item['pending_instance_id'], pages=item['pages']+1,
+                            # The commit result is the durable cursor; only failures re-read it.
+                            cursor = (item['pending_instance_id'], result['after_id'])
+                            item.update(future=None, loaded=True, cursor=cursor, state='captured', error=None, failures=0,
+                                        after_id=cursor[1], instance_id=cursor[0], pages=item['pages']+1,
                                         due=self.clock() + (0.05 if item['has_more'] else 5 if name == 'core' else 10))
                     except Exception as exc:
                         code = str(exc) if isinstance(exc, (ValueError, RuntimeError)) else type(exc).__name__
@@ -64,13 +66,13 @@ class ReplayCollector:
                 if item['due'] > self.clock() or item['future'] is not None:
                     continue
                 if not item['loaded']:
-                    capacity = self.writer.snapshot()['raw']
+                    capacity = self.writer.raw_capacity()
                     if (capacity['queue_depth']+len(self._reservations) >= capacity['queue_capacity'] or
                             capacity['queued_bytes']+256+len(self._reservations)*3*1024**2 > capacity['queue_byte_limit']):
                         return None
                     item.update(future=self.writer.replay_cursor(node_id, name), phase='cursor')
                     return None
-                capacity = self.writer.snapshot()['raw']
+                capacity = self.writer.raw_capacity()
                 if (capacity['queued_bytes'] + (len(self._reservations)+1)*3*1024**2 > capacity['queue_byte_limit'] or
                         capacity['queue_depth']+len(self._reservations) >= capacity['queue_capacity']):
                     return None

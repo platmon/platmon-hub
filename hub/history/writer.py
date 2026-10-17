@@ -40,7 +40,7 @@ class HistoryWriter:
         self._raw_in_flight = 0
         self._raw_stats = dict(committed_pages=0, persisted=0, duplicates=0, rejected=0,
                                failed_pages=0, cursor_read_failures=0, last_error=None, retention_deleted=0,
-                               quota_evicted=0)
+                               quota_evicted=0, unflushed_pages=0)
         self.path = Path(path).resolve()
         self.retention_ms = retention_days * 86400000
         self.store_factory = store_factory
@@ -109,6 +109,12 @@ class HistoryWriter:
                         queued_bytes=self._raw_bytes, queue_byte_limit=self.raw_queue_bytes,
                         quota_bytes=self.raw_quota_bytes, retention_ms=self.raw_retention_ms))
 
+    def raw_capacity(self):
+        """Cheap raw-queue admission figures for the scheduler, without a full snapshot."""
+        with self._lock:
+            return dict(queue_depth=self._raw_queue.qsize(), queue_capacity=self._raw_queue.maxsize,
+                        queued_bytes=self._raw_bytes, queue_byte_limit=self.raw_queue_bytes)
+
     def _raw_submit(self, operation, value, size):
         future = Future()
         with self._lock:
@@ -153,6 +159,9 @@ class HistoryWriter:
         except Exception as exc:
             with self._lock:
                 self._raw_stats['failed_pages' if operation == 'page' else 'cursor_read_failures'] += 1
+                if operation == 'page' and (self._stop.is_set() or not self._accepting):
+                    # Not retried by this process; the next Hub run refetches from the durable cursor.
+                    self._raw_stats['unflushed_pages'] += 1
                 self._raw_stats['last_error'] = str(exc) if isinstance(exc, (ValueError, RuntimeError)) else type(exc).__name__
             if notify:
                 future.set_exception(exc)
@@ -329,4 +338,4 @@ class HistoryWriter:
         state = self.snapshot()
         remaining = state['queue_depth'] + state['in_flight'] + state['pending_events'] + state['raw']['queue_depth'] + state['raw']['in_flight']
         return {'flushed': remaining == 0 and not (self._thread and self._thread.is_alive()) and
-                state['dropped_storage_error'] == 0 and state['raw']['failed_pages'] == 0, 'remaining': remaining}
+                state['dropped_storage_error'] == 0 and state['raw']['unflushed_pages'] == 0, 'remaining': remaining}
