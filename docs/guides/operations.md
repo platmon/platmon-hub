@@ -7,7 +7,7 @@ setuptools/wheel; neither is a service dependency. A wheel is preferable to a
 custom service wrapper: it preserves the existing Python entrypoint and includes
 all allowlisted web assets. Deployment examples, empty registry/rule examples and
 operational docs are installed under the environment’s `share/platmon-hub`. Use a dedicated virtual environment to avoid Python
-package-name collisions. The current `0.2.0rc1` candidate is not a release tag.
+package-name collisions. Released wheels are attached to the [GitHub releases](https://github.com/platmon/platmon-hub/releases) with their SHA-256 checksums.
 
 ## Build and local install
 
@@ -134,5 +134,5 @@ with a local executable substitution. These are not reboot or account-permission
 tests. Short foreground collection and process restart with three real Agents passed on
 Linux and native Windows. Actual Windows 11/systemd installation, reboot startup,
 installed-service upgrades and machine-specific ACLs remain to be verified before
-operational rollout. See [candidate evidence](../development/release.md).
+operational rollout. See [release evidence](../development/release.md).
 Release tagging and operational deployment require separate approval.

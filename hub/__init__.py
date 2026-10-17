@@ -1,3 +1,3 @@
 """Read-only fleet backend for platmon agents."""
 
-__version__ = "0.2.0rc1"
+__version__ = "1.0.0"

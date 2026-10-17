@@ -9,7 +9,7 @@ Hub runs from a source checkout with Python 3.9+ and the standard library. No in
 | Guide | Contents |
 | --- | --- |
 | [Local checks](#local-checks) | Source layout, local checks, package validation, and CI. |
-| [Release policy](release.md) / [Changelog](../../CHANGELOG.md) | Candidate artifacts, upgrade compatibility, evidence, and remaining rollout gates. |
+| [Release policy](release.md) / [Changelog](../../CHANGELOG.md) | Versioning, release procedure and artifacts, upgrade compatibility, evidence, and remaining rollout gates. |
 | [Resource budget](resource-budget.md) | Measured limits, actual-device checks, and capacity recommendations. |
 | [Benchmark index](benchmarks/README.md) | Reproduction commands and [synthetic plan](benchmarks/plan.md). |
 | [Extended soak](benchmarks/long-soak.md) / [plan](benchmarks/long-soak-plan.md) | 90-minute runs, investigations, and remaining evidence. |
