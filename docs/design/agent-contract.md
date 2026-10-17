@@ -2,27 +2,28 @@
 
 [Documentation index](../README.md) · [Design reference](README.md) · [Architecture](architecture.md) · [Hub API](api.md)
 
-**Status:** Agent contract baseline consumed by the current Hub preview. **Source of truth:** the tagged [platmon v1.2.0 HTTP API](https://github.com/platmon/platmon/blob/v1.2.0/docs/api.md), [observations](https://github.com/platmon/platmon/blob/v1.2.0/docs/observations.md) and [history](https://github.com/platmon/platmon/blob/v1.2.0/docs/history.md). All links are pinned to the agent release, not its evolving `main` branch. This document does **not** introduce or change endpoints in platmon.
+**Status:** Agent contract baseline consumed by the current Hub preview. **Source of truth:** the tagged [platmon v1.3.0 HTTP API](https://github.com/platmon/platmon/blob/v1.3.0/docs/reference/api.md), [observations](https://github.com/platmon/platmon/blob/v1.3.0/docs/reference/observations.md), [history](https://github.com/platmon/platmon/blob/v1.3.0/docs/reference/history.md) and [replay](https://github.com/platmon/platmon/blob/v1.3.0/docs/reference/replay.md). All links are pinned to the agent release, not its evolving `main` branch. This document does **not** introduce or change endpoints in platmon.
 
 This document describes upstream semantics and the Hub consumption policy. The implemented health/freshness checks are in [hub/protocol.py](../../hub/protocol.py) and [hub/state.py](../../hub/state.py); it is not a claim that every optional upstream field is validated. Hub-facing response fields are documented separately in the [Hub API reference](api.md).
 
-The baseline tag resolves to commit `26eae6e975ce184e713418dd2858b56e50d3ab90`.
-Versions 1.1.0 and 1.2.0 are additive: 1.0.0 agents remain supported without NPU
-or battery fields. Hub does not require a global application-version handshake.
+The baseline tag resolves to commit `e767176a8d5cbeb0c6bf4d04e71ceca9344b65b7`.
+Versions 1.1.0, 1.2.0 and 1.3.0 are additive: 1.0.0 agents remain supported without NPU,
+battery or replay. Hub does not require a global application-version handshake.
 
 ## 1. Compatibility matrix
 
-| Agent resource | v1.2.0 response behavior | Schema | Hub consumer policy |
+| Agent resource | v1.3.0 response behavior | Schema | Hub consumer policy |
 | --- | --- | --- | --- |
 | `GET /api/status` | HTTP 200 even when no current snapshot; inspect `ready` and `state`. No collection triggered. | `1` | **Required** for node health and collection progress; cannot equate HTTP 200 to healthy. |
 | `GET /api/stats` | HTTP 200 with current snapshot; **503** for no current data (including stale). Requests can wait up to 5 s for the first sample. | `1` | Read only when `/api/status` indicates `ready=true`; missing current data is **not** transport offline. |
 | `GET /api/observations` | HTTP 200 and `groups` map (can be `{}`); reads the independent slow publishers; no collection triggered. | **`2`** | Poll on independent low cadence; handle group absence, individual staleness and tri-state Wi-Fi. Failure is not core failure. |
 | `GET /api/history` | HTTP 200 with bounded in-memory series if enabled; **404** when disabled. Restart clears history. | `1` | Not polled. Hub persistence stores its own accepted responses; Agent history is not a durable backfill. |
+| `GET /api/samples`, `GET /api/observation-samples` | Bounded memory replay of complete publications (1.3.0 and later); 404 on older agents or when disabled; 409 for a changed instance or a cursor ahead. | Envelope `1` | Read only by opt-in raw capture; see [Opt-in full-publication replay](#opt-in-full-publication-replay). 404 reduces capture coverage and is not an error. |
 | `GET /text`, `GET /` | Human-readable output or local Web UI (if enabled). | N/A | Not a machine contract for Hub. |
 
-All agent API responses above carry `Cache-Control: no-store` in v1.2.0; Hub must not rely on intermediary caches. Default agent port is 9797, but it is configurable and must be stored with each node's endpoint. The API has **no authentication**: a trusted network/VPN is a prerequisite, not an authorization feature.
+All agent API responses above carry `Cache-Control: no-store` in v1.3.0; Hub must not rely on intermediary caches. Default agent port is 9797, but it is configurable and must be stored with each node's endpoint. The API has **no authentication**: a trusted network/VPN is a prerequisite, not an authorization feature.
 
-The **application release version `1.2.0` is not an endpoint schema version**. Hub independently validates the response schema **per endpoint**. It must not assume `/api/observations` schema 1 because `/api/stats` is schema 1.
+The **application release version `1.3.0` is not an endpoint schema version**. Hub independently validates the response schema **per endpoint**. It must not assume `/api/observations` schema 1 because `/api/stats` is schema 1.
 
 ## 2. Required core health fields
 
@@ -109,13 +110,23 @@ cache; it does not trigger battery collection. A missing group or
 `unavailable/not_detected` is normal on devices without a battery.
 
 Hub displays and persists selected `batteries` and `external` fields from the
-[battery contract](https://github.com/platmon/platmon/blob/v1.2.0/docs/battery.md).
+[battery contract](https://github.com/platmon/platmon/blob/v1.3.0/docs/reference/battery.md).
 It preserves `present`/`online` as true/false/null; an empty battery bay has no
 readings. Charge (µAh) and energy (µWh) are never converted into one another.
 Voltage is µV, current is signed µA, power is signed µW; driver status determines
 charging/discharging. Full/design ratios compare values within one family only.
 The UI converts display units to Ah, Wh, V, A and W; observation exports retain
 the original units. No charge control, low-charge alert or battery graph is added.
+
+### Additions in 1.3.0
+
+- `/api/status` `levels` gains `battery` and `wifi` warning/critical pairs. Hub does not read
+  `levels`; its alerts use Hub's own rules, so the additional keys are ignored.
+- The Agent HTTP server allows at most 32 active connections and times out reads and writes
+  after 10 seconds without progress. Hub issues at most one request per node at a time
+  ([architecture](architecture.md#default-polling-and-state-semantics)), within that limit.
+- Full-publication replay is released; see the replay section below. Live endpoint schemas
+  and fields are unchanged.
 
 ## 5. Parsing / version policy
 
@@ -140,25 +151,27 @@ Hub does **not** scrape `/api/history` to backfill its database. Optional SQLite
 
 ## 7. Source anchors and change control
 
-- [v1.2.0 API fields and collector states](https://github.com/platmon/platmon/blob/v1.2.0/docs/api.md)
-- [v1.2.0 independent observations and schema-2 Wi-Fi](https://github.com/platmon/platmon/blob/v1.2.0/docs/observations.md)
-- [v1.2.0 history and gap semantics](https://github.com/platmon/platmon/blob/v1.2.0/docs/history.md)
-- [v1.2.0 passive network scope](https://github.com/platmon/platmon/blob/v1.2.0/docs/network.md)
-- [v1.2.0 TCP probe meaning](https://github.com/platmon/platmon/blob/v1.2.0/docs/probe.md)
-- [v1.2.0 battery and external power](https://github.com/platmon/platmon/blob/v1.2.0/docs/battery.md)
+- [v1.3.0 API fields and collector states](https://github.com/platmon/platmon/blob/v1.3.0/docs/reference/api.md)
+- [v1.3.0 independent observations and schema-2 Wi-Fi](https://github.com/platmon/platmon/blob/v1.3.0/docs/reference/observations.md)
+- [v1.3.0 history and gap semantics](https://github.com/platmon/platmon/blob/v1.3.0/docs/reference/history.md)
+- [v1.3.0 passive network scope](https://github.com/platmon/platmon/blob/v1.3.0/docs/reference/network.md)
+- [v1.3.0 TCP probe meaning](https://github.com/platmon/platmon/blob/v1.3.0/docs/reference/probe.md)
+- [v1.3.0 battery and external power](https://github.com/platmon/platmon/blob/v1.3.0/docs/reference/battery.md)
+- [v1.3.0 full-publication replay](https://github.com/platmon/platmon/blob/v1.3.0/docs/reference/replay.md)
 
-Synthetic compatibility coverage lives in [test_agent_v120.py](../../tests/test_agent_v120.py)
-and [the pinned payload fixture](../../tests/fixtures/agent-v1.2.0.json); these are
+Synthetic compatibility coverage lives in [test_agent_v120.py](../../tests/test_agent_v120.py),
+[the pinned payload fixture](../../tests/fixtures/agent-v1.2.0.json) and the 1.3.0 additions in
+[test_agent_v130.py](../../tests/test_agent_v130.py); these are
 contract tests, not evidence of a new physical-device acceptance run.
 
 Future changes to Hub's accepted schema set need fixtures and a compatibility note; do not silently upgrade requirements on the released agent. The implemented Hub state mapping and polling defaults are documented in [architecture.md](architecture.md), **not** promised behaviors of platmon.
 
 ## Opt-in full-publication replay
 
-The additional contract is pinned to Agent commit
-`47e384970324d71d9590c231504350ec2d40c863`
-([replay reference](https://github.com/platmon/platmon/blob/47e384970324d71d9590c231504350ec2d40c863/docs/reference/replay.md)).
-It is separate from the v1.2.0 Live baseline. Hub detects each Agent/stream's
+Replay was first released in platmon v1.3.0
+([replay reference](https://github.com/platmon/platmon/blob/v1.3.0/docs/reference/replay.md)); it was implemented against Agent commit
+`47e384970324d71d9590c231504350ec2d40c863`, whose contract the release keeps.
+Live endpoints are unchanged by it. Hub detects each Agent/stream's
 availability by response, not by an application release version.
 
 Only raw capture reads `/api/samples` and `/api/observation-samples`, with internally

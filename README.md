@@ -7,7 +7,7 @@
 
 Fleet monitoring for independent [platmon](https://github.com/platmon/platmon) agents. Run Hub on Windows or Linux to view live readings, optional SQLite history, internal alerts, and data exports. Hub never installs or controls agents.
 
-Supports platmon **1.0.0–1.2.0**, including GPU/NPU usage and independent battery/external-power observations. See the [Agent contract](docs/design/agent-contract.md).
+Supports platmon **1.0.0–1.3.0**, including GPU/NPU usage and independent battery/external-power observations. Opt-in full-publication raw capture needs platmon 1.3.0 or later. See the [Agent contract](docs/design/agent-contract.md).
 
 **Status:** `0.2.0rc1` candidate. See [project status and validation limits](docs/README.md#project-status). HTTP is read-only by default; local web device management is opt-in. Keep the first run on loopback.
 

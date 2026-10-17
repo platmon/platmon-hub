@@ -69,8 +69,9 @@ leave a `.platmon-export-*.tmp` file; operators may remove it once no export run
 
 Archives contain only data still present at snapshot time. They do not reconstruct
 expired samples, unobserved periods or rows lost during Writer failures. Empty
-results are valid and described by the manifest. Live network and Disk I/O data
-are not currently stored and are not included.
+results are valid and described by the manifest. Network and disk I/O appear only as
+the schema-7 `core_samples` columns (busiest interface rx/tx and disk read/write rates);
+per-interface and per-disk values are kept only in raw capture (`raw-export`).
 
 ## Implementation stages
 

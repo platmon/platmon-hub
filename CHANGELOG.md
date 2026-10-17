@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — platmon 1.3.0 compatibility
+
+- Declare platmon 1.0.0–1.3.0 support. 1.3.0 is additive for Hub: live schemas are
+  unchanged, the new `/api/status` battery and Wi-Fi `levels` are ignored, and the
+  released replay endpoints keep the contract raw capture already uses. The Agent
+  contract is pinned to tag v1.3.0, with a synthetic 1.3.0 compatibility test.
+- Correct the export guide: schema 7 stores busiest-interface and disk I/O rates.
+
 ## Unreleased — no backups of a new database
 
 - Creating a History database no longer leaves a verified backup of each empty
