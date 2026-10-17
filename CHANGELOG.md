@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased — platmon 1.3.0 compatibility
+## 1.0.0 — 2026-10-17
+
+First release. From this version the Hub HTTP API (schema 1 routes and fields), the
+`platmon-hub` command's options and subcommands, the registry and alert-rule JSON
+formats and the export formats follow MAJOR.MINOR.PATCH: a breaking change needs a
+new major version ([release policy](docs/development/release.md#versioning)).
+Supports platmon Agents 1.0.0–1.3.0. The `0.2.0rc1` candidate below was never tagged
+or published; 1.0.0 includes it and the changes listed here.
+
+### platmon 1.3.0 compatibility
 
 - Declare platmon 1.0.0–1.3.0 support. 1.3.0 is additive for Hub: live schemas are
   unchanged, the new `/api/status` battery and Wi-Fi `levels` are ignored, and the
@@ -8,33 +17,33 @@
   contract is pinned to tag v1.3.0, with a synthetic 1.3.0 compatibility test.
 - Correct the export guide: schema 7 stores busiest-interface and disk I/O rates.
 
-## Unreleased — no backups of a new database
+### no backups of a new database
 
 - Creating a History database no longer leaves a verified backup of each empty
   intermediate schema (`history.db.v1-backup-*` to `v6-backup-*`). Upgrading an
   existing database still backs it up before every migration.
 
-## Unreleased — NPU and probe alerts
+### NPU and probe alerts
 
 - Add `npu_percent` and `probe_failure_percent` alert conditions. The probe condition
   is the worst target's failed share of its recent TCP connect attempts; it follows the
   probe group's own freshness and is unknown when the group is stale or has no target.
 - Node summaries gain an additive nullable `probe_failure_percent` field.
 
-## Unreleased — pressure alerts
+### pressure alerts
 
 - Add `psi_cpu_some_avg10`, `psi_memory_some_avg10` and `psi_io_some_avg10` alert
   conditions from the Agent's pressure stall information, following core freshness.
   Node summaries gain an additive `pressure` object with the same three values.
 
-## Unreleased — battery and Wi-Fi alerts
+### battery and Wi-Fi alerts
 
 - Add `battery_percent` and `wifi_signal_dbm` alert conditions, where the low reading is
   the bad one: `warning >= critical`, compared at or below, recovering above warning plus
   hysteresis. They use the lowest present battery charge and the weakest connected signal
   from current observations. Node summaries gain both as additive nullable fields.
 
-## Unreleased — pressure and I/O rate history
+### pressure and I/O rate history
 
 - History schema 7 adds nullable CPU/memory/I/O pressure (`some avg10`), busiest-interface
   network receive/send rates and summed physical-disk read/write rates to `core_samples`,
@@ -42,7 +51,7 @@
 - The History API, dashboard History chart, CSV export and report summaries include them.
   Daily summaries move to `summary_format_version: 3`; formats 1 and 2 remain readable.
 
-## Unreleased — Agent replay and raw persistence
+### Agent replay and raw persistence
 
 - Add opt-in full core/slow publication replay with bounded fair catch-up, per-stream
   coverage diagnostics and isolation from Live monitoring and alerts.
@@ -55,7 +64,7 @@
   times, receipt times, schemas, units and loss evidence. Existing CSV archives and
   reports remain summary consumers.
 
-## Unreleased — platmon 1.2.0 compatibility
+### platmon 1.2.0 compatibility
 
 - Consume the additive platmon v1.1.0/v1.2.0 fields while retaining v1.0.0
   compatibility: status/stats schema 1 and observations schema 2 are unchanged.

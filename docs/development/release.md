@@ -1,13 +1,42 @@
-# Release candidate and upgrade policy
+# Release and upgrade policy
 
 [Documentation index](../README.md) · [Development guide](README.md)
 
-`0.2.0rc1` is a candidate application version, not an assertion of production
-acceptance. Versions follow PEP 440; candidate increments precede a stable release.
-Hub HTTP schema 1, SQLite schema 7 and Agent schemas remain separately versioned.
-A code downgrade never implicitly downgrades a database.
+`1.0.0` is the first release. Hub HTTP schema 1, SQLite schema 7 and Agent schemas
+remain separately versioned. A code downgrade never implicitly downgrades a database.
+The release does not by itself assert the production acceptance listed below.
 
-## Candidate artifacts
+## Versioning
+
+`__version__` in `hub/__init__.py` is the single source of the application version and
+follows PEP 440 with MAJOR.MINOR.PATCH releases. From 1.0.0 the compatibility contract
+covers the Hub HTTP API (schema 1 routes, fields and status codes), the `platmon-hub`
+command's options and subcommands, the registry and alert-rule JSON formats, and the
+CSV/JSONL export formats. Patch releases fix compatible defects; minor releases add
+compatible features, fields, options or newly qualified environments; any removal or
+incompatible change to the covered surfaces needs a major release. Removing a supported
+OS or interpreter, or raising the minimum Python, is also major
+([ADR-0005](../design/adr/0005-os-and-python-support.md)).
+
+SQLite schema upgrades are forward migrations with a verified backup and are allowed in
+minor releases; a database is never downgraded in place, so rolling back code follows
+the backup procedure below. Supported Agent versions are additive: dropping support for
+an Agent version is a major change. Update `CHANGELOG.md` in the same change as
+`__version__`. Never replace an already released version's files.
+
+## Release procedure
+
+1. Update `__version__`, the changelog and affected documentation in one reviewed pull
+   request; run the unit suite and `scripts/check-package.py`.
+2. Merge after CI passes on every supported interpreter, and confirm CI on the merged
+   `main` commit.
+3. Tag that commit as `v<version>` with an annotated tag and push the tag.
+4. Build the release artifacts from the tagged commit with `scripts/check-package.py`
+   and verify the two independent builds are identical. Publish a GitHub release with the
+   wheel, `package-report.json` and `SHA256SUMS`, and the changelog entry and open
+   acceptance gates as notes. No container image or package-index upload is published.
+
+## Release artifacts
 
 ```sh
 python scripts/check-package.py --output-dir /temporary/candidate-artifacts
@@ -66,5 +95,5 @@ Before production acceptance, verify on the actual target hosts:
 - Approved real-device communication failure/recovery. Fault injection so far used
   synthetic Agents; production Agents were neither restarted nor modified.
 
-Release tag creation and operational deployment require separate approval. Candidate
-PR merges and CI artifacts do not authorize installing services or publishing a release.
+Release tag creation and operational deployment require separate approval. Pull
+request merges and CI artifacts do not authorize installing services or publishing a release.

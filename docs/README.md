@@ -14,10 +14,10 @@ For Windows background execution or automatic startup, start with the [startup o
 
 ## Project status
 
-The `0.2.0rc1` candidate implements Fleet monitoring, optional SQLite history, registry management, events, internal alerts, packaging, data exports, and reports. The Windows saved launcher enables History and local web management; a plain `python -m hub --nodes ...` start enables neither unless their options are supplied.
+Hub 1.0.0 implements Fleet monitoring, optional SQLite history, registry management, events, internal alerts, packaging, data exports, and reports. The Windows saved launcher enables History and local web management; a plain `python -m hub --nodes ...` start enables neither unless their options are supplied.
 
 History is opt-in with `--history-db`; alerts additionally need `--alerts`. Defaults retain metrics for seven days and events for 30 days. Automatic archives are separately opt-in with `--archive-dir`, with raw ZIP and daily-summary retention bounded by quota. See [configuration](guides/configuration.md) and [exports](guides/data-export.md) for exact options and limits.
 
 Three real devices passed short read-only collection/restart checks on Linux and native Windows. Synthetic 100-node and actual three-device 90-minute runs are documented in the [resource budget](development/resource-budget.md) and [extended soak report](development/benchmarks/long-soak.md). These results do not establish unrestricted production capacity.
 
-Service reboot/ACL acceptance and a longer operational pilot remain before production rollout. A candidate version or merged PR does not imply a release tag or deployment. Application version, Hub HTTP schema, SQLite schema, and Agent endpoint schemas are separate contracts; follow the [release policy](development/release.md).
+Service reboot/ACL acceptance and a longer operational pilot remain before production rollout. A release or merged PR does not imply deployment. Application version, Hub HTTP schema, SQLite schema, and Agent endpoint schemas are separate contracts; follow the [release policy](development/release.md).
