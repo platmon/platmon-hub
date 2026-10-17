@@ -2,7 +2,7 @@
 
 [Documentation index](../../README.md) · [Design reference](../README.md)
 
-- **Status:** Accepted; stages 1 (sequence and loss accounting, SQLite schema 9) and 2 (segment builder) implemented, stages 3–5 pending; see [implementation notes](#implementation-notes)
+- **Status:** Accepted; stages 1–3 (sequence and loss accounting in SQLite schema 9, segment builder, in-Hub scheduling with acknowledgement, spool deletion and backfill) implemented, stages 4–5 pending; see [implementation notes](#implementation-notes)
 - **Date:** 2026-10-17
 - **Scope:** A versioned, incremental, file-based contract through which a separate post-processing system receives committed Hub data
 - **Hub baseline:** `main` at `758d62f6f2b06d82b71f564d0b21c5e2914de848` (SQLite schema 7)
@@ -474,3 +474,23 @@ The builder runs offline: `python -m hub handoff --db DB status|enable --start n
 takes the history database's file lock, so it refuses while a Hub uses the database, and opens
 it without a Hub session or continuity reconciliation. Building inside a running Hub through
 its writer, acknowledgement, spool deletion and backfill are stage 3.
+
+**Stage 3 (2026-10-18), running Hub.** `--handoff-spool`, `--handoff-spool-quota-mib`,
+`--handoff-spool-retention-days` and `--handoff-start` enable it; startup refuses a missing,
+unwritable or hard-link-less spool and a spool retention longer than the raw retention. A
+`HandoffScheduler` thread enables handoff through the writer, then every 10 seconds recovers an
+unrecorded segment, applies acknowledgements, deletes spool files, advances an `existing`
+backfill by up to 1,000 rows and, every 15 minutes or immediately after a size-capped segment,
+builds the next segment from a read snapshot. Delivery, acknowledgement, segment losses and
+backfill run as writer commands, so the writer remains the only connection that writes.
+
+Acknowledgement accepts the longest prefix of segments whose `.ack` file holds the segment's
+SHA-256; a mismatching file is counted and checked again. Acknowledged segments are deleted
+after the spool retention, judged by file modification time. The oldest unacknowledged segment
+whose newest receipt time is older than the shortest data retention is deleted and recorded as
+a `handoff_losses` row named `segment:<name>`, which also resolves its range for acknowledgement.
+Production pauses while the spool reaches its quota. A clean shutdown builds a final segment;
+the Hub session's closing time is written after it and therefore travels in the next run's
+first segment. Backfill numbers rows in (receipt time, rowid) order per table, a keyset that
+lets each batch continue where the previous one stopped, rather than the ADR's
+(receipt time, node, instance, stream, ID).

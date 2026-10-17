@@ -109,7 +109,7 @@ class SegmentTests(unittest.TestCase):
 
     def test_recovery_adopts_a_published_segment_whose_delivery_was_not_recorded(self):
         self.add()
-        with patch('hub.handoff._deliver', side_effect=RuntimeError('crash')):
+        with patch('hub.history.store.HistoryStore.record_delivery', side_effect=RuntimeError('crash')):
             with self.assertRaises(RuntimeError): self.build()
         published = list(self.spool.glob('*/*.zip'))
         self.assertEqual(len(published), 1)
