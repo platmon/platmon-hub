@@ -2,7 +2,7 @@
 
 [Documentation index](../../README.md) · [Design reference](../README.md)
 
-- **Status:** Proposed (draft for review)
+- **Status:** Accepted; CI coverage implemented in #42
 - **Date:** 2026-10-17
 - **Scope:** Interpreters and operating systems on which Hub runs, and the CI evidence required for them
 - **Hub baseline:** `main` at `fb5f0eed5b6268a58d05077281ef7de2779a5d36`
@@ -33,6 +33,7 @@ Windows coverage, and keep the Python 3.9 minimum. Hub remains a standard-librar
 | Ubuntu 24.04 / Python 3.12 | Native support target and development baseline; interpreter tested in CI on Linux |
 | Ubuntu 26.04 / Python 3.14 | Native support target; interpreter tested in CI on Linux |
 | Windows 11 x64 with a python.org interpreter 3.9 or later | Support target; CI covers 3.9 and 3.13 only |
+| Windows 10 | Outside support; it may work, but defects specific to it are not fixed |
 | Python 3.8 / Ubuntu 20.04 | Outside support; no observation target, because the package cannot install there |
 | Interim Ubuntu releases, future Python versions | Not qualified automatically |
 
@@ -53,9 +54,10 @@ separate decision based on observed failures or user reports.
 - CI gains three Linux jobs. Steps that are already pinned to Python 3.13 (TLS proxy and browser
   checks) stay pinned; the new jobs run the unit suite, compilation, smoke harnesses, package
   build and systemd validation.
-- Raising the minimum Python or removing a support target requires a changelog entry and a
-  separate decision. The release-version rule for such removals is left open until Hub 1.0; see
-  below.
+- Raising the minimum Python or removing a support target requires a separate decision, a
+  changelog entry and a **major release**. This applies before Hub 1.0 as well: such a removal
+  cannot ship in a 0.x minor or patch release. Adding a qualified target is allowed in a minor
+  release. CI-only evidence carries no such commitment.
 
 ## Alternatives
 
@@ -66,11 +68,12 @@ separate decision based on observed failures or user reports.
 | Add every interpreter on Windows as well | Defer: doubles Windows CI time without a known Windows-specific interpreter risk |
 | Raise the minimum to 3.10 | Reject for now: removes existing support without a demonstrated need |
 
-## Open questions
+## Resolved questions
 
-1. Before Hub 1.0, does removing a support target require a minor release (pre-1.0 convention)
-   or should Hub adopt platmon's major-release rule and six-month notice now?
-2. Should Windows 10 remain implicitly supported, or be stated as outside support?
+| Question | Decision |
+| --- | --- |
+| Release rule for removing a support target before Hub 1.0 | Major release, as for platmon; no 0.x exception |
+| Windows 10 | Outside support |
 
 ## Implementation
 
