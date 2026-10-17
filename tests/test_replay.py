@@ -318,9 +318,14 @@ class WriterAndSchedulingTests(unittest.TestCase):
             fleet.core_once(NODE_ID)
             before = fleet.get_node(NODE_ID)
             token = fleet.nodes[NODE_ID]
-            fleet.replay._node(NODE_ID, token)
+            replay_node = fleet.replay._node(NODE_ID, token)
             fleet.replay_once(NODE_ID, token, 'core', None)
-            wait_for(lambda: writer.snapshot()['raw']['committed_pages'] == 1)
+            # Await the durable acknowledgement, including cold DB migration/backups
+            # on Windows, rather than polling a counter with a three-second limit.
+            acknowledgement = replay_node['streams']['core']['future']
+            self.assertIsNotNone(acknowledgement)
+            self.assertEqual(acknowledgement.result(timeout=10)['after_id'], 2)
+            self.assertEqual(writer.snapshot()['raw']['committed_pages'], 1)
             self.assertEqual(fleet.get_node(NODE_ID)['stats']['sample']['sequence'], before['stats']['sample']['sequence'])
             self.assertEqual(fleet.get_node(NODE_ID)['headline'], 'live')
             class Race(Client):
