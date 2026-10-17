@@ -17,6 +17,11 @@ from hub.registry import load_registry
 from hub.runtime import Fleet
 
 
+# An upper bound, not a pace. A registry write is backed up and fsynced; on hosted Windows
+# runners 870 such requests took up to 1.13 s (p99 0.22 s), and one exceeded the former 2 s.
+CLIENT_TIMEOUT = 10
+
+
 class WebRegistrationTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -43,7 +48,7 @@ class WebRegistrationTests(unittest.TestCase):
                 if value is None: values.pop(key, None)
                 else: values[key] = value
         body = raw if raw is not None else json.dumps(data or {'name': 'Lab', 'host': '192.0.2.10'})
-        connection = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=2)
+        connection = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=CLIENT_TIMEOUT)
         try:
             connection.request(method, path, body=body if method != 'GET' else None, headers=values)
             response = connection.getresponse()
@@ -147,7 +152,7 @@ class WebRegistrationTests(unittest.TestCase):
         origin = 'http://127.0.0.1:' + str(self.server.server_port)
         for duplicate in ('Host', 'Origin', 'X-Platmon-Admin', 'Content-Length'):
             with self.subTest(header=duplicate):
-                connection = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=2)
+                connection = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=CLIENT_TIMEOUT)
                 body = b'{"name":"Lab","host":"192.0.2.10"}'
                 values = [('Host', origin[7:]), ('Origin', origin), ('X-Platmon-Admin', '1'),
                           ('Content-Length', str(len(body))), ('Content-Type', 'application/json')]
@@ -170,7 +175,7 @@ class WebRegistrationTests(unittest.TestCase):
         # Exercise browser serialization for port 80 without binding a privileged port.
         actual_port = self.server.server_port
         with patch.object(self.server, 'server_port', 80):
-            connection = http.client.HTTPConnection('127.0.0.1', actual_port, timeout=2)
+            connection = http.client.HTTPConnection('127.0.0.1', actual_port, timeout=CLIENT_TIMEOUT)
             try:
                 connection.request('POST', '/api/admin/nodes', body=json.dumps({'name': 'Lab', 'host': '192.0.2.10'}),
                     headers={'Host': 'localhost', 'Origin': 'http://localhost', 'X-Platmon-Admin': '1', 'Content-Type': 'application/json'})
