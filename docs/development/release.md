@@ -2,7 +2,7 @@
 
 [Documentation index](../README.md) · [Development guide](README.md)
 
-`1.0.0` is the first release. Hub HTTP schema 1, SQLite schema 8 and Agent schemas
+`1.0.0` is the first release. Hub HTTP schema 1, SQLite schema 9 and Agent schemas
 remain separately versioned. A code downgrade never implicitly downgrades a database.
 The release does not by itself assert the production acceptance listed below.
 
@@ -67,7 +67,7 @@ examples and operational documentation under `share/platmon-hub`.
    lost after the backup. Never modify `user_version` to force compatibility.
 
 The migration test starts with schema 1, preserves zero/null measurements through
-schema 8, makes an online backup, preserves UUID through CLI editing and restores
+schema 9, makes an online backup, preserves UUID through CLI editing and restores
 a schema-1 backup independently. It does not simulate an installed OS service upgrade.
 See [operations](../guides/operations.md) for service-specific paths and commands.
 

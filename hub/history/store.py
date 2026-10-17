@@ -8,9 +8,14 @@ from pathlib import Path
 
 from ..filelock import FileLock
 from ..alerts import AlertRecord
-from .schema import SQL, VERSION, MIGRATION_2, MIGRATION_3, MIGRATION_4, MIGRATION_5, MIGRATION_6, MIGRATION_7, MIGRATION_8
+from .schema import SQL, VERSION, MIGRATION_2, MIGRATION_3, MIGRATION_4, MIGRATION_5, MIGRATION_6, MIGRATION_7, MIGRATION_8, MIGRATION_9
 from .codec import Dictionaries
 from .projector import LOAD_COLUMNS, ObservationRecord, ContinuityRecord, EventRecord
+
+
+# Tables handed off downstream (ADR-0004) and the receipt-time column that bounds their losses.
+HANDOFF_TABLES = {'raw_publications': 'received_at_ms', 'replay_losses': 'received_at_ms', 'gaps': 'start_ms',
+                  'events': 'received_at_ms', 'hub_sessions': 'last_seen_ms'}
 
 
 class SchemaError(Exception):
@@ -57,10 +62,12 @@ class HistoryStore:
                 expected.update(('raw_publications', 'raw_envelopes', 'replay_cursors', 'replay_losses', 'raw_usage'))
             if version >= 8:
                 expected.add('raw_dictionaries')
+            if version >= 9:
+                expected.update(('handoff_state', 'handoff_losses'))
             tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if tables != expected:
                 raise SchemaError('invalid_history_layout')
-            for target, script in ((2, MIGRATION_2), (3, MIGRATION_3), (4, MIGRATION_4), (5, MIGRATION_5), (6, MIGRATION_6), (7, MIGRATION_7), (8, MIGRATION_8)):
+            for target, script in ((2, MIGRATION_2), (3, MIGRATION_3), (4, MIGRATION_4), (5, MIGRATION_5), (6, MIGRATION_6), (7, MIGRATION_7), (8, MIGRATION_8), (9, MIGRATION_9)):
                 if version >= target:
                     continue
                 if not created:
@@ -78,6 +85,7 @@ class HistoryStore:
                 raise SchemaError('wal_unavailable')
             c.execute('PRAGMA synchronous=FULL')
             c.execute('PRAGMA wal_autocheckpoint=1000')
+            c.execute('CREATE TEMP TABLE IF NOT EXISTS doomed (id INTEGER PRIMARY KEY)')
             self.session_id = uuid.uuid4().hex
             now = int(time.time() * 1000)
             c.execute('BEGIN IMMEDIATE')
@@ -88,7 +96,7 @@ class HistoryStore:
                     gap = self._gap(node, scope, instance, min(previous, now), None, 'unobserved')
                     c.execute('UPDATE continuity SET reason=?, gap_id=? WHERE node_id=? AND scope=?',
                               ('unobserved', gap, node, scope))
-                c.execute('INSERT INTO hub_sessions VALUES (?,?,?,NULL)', (self.session_id, now, now))
+                c.execute('INSERT INTO hub_sessions (session_id,started_at_ms,last_seen_ms,closed_at_ms) VALUES (?,?,?,NULL)', (self.session_id, now, now))
                 c.execute('COMMIT')
             except BaseException:
                 c.execute('ROLLBACK')
@@ -118,8 +126,9 @@ class HistoryStore:
             raise
 
     def _gap(self, node, scope, instance, start, end, reason):
-        return self.connection.execute('INSERT INTO gaps (node_id,scope,instance_id,start_ms,end_ms,reason) '
-                                       'VALUES (?,?,?,?,?,?)', (node, scope, instance, start, end, reason)).lastrowid
+        return self.connection.execute('INSERT INTO gaps (node_id,scope,instance_id,start_ms,end_ms,reason,gap_uid) '
+                                       'VALUES (?,?,?,?,?,?,?)', (node, scope, instance, start, end, reason,
+                                                                  uuid.uuid4().hex)).lastrowid
 
     def _continuity(self, record):
         c = self.connection
@@ -166,7 +175,7 @@ class HistoryStore:
                   (record.node_id, record.scope, record.instance_id, record.received_at_ms, record.reason, gap_id, headline))
 
     def _insert_event(self, record):
-        return self.connection.execute('INSERT INTO events VALUES (?,?,?,?,?,?,?) ON CONFLICT(event_id) DO NOTHING', record.values()).rowcount
+        return self.connection.execute('INSERT INTO events (node_id,event_type,received_at_ms,previous_state,current_state,reason_code,event_id) VALUES (?,?,?,?,?,?,?) ON CONFLICT(event_id) DO NOTHING', record.values()).rowcount
 
     def insert_batch(self, records):
         c = self.connection
@@ -233,12 +242,15 @@ class HistoryStore:
             count += c.execute('DELETE FROM observations WHERE rowid IN '
                                '(SELECT rowid FROM observations WHERE received_at_ms < ? LIMIT ?)',
                                (cutoff_ms, limit)).rowcount
-            count += c.execute('DELETE FROM events WHERE event_id IN (SELECT event_id FROM events WHERE received_at_ms < ? LIMIT ?)',
-                               (cutoff_ms if event_cutoff_ms is None else event_cutoff_ms, limit)).rowcount
-            c.execute('DELETE FROM gaps WHERE id IN (SELECT id FROM gaps WHERE end_ms < ? LIMIT ?)', (cutoff_ms, limit))
+            event_cutoff = cutoff_ms if event_cutoff_ms is None else event_cutoff_ms
+            count += self._delete('events', 'received_at_ms < ? LIMIT ?', (event_cutoff, limit), 'retention')
+            # Loss records stay until acknowledged, then follow event retention.
+            c.execute('DELETE FROM handoff_losses WHERE rowid IN (SELECT rowid FROM handoff_losses WHERE handoff_seq <= '
+                      '(SELECT acked_seq FROM handoff_state) AND to_received_ms < ? LIMIT ?)', (event_cutoff, limit))
+            self._delete('gaps', 'end_ms < ? LIMIT ?', (cutoff_ms, limit), 'retention')
             c.execute('UPDATE gaps SET end_ms=? WHERE id IN (SELECT gap_id FROM continuity WHERE received_at_ms < ? LIMIT ?)', (cutoff_ms, cutoff_ms, limit))
             c.execute('DELETE FROM continuity WHERE rowid IN (SELECT rowid FROM continuity WHERE received_at_ms < ? LIMIT ?)', (cutoff_ms, limit))
-            c.execute('DELETE FROM hub_sessions WHERE session_id IN (SELECT session_id FROM hub_sessions WHERE last_seen_ms < ? AND session_id != ? LIMIT ?)', (cutoff_ms, self.session_id, limit))
+            self._delete('hub_sessions', 'last_seen_ms < ? AND session_id != ? LIMIT ?', (cutoff_ms, self.session_id, limit), 'retention')
             c.execute('COMMIT')
             return count
         except BaseException:
@@ -260,7 +272,7 @@ class HistoryStore:
             if old is not None and old[0] != page.instance_id:
                 if old != (page.previous_instance, page.previous_after):
                     raise ValueError('obsolete replay generation')
-                c.execute('INSERT INTO replay_losses VALUES (?,?,?,?,NULL,?,?) ON CONFLICT DO NOTHING',
+                c.execute('INSERT INTO replay_losses (node_id,instance_id,stream,from_id,to_id,reason,received_at_ms) VALUES (?,?,?,?,NULL,?,?) ON CONFLICT DO NOTHING',
                           (page.node_id, old[0], page.stream, old[1]+1, 'agent_restart_unknown_extent', page.received_at_ms))
                 c.execute('UPDATE replay_cursors SET active=0 WHERE node_id=? AND stream=?', (page.node_id, page.stream))
             prior = c.execute('SELECT after_id FROM replay_cursors WHERE node_id=? AND instance_id=? AND stream=?', key).fetchone()
@@ -270,7 +282,7 @@ class HistoryStore:
             inserted, counts = self._publications(page.node_id, page.instance_id, page.received_at_ms, page.envelope_json,
                                                   [(page.stream,) + tuple(r) for r in page.records])
             for start, end, reason in page.losses:
-                c.execute('INSERT INTO replay_losses VALUES (?,?,?,?,?,?,?) '
+                c.execute('INSERT INTO replay_losses (node_id,instance_id,stream,from_id,to_id,reason,received_at_ms) VALUES (?,?,?,?,?,?,?) '
                           'ON CONFLICT(node_id,instance_id,stream,from_id,reason) DO UPDATE SET to_id=max(to_id,excluded.to_id)',
                           key + (start, end, reason, page.received_at_ms))
             evicted = self._make_room(quota_bytes, newest_prior)
@@ -329,7 +341,9 @@ class HistoryStore:
                     dictionaries[digest] = c.execute('SELECT dictionary_id FROM raw_dictionaries WHERE digest=?',
                                                      (digest,)).fetchone()[0]
                 stored, dictionary_id, size = '', dictionaries[digest], len(blob) + 256
-            row = c.execute('INSERT INTO raw_publications VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) '
+            row = c.execute('INSERT INTO raw_publications (node_id,instance_id,stream,publication_id,received_at_ms,reported_started_at,'
+                            'reported_completed_at,gap_before,data_json,envelope_id,encoded_bytes,payload_zlib,dictionary_id) '
+                            'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) '
                             'ON CONFLICT(node_id,instance_id,stream,publication_id) DO NOTHING',
                             (node_id, instance_id, stream, pid, received_at_ms, start, end, int(gap), stored,
                              envelope_id, size, blob, dictionary_id)).rowcount
@@ -366,9 +380,16 @@ class HistoryStore:
         return self.connection.execute('SELECT encoded_bytes FROM raw_usage WHERE singleton=1').fetchone()[0]
 
     def _evict_raw(self, limit, max_rowid=None):
-        return self.connection.execute(
-            'DELETE FROM raw_publications WHERE rowid IN (SELECT rowid FROM raw_publications '
-            'WHERE rowid <= coalesce(?, rowid) ORDER BY received_at_ms, rowid LIMIT ?)', (max_rowid, limit)).rowcount
+        # With handoff, rows the consumer acknowledged go first; only then the oldest (ADR-0004).
+        acked = self.connection.execute('SELECT acked_seq FROM handoff_state WHERE enabled=1').fetchone()
+        deleted = 0
+        if acked is not None:
+            deleted = self._delete('raw_publications', 'handoff_seq <= ? AND rowid <= coalesce(?, rowid) '
+                                   'ORDER BY handoff_seq LIMIT ?', (acked[0], max_rowid, limit), 'quota')
+        if not deleted:
+            deleted = self._delete('raw_publications', 'rowid <= coalesce(?, rowid) ORDER BY received_at_ms, rowid LIMIT ?',
+                                   (max_rowid, limit), 'quota')
+        return deleted
 
     def evict_raw_over_quota(self, quota_bytes, limit=1000):
         """Quota pressure removes the oldest raw rows; cursors and loss evidence remain."""
@@ -378,9 +399,93 @@ class HistoryStore:
 
     def prune_raw(self, cutoff_ms, limit=1000):
         # Cursors and unavailable-range evidence survive raw-row pruning.
-        return self.connection.execute('DELETE FROM raw_publications WHERE rowid IN '
-                                       '(SELECT rowid FROM raw_publications WHERE received_at_ms < ? LIMIT ?)',
-                                       (cutoff_ms, limit)).rowcount
+        return self._delete('raw_publications', 'received_at_ms < ? LIMIT ?', (cutoff_ms, limit), 'retention')
+
+    def _delete(self, table, selection, params, reason):
+        """Delete the rows selection picks; record versions not acknowledged by the consumer as a handoff loss."""
+        c = self.connection
+        own = not c.in_transaction
+        if own:
+            c.execute('BEGIN IMMEDIATE')
+        try:
+            c.execute('DELETE FROM temp.doomed')
+            c.execute('INSERT INTO temp.doomed SELECT rowid FROM ' + table + ' WHERE ' + selection, params)
+            self._account(table, reason)
+            deleted = c.execute('DELETE FROM ' + table + ' WHERE rowid IN (SELECT id FROM temp.doomed)').rowcount
+            c.execute('DELETE FROM temp.doomed')
+            if own:
+                c.execute('COMMIT')
+            return deleted
+        except BaseException:
+            if own and c.in_transaction:
+                c.execute('ROLLBACK')
+            raise
+
+    def _account(self, table, reason):
+        state = self.handoff_state()
+        if not state['enabled']:
+            return
+        time = HANDOFF_TABLES[table]
+        bound = state['backfill_bound_ms']
+        row = self.connection.execute(
+            'SELECT count(*), min(handoff_seq), max(handoff_seq), min(' + time + '), max(' + time + ') FROM ' + table +
+            ' WHERE rowid IN (SELECT id FROM temp.doomed) AND (handoff_seq > ? OR '
+            '(handoff_seq IS NULL AND ? IS NOT NULL AND ' + time + ' <= ?))', (state['acked_seq'], bound, bound)).fetchone()
+        if row[0]:
+            self._record_loss(table, reason, *row)
+
+    def _record_loss(self, table, reason, rows, from_seq, to_seq, first_ms, last_ms):
+        """Extend this table's unacknowledged loss for the reason, or start one; a few rows per consumer outage."""
+        c = self.connection
+        current = c.execute('SELECT loss_id, rows, from_seq, to_seq, from_received_ms, to_received_ms FROM handoff_losses '
+                            'WHERE table_name=? AND reason=? AND handoff_seq > (SELECT acked_seq FROM handoff_state) '
+                            'ORDER BY handoff_seq DESC LIMIT 1', (table, reason)).fetchone()
+        if current is None:
+            c.execute('INSERT INTO handoff_losses (loss_id,table_name,reason,from_seq,to_seq,from_received_ms,to_received_ms,rows) '
+                      'VALUES (?,?,?,?,?,?,?,?)', (uuid.uuid4().hex, table, reason, from_seq, to_seq, first_ms, last_ms, rows))
+            return
+        low = lambda a, b: b if a is None else a if b is None else min(a, b)
+        high = lambda a, b: b if a is None else a if b is None else max(a, b)
+        c.execute('UPDATE handoff_losses SET rows=?, from_seq=?, to_seq=?, from_received_ms=?, to_received_ms=? WHERE loss_id=?',
+                  (current[1] + rows, low(current[2], from_seq), high(current[3], to_seq),
+                   low(current[4], first_ms), high(current[5], last_ms), current[0]))
+
+    def handoff_state(self):
+        names = ('store_id', 'enabled', 'next_seq', 'delivered_seq', 'acked_seq', 'last_segment', 'last_digest',
+                 'start_mode', 'backfill_bound_ms', 'covered_until_ms')
+        row = self.connection.execute('SELECT ' + ','.join(names) + ' FROM handoff_state').fetchone()
+        return dict(zip(names, row), enabled=bool(row[1]))
+
+    def enable_handoff(self, start, now_ms):
+        """Start numbering. 'now' excludes existing rows with one not_handed_off loss per table; 'existing'
+        keeps them for backfill up to now_ms, recording their deletion until then."""
+        if start not in ('now', 'existing'):
+            raise ValueError('handoff start must be now or existing')
+        c = self.connection
+        c.execute('BEGIN IMMEDIATE')
+        try:
+            state = self.handoff_state()
+            if state['enabled']:
+                c.execute('COMMIT')
+                return state
+            c.execute('UPDATE handoff_state SET enabled=1, start_mode=?, backfill_bound_ms=?, covered_until_ms=?',
+                      (start, now_ms if start == 'existing' else None, now_ms))
+            if start == 'now':
+                since = state['covered_until_ms']
+                for table, time in HANDOFF_TABLES.items():
+                    row = c.execute('SELECT count(*), min(' + time + '), max(' + time + ') FROM ' + table +
+                                    ' WHERE handoff_seq IS NULL AND (? IS NULL OR ' + time + ' > ?)', (since, since)).fetchone()
+                    if row[0]:
+                        self._record_loss(table, 'not_handed_off', row[0], None, None, row[1], row[2])
+            c.execute('COMMIT')
+            return self.handoff_state()
+        except BaseException:
+            if c.in_transaction:
+                c.execute('ROLLBACK')
+            raise
+
+    def disable_handoff(self):
+        self.connection.execute('UPDATE handoff_state SET enabled=0')
 
     def close(self):
         try:

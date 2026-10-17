@@ -2,7 +2,7 @@
 
 [Documentation index](../README.md) · [Design reference](README.md)
 
-Hub HTTP schema 1 is independent of Agent schemas and SQLite schema 8. JSON missing
+Hub HTTP schema 1 is independent of Agent schemas and SQLite schema 9. JSON missing
 measurements are `null`, never synthetic zero. UTC timestamps use Unix milliseconds.
 Responses disable caching. The browser contacts the Hub only.
 

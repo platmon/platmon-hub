@@ -179,3 +179,60 @@ UPDATE raw_usage SET encoded_bytes=(SELECT coalesce(sum(encoded_bytes),0) FROM r
 PRAGMA user_version=8;
 """
 VERSION = 8
+
+# Downstream handoff bookkeeping (ADR-0004). While handoff is enabled, triggers give every
+# inserted row, and every change a consumer must see, the next value of one store-wide
+# counter, so a committed row version belongs to exactly one segment. Nothing is numbered
+# while handoff is disabled. Deletions of unacknowledged versions are recorded by the store.
+_SEQ = "UPDATE handoff_state SET next_seq=next_seq+1; UPDATE {table} SET handoff_seq=(SELECT next_seq FROM handoff_state) WHERE rowid=new.rowid;"
+_ON = "(SELECT enabled FROM handoff_state)=1"
+MIGRATION_9 = """
+CREATE TABLE handoff_state (
+    singleton INTEGER PRIMARY KEY CHECK (singleton=1), store_id TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 0, next_seq INTEGER NOT NULL DEFAULT 0,
+    delivered_seq INTEGER NOT NULL DEFAULT 0, acked_seq INTEGER NOT NULL DEFAULT 0,
+    last_segment TEXT, last_digest TEXT, start_mode TEXT, backfill_bound_ms INTEGER,
+    covered_until_ms INTEGER
+);
+INSERT INTO handoff_state (singleton, store_id) VALUES (1, lower(hex(randomblob(16))));
+CREATE TABLE handoff_losses (
+    loss_id TEXT PRIMARY KEY, table_name TEXT NOT NULL, reason TEXT NOT NULL,
+    from_seq INTEGER, to_seq INTEGER, from_received_ms INTEGER, to_received_ms INTEGER,
+    rows INTEGER NOT NULL CHECK (rows >= 0), handoff_seq INTEGER
+);
+ALTER TABLE raw_publications ADD COLUMN handoff_seq INTEGER;
+ALTER TABLE replay_losses ADD COLUMN handoff_seq INTEGER;
+ALTER TABLE gaps ADD COLUMN handoff_seq INTEGER;
+ALTER TABLE events ADD COLUMN handoff_seq INTEGER;
+ALTER TABLE hub_sessions ADD COLUMN handoff_seq INTEGER;
+-- gaps.id is reused once every gap is pruned; consumers key gaps by this instead.
+ALTER TABLE gaps ADD COLUMN gap_uid TEXT;
+UPDATE gaps SET gap_uid=lower(hex(randomblob(16)));
+CREATE INDEX raw_publications_handoff ON raw_publications (handoff_seq);
+CREATE INDEX replay_losses_handoff ON replay_losses (handoff_seq);
+CREATE INDEX gaps_handoff ON gaps (handoff_seq);
+CREATE INDEX events_handoff ON events (handoff_seq);
+CREATE INDEX hub_sessions_handoff ON hub_sessions (handoff_seq);
+CREATE INDEX handoff_losses_handoff ON handoff_losses (handoff_seq);
+CREATE TRIGGER handoff_raw_insert AFTER INSERT ON raw_publications WHEN {on} BEGIN {raw} END;
+CREATE TRIGGER handoff_replay_losses_insert AFTER INSERT ON replay_losses WHEN {on} BEGIN {losses} END;
+CREATE TRIGGER handoff_replay_losses_extend AFTER UPDATE OF to_id ON replay_losses
+    WHEN {on} AND new.to_id IS NOT old.to_id BEGIN {losses} END;
+CREATE TRIGGER handoff_gaps_insert AFTER INSERT ON gaps WHEN {on} BEGIN {gaps} END;
+CREATE TRIGGER handoff_gaps_end AFTER UPDATE OF end_ms ON gaps
+    WHEN {on} AND new.end_ms IS NOT old.end_ms BEGIN {gaps} END;
+CREATE TRIGGER handoff_events_insert AFTER INSERT ON events WHEN {on} BEGIN {events} END;
+CREATE TRIGGER handoff_sessions_insert AFTER INSERT ON hub_sessions WHEN {on} BEGIN {sessions} END;
+CREATE TRIGGER handoff_sessions_close AFTER UPDATE OF closed_at_ms ON hub_sessions
+    WHEN {on} AND new.closed_at_ms IS NOT old.closed_at_ms BEGIN {sessions} END;
+-- last_seen_ms changes in every core commit: renumber only once the current version was delivered.
+CREATE TRIGGER handoff_sessions_seen AFTER UPDATE OF last_seen_ms ON hub_sessions
+    WHEN {on} AND (old.handoff_seq IS NULL OR old.handoff_seq <= (SELECT delivered_seq FROM handoff_state))
+    BEGIN {sessions} END;
+CREATE TRIGGER handoff_losses_insert AFTER INSERT ON handoff_losses WHEN {on} BEGIN {handoff} END;
+CREATE TRIGGER handoff_losses_extend AFTER UPDATE OF rows ON handoff_losses WHEN {on} BEGIN {handoff} END;
+PRAGMA user_version=9;
+""".format(on=_ON, raw=_SEQ.format(table='raw_publications'), losses=_SEQ.format(table='replay_losses'),
+           gaps=_SEQ.format(table='gaps'), events=_SEQ.format(table='events'),
+           sessions=_SEQ.format(table='hub_sessions'), handoff=_SEQ.format(table='handoff_losses'))
+VERSION = 9

@@ -16,6 +16,7 @@ The executable schema is [hub/history/schema.py](../../hub/history/schema.py); t
 | 6 | Opt-in `raw_publications`, `replay_cursors`, `replay_losses`, indexed encoded-byte accounting in `raw_usage` |
 | 7 | Nullable pressure and I/O rate columns on `core_samples`; existing rows retain NULL |
 | 8 | `raw_dictionaries` and `raw_publications.payload_zlib`/`dictionary_id`: new raw payloads are `zlib` with a shared, reference-counted dictionary ([ADR-0006](adr/0006-raw-payload-compression.md)); existing rows stay JSON |
+| 9 | Handoff bookkeeping ([ADR-0004](adr/0004-downstream-data-handoff.md)): `handoff_state` (store identity, counter, delivered/acknowledged sequence), `handoff_losses`, nullable `handoff_seq` on raw publications, replay losses, gaps, events and Hub sessions assigned by triggers only while handoff is enabled, and `gaps.gap_uid` |
 
 Core identity is `(node_id, instance_id, sequence)`. Columns store Hub receipt UTC
 milliseconds, reported `data_age_ms`, `stale_after_ms`, accepted core state
