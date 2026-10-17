@@ -2,7 +2,7 @@
 
 [Documentation index](../README.md) · [Design reference](README.md)
 
-This describes the implemented 1.0.0 release. Agent and Hub application/API
+This describes the implemented 1.1.0 release. Agent and Hub application/API
 versions are independent; [the consumption contract](agent-contract.md) pins the
 Agent status/stats schema 1 and observations schema 2.
 

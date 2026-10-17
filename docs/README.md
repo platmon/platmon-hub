@@ -14,7 +14,7 @@ For Windows background execution or automatic startup, start with the [startup o
 
 ## Project status
 
-Hub 1.0.0 implements Fleet monitoring, optional SQLite history, registry management, events, internal alerts, packaging, data exports, and reports. The Windows saved launcher enables History and local web management; a plain `python -m hub --nodes ...` start enables neither unless their options are supplied.
+Hub 1.1.0 implements Fleet monitoring, optional SQLite history with compressed raw capture, per-node capture levels, downstream handoff, registry management, events, internal alerts, packaging, data exports, and reports. The Windows saved launcher enables History and local web management; a plain `python -m hub --nodes ...` start enables neither unless their options are supplied.
 
 History is opt-in with `--history-db`; alerts additionally need `--alerts`. Defaults retain metrics for seven days and events for 30 days. Automatic archives are separately opt-in with `--archive-dir`, with raw ZIP and daily-summary retention bounded by quota. See [configuration](guides/configuration.md) and [exports](guides/data-export.md) for exact options and limits.
 

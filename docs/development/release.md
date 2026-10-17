@@ -2,7 +2,7 @@
 
 [Documentation index](../README.md) · [Development guide](README.md)
 
-`1.0.0` is the first release. Hub HTTP schema 1, SQLite schema 9 and Agent schemas
+The current release is `1.1.0`; `1.0.0` was the first. Hub HTTP schema 1, SQLite schema 9 and Agent schemas
 remain separately versioned. A code downgrade never implicitly downgrades a database.
 The release does not by itself assert the production acceptance listed below.
 
