@@ -56,7 +56,8 @@ def main():
                 f'packaged documentation mismatch: missing={sorted(expected_docs-packaged_docs)}, '
                 f'unexpected={sorted(packaged_docs-expected_docs)}')
             assert all(any(name.endswith('/deploy/'+script) for name in files)
-                       for script in ('nginx.conf.example', 'start-windows.ps1', 'install-windows-startup.ps1'))
+                       for script in ('nginx.conf.example', 'start-windows.ps1', 'install-windows-startup.ps1',
+                                      'platmon-hub.service', 'platmon-hub-user.service'))
             assert not any(name.endswith('nodes.json') or 'soak-results' in name for name in files)
             metadata=package.read(next(name for name in files if name.endswith('/METADATA'))).decode('utf-8')
             assert 'Requires-Dist:' not in metadata

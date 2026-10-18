@@ -38,7 +38,7 @@ python3 -m venv "$venv_dir"
 ```
 
 Use the machine-wide venv paths of the systemd and Task Scheduler sections for those
-services. To upgrade a Hub that keeps history, follow
+services; the [Linux user service](#linux-user-service) uses this user venv. To upgrade a Hub that keeps history, follow
 [backup, upgrade and rollback](#backup-upgrade-and-rollback): installing the new version
 is one step of that procedure, and a database is never downgraded with the package.
 
@@ -113,6 +113,42 @@ It uses filesystem restrictions and a 30-second service stop limit. SIGTERM
 requests normal Hub shutdown and writer drain; a stuck OS DNS/filesystem call
 may exceed this and force termination, losing queued but uncommitted history.
 See [systemd's directory/permission model](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html).
+
+## Linux user service
+
+On a personal Linux computer, Hub can run as a systemd **user** service under your own
+account, without a dedicated system user or administrator-owned files.
+`deploy/platmon-hub-user.service` expects:
+
+- The venv from [Install from PyPI](#install-from-pypi) at `~/.local/share/platmon-hub/venv`
+  (a dedicated venv, not a pipx one).
+- The registry at `~/.config/platmon-hub/nodes.json` and optional
+  `~/.config/platmon-hub/hub.env` (same format as `deploy/hub.env.example`).
+- The DB and log in `~/.local/state/platmon-hub/`, which must already exist.
+
+```sh
+(
+set -e
+venv_dir="$HOME/.local/share/platmon-hub/venv"
+mkdir -p ~/.config/platmon-hub ~/.local/state/platmon-hub ~/.config/systemd/user
+[ -e ~/.config/platmon-hub/nodes.json ] || echo '{"nodes": []}' > ~/.config/platmon-hub/nodes.json
+cp "$venv_dir/share/platmon-hub/deploy/platmon-hub-user.service" ~/.config/systemd/user/platmon-hub.service
+systemctl --user daemon-reload
+systemctl --user enable --now platmon-hub
+)
+```
+
+A user service starts when you log in and stops when your last session ends. To start it at
+boot and keep it running after logout, enable lingering once (it may ask for your password):
+`loginctl enable-linger "$USER"`. Operate it with `systemctl --user status|restart|stop platmon-hub`;
+`journalctl --user -u platmon-hub` shows start-up errors and `~/.local/state/platmon-hub/hub.log`
+the Hub log. To add options, such as raw capture, edit `ExecStart` with
+`systemctl --user edit --full platmon-hub`.
+
+Compared with the system unit, the registry and DB belong to your account, and the unit uses
+less sandboxing (`UMask=0077` and `NoNewPrivileges` only). Use it only for a Hub you
+operate yourself. Upgrade and roll back as in [Backup, upgrade and rollback](#backup-upgrade-and-rollback),
+stopping with `systemctl --user stop platmon-hub`.
 
 ## Windows quick start and login startup
 

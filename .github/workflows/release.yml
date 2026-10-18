@@ -128,6 +128,7 @@ jobs:
           curl -sf http://127.0.0.1:9788/assets/app.js > /dev/null
           curl -sf http://127.0.0.1:9788/assets/brand/hub-logo-light.svg > /dev/null
           test -f venv/share/platmon-hub/deploy/platmon-hub.service
+          test -f venv/share/platmon-hub/deploy/platmon-hub-user.service
 
   draft:
     needs: [build, verify-testpypi]

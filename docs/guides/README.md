@@ -12,7 +12,7 @@ Choose one Windows startup method. For a personal Windows PC, start with the log
 | --- | --- |
 | Save Windows launcher settings and start at user login | [Windows launcher and login startup](windows-startup.md); the console window is minimized. |
 | Run Windows in the background at boot, before login | [Windows Task Scheduler](windows-task-scheduler.md); registration requires administrator rights. |
-| Run Linux as a service | [systemd](operations.md#linux-systemd-example). |
+| Run Linux as a service | [systemd](operations.md#linux-systemd-example), or a [user service](operations.md#linux-user-service) on a personal computer. |
 
 ## Guides
 

@@ -1,0 +1,18 @@
+# Per-user service for a personal Linux computer; see docs/guides/operations.md.
+# Install as ~/.config/systemd/user/platmon-hub.service.
+[Unit]
+Description=platmon Fleet monitoring (user service)
+
+[Service]
+Type=simple
+Environment=HUB_PORT=9787
+EnvironmentFile=-%h/.config/platmon-hub/hub.env
+ExecStart=%h/.local/share/platmon-hub/venv/bin/platmon-hub --nodes %h/.config/platmon-hub/nodes.json --history-db %h/.local/state/platmon-hub/history.db --log-file %h/.local/state/platmon-hub/hub.log --port ${HUB_PORT}
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
