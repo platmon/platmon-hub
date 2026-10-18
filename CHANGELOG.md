@@ -8,6 +8,11 @@
   `--add` registers new Agents after confirming a name for each. It refuses more than 1024
   addresses and non-private networks unless asked. Hub itself still never scans or discovers.
 
+- Add `deploy/platmon-hub-user.service`, a systemd user unit for a personal Linux computer
+  that runs Hub from `~/.local/share/platmon-hub/venv` with the registry, DB and log under your
+  home directory. It is installed with the other deployment examples and checked like the system
+  unit (docs/guides/operations.md#linux-user-service).
+
 ## 1.1.1 — 2026-10-18
 
 Packaging and documentation only; the application, HTTP API, registry and SQLite schema 9
