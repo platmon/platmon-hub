@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.1 — 2026-10-18
+
+Packaging and documentation only; the application, HTTP API, registry and SQLite schema 9
+are unchanged from 1.1.0, so upgrading needs no migration.
+
+- Publish releases on PyPI: `pipx install platmon-hub` for a personal install, or
+  `pip install --no-deps platmon-hub==1.1.1` into a dedicated service venv. The tag workflow
+  builds the wheel once, verifies it through TestPyPI, attaches the same file to a draft
+  GitHub release and uploads it to PyPI after approval, using Trusted Publishing.
+- Add project URLs and classifiers to the package metadata, and use absolute links in the
+  README so the PyPI project page renders. `scripts/check-package.py` rejects
+  repository-relative README links.
+- Document the PyPI install paths in the README and the operations guide, and keep service
+  upgrades on the backup, stop, install and verify procedure.
+
 ## 1.1.0 — 2026-10-18
 
 Compressed raw storage, per-node capture levels and downstream handoff. All changes are

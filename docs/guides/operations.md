@@ -7,7 +7,40 @@ setuptools/wheel; neither is a service dependency. A wheel is preferable to a
 custom service wrapper: it preserves the existing Python entrypoint and includes
 all allowlisted web assets. Deployment examples, empty registry/rule examples and
 operational docs are installed under the environment’s `share/platmon-hub`. Use a dedicated virtual environment to avoid Python
-package-name collisions. Released wheels are attached to the [GitHub releases](https://github.com/platmon/platmon-hub/releases) with their SHA-256 checksums.
+package-name collisions. From 1.1.1 releases are published on [PyPI](https://pypi.org/project/platmon-hub/);
+the same wheel is attached to the [GitHub releases](https://github.com/platmon/platmon-hub/releases) with its SHA-256 checksum.
+
+## Install from PyPI
+
+For a personal install, `pipx install platmon-hub` creates its own venv and puts the
+`platmon-hub` command on your path; `pipx upgrade platmon-hub` updates it. pipx venvs
+live in your user directory, so do not point a systemd unit or a Local Service task at one.
+
+For a dedicated venv, as used by services and the Windows launcher, install a fixed version
+with that venv's Python. These user-directory paths match the build example below:
+
+**Windows PowerShell:**
+
+```powershell
+$venvDir = Join-Path $env:LOCALAPPDATA 'platmon-hub\venv'
+python -m venv "$venvDir"
+& (Join-Path $venvDir 'Scripts\python.exe') -m pip install --no-deps 'platmon-hub==1.1.1'
+& (Join-Path $venvDir 'Scripts\platmon-hub.exe') --version
+```
+
+**Linux:**
+
+```sh
+venv_dir="$HOME/.local/share/platmon-hub/venv"
+python3 -m venv "$venv_dir"
+"$venv_dir/bin/python" -m pip install --no-deps 'platmon-hub==1.1.1'
+"$venv_dir/bin/platmon-hub" --version
+```
+
+Use the machine-wide venv paths of the systemd and Task Scheduler sections for those
+services. To upgrade a Hub that keeps history, follow
+[backup, upgrade and rollback](#backup-upgrade-and-rollback): installing the new version
+is one step of that procedure, and a database is never downgraded with the package.
 
 ## Build and local install
 
@@ -113,8 +146,9 @@ alert settings when present). Do not copy an active DB file alone or delete its
 WAL/SHM files. Test restoring a backup before relying on it.
 
 For upgrade: preserve the previous wheel and config; take a verified backup;
-stop the service and verify all Hub processes exited; install the new wheel in
-the venv; start and check live/history/reload diagnostics and unchanged node UUIDs.
+stop the service and verify all Hub processes exited; install the new version in
+the service's venv with that venv's Python (`python -m pip install --no-deps 'platmon-hub==NEW'`,
+or the new wheel file); start and check live/history/reload diagnostics and unchanged node UUIDs.
 Never store operational data inside the installed package. Schema migrations run
 before history ingestion, create their own pre-migration backup of an existing
 database (a newly created one gets none), and fail closed

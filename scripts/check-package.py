@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -59,6 +60,10 @@ def main():
             assert not any(name.endswith('nodes.json') or 'soak-results' in name for name in files)
             metadata=package.read(next(name for name in files if name.endswith('/METADATA'))).decode('utf-8')
             assert 'Requires-Dist:' not in metadata
+            assert 'Project-URL: Homepage, https://github.com/platmon/platmon-hub' in metadata
+            # The README is the PyPI project page, where repository-relative links and images break.
+            relative=re.findall(r'\]\((?!https?://|#)[^)]*\)|(?:src|srcset)="(?!https://)[^"]*"',metadata)
+            assert not relative, f'README has repository-relative links: {relative}'
         site=work/'installed'
         subprocess.run([str(builder),'-m','pip','install','--no-deps','--target',str(site),str(wheel)],check=True)
         installed_env=dict(os.environ,PYTHONPATH=str(site))

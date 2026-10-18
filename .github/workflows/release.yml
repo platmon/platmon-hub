@@ -1,0 +1,178 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify tag commit is on main
+        run: |
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor HEAD refs/remotes/origin/main; then
+            echo "::error::release tag must point to a commit included in main"
+            exit 1
+          fi
+
+  checks:
+    needs: verify-main
+    uses: ./.github/workflows/test.yml
+
+  # Build once; TestPyPI, the GitHub draft and PyPI all receive these same files.
+  build:
+    needs: checks
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Verify release tag and changelog
+        id: version
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          from hub import __version__
+          if os.environ["GITHUB_REF_NAME"] != "v" + __version__:
+              raise SystemExit("tag does not match hub.__version__")
+          if f"## {__version__} —" not in Path("CHANGELOG.md").read_text(encoding="utf-8"):
+              raise SystemExit("release has no changelog entry")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("version=" + __version__ + "\n")
+          PY
+      - name: Build reproducible wheel and package report
+        run: python scripts/check-package.py --output-dir dist
+      - name: Write checksums
+        working-directory: dist
+        run: sha256sum platmon_hub-*.whl package-report.json > SHA256SUMS
+      - name: Check PyPI metadata and README rendering
+        run: |
+          # twine is release tooling only, installed outside the checkout's environment.
+          python -m venv "$RUNNER_TEMP/twine"
+          "$RUNNER_TEMP/twine/bin/pip" install twine
+          "$RUNNER_TEMP/twine/bin/twine" check --strict dist/*.whl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: dist/
+          if-no-files-found: error
+
+  testpypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/platmon-hub/${{ needs.build.outputs.version }}/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
+      - run: mkdir upload && cp release/*.whl upload/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: upload/
+
+  verify-testpypi:
+    needs: [build, testpypi]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.13"]
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      INDEX: https://test.pypi.org/simple/
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Download from TestPyPI and compare with the built wheel
+        run: |
+          # The index can lag a fresh upload by a few minutes.
+          for i in $(seq 20); do
+            python -m pip download --no-deps --index-url "$INDEX" -d downloaded "platmon-hub==$VERSION" && break
+            sleep 30
+          done
+          test "$(sha256sum downloaded/*.whl | cut -d' ' -f1)" = "$(sha256sum release/*.whl | cut -d' ' -f1)"
+      - name: Install by name and run Hub
+        run: |
+          python -m venv venv
+          venv/bin/python -m pip install --no-deps --index-url "$INDEX" "platmon-hub==$VERSION"
+          test "$(venv/bin/platmon-hub --version)" = "$VERSION"
+          echo '{"nodes": []}' > nodes.json
+          venv/bin/platmon-hub --nodes nodes.json --port 9788 > hub.log 2>&1 &
+          hub=$!
+          trap 'kill "$hub"' EXIT
+          for i in $(seq 40); do curl -sf http://127.0.0.1:9788/healthz > /dev/null && break; sleep 0.25; done
+          curl -sf http://127.0.0.1:9788/healthz > /dev/null || { cat hub.log; exit 1; }
+          curl -sf http://127.0.0.1:9788/ -o index.html && grep -q '<html' index.html
+          curl -sf http://127.0.0.1:9788/assets/app.js > /dev/null
+          curl -sf http://127.0.0.1:9788/assets/brand/hub-logo-light.svg > /dev/null
+          test -f venv/share/platmon-hub/deploy/platmon-hub.service
+
+  draft:
+    needs: [build, verify-testpypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
+      - name: Verify checksums
+        working-directory: release
+        run: sha256sum -c SHA256SUMS
+      - name: Create draft release for acceptance review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          python3 - <<'PY' > notes.md
+          import os
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          start = text.index("## " + os.environ["VERSION"] + " —")
+          end = text.find("\n## ", start + 1)
+          print(text[start:end if end != -1 else None].strip())
+          PY
+          gh release create "$GITHUB_REF_NAME" release/*.whl release/package-report.json release/SHA256SUMS \
+            --verify-tag --draft --title "platmon-hub $GITHUB_REF_NAME" --notes-file notes.md
+
+  # Waits for a reviewer on the pypi environment; a PyPI version can never be replaced.
+  pypi:
+    needs: [build, draft]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/platmon-hub/${{ needs.build.outputs.version }}/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
+      - run: mkdir upload && cp release/*.whl upload/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: upload/
