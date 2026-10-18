@@ -17,6 +17,25 @@ from hub.registry import Node
 from hub.runtime import Fleet
 
 
+# A smoke run keeps going after --seconds until every node committed its first page, at most this long:
+# the writer commits pages one at a time, so on a slow runner the window ends before it reaches every node.
+SMOKE_SETTLE_SECONDS = 120
+
+
+def captured_nodes(database):
+    """Nodes whose first replay page (100 rows) is committed; 0 before the writer created the database."""
+    try:
+        c = sqlite3.connect('file:'+str(database)+'?mode=ro', uri=True)
+    except sqlite3.Error:
+        return 0
+    try:
+        return c.execute('SELECT count(*) FROM (SELECT node_id FROM raw_publications GROUP BY node_id HAVING count(*) >= 100)').fetchone()[0]
+    except sqlite3.Error:
+        return 0
+    finally:
+        c.close()
+
+
 def rss_bytes():
     if sys.platform.startswith('linux'):
         return int(Path('/proc/self/statm').read_text().split()[1])*os.sysconf('SC_PAGE_SIZE')
@@ -103,11 +122,20 @@ def main():
         fleet = Fleet(nodes, client=Client(), history=writer, max_concurrency=16)
         peak_queue, peak_rss, peak_wal = 0, baseline_rss, 0
         live_polls = 0
+        window_end = settled_at = None
         try:
             fleet.start()
             if args.handoff:
                 writer.handoff('enable_handoff', 'now', int(time.time()*1000)).result(15)
-            while time.monotonic()-start < args.seconds:
+            while True:
+                elapsed = time.monotonic()-start
+                if elapsed >= args.seconds:
+                    window_end = window_end or elapsed
+                    if not args.smoke or elapsed >= args.seconds+SMOKE_SETTLE_SECONDS:
+                        break
+                    if captured_nodes(database) == args.nodes:
+                        settled_at = elapsed
+                        break
                 status = writer.snapshot()
                 peak_queue = max(peak_queue, status['raw']['queued_bytes'])
                 rss = rss_bytes()
@@ -133,7 +161,9 @@ def main():
         c.close()
         commits.sort()
         p95 = commits[min(len(commits)-1, int(len(commits)*.95))] if commits else None
-        result = dict(nodes=args.nodes, seconds=time.monotonic()-start, rows=rows, captured_nodes=covered, encoded_bytes_per_row=usage/rows if rows else None,
+        result = dict(nodes=args.nodes, seconds=time.monotonic()-start, window_seconds=window_end,
+                      settle_seconds=None if settled_at is None else round(settled_at-window_end, 3),
+                      rows=rows, captured_nodes=covered, encoded_bytes_per_row=usage/rows if rows else None,
                       db_bytes_per_row=db_size/rows if rows else None, peak_encoded_queue_bytes=peak_queue,
                       baseline_rss_bytes=baseline_rss, peak_rss_bytes=peak_rss, peak_wal_bytes=peak_wal,
                       commit_p95_ms=p95, cleanup_rows=removed, cleanup_ms=cleanup_ms,

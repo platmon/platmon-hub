@@ -34,6 +34,13 @@ SQLite integrity, encoded queue/RSS bounds where measurable, no Live queue drops
 and no raw admission, cursor-read or commit failures. JSON output names each check
 and retains commit/cleanup timings for diagnosis. RSS remains Linux-only.
 
+The writer commits replay pages one at a time, so how many nodes reach their first
+page within the window depends on the runner's commit speed. Smoke therefore keeps
+running after `--seconds` until every node has committed its first page, for at most
+120 s, and reports the extension as `settle_seconds` (`window_seconds` is the window
+itself). A node that is never captured still fails `backlog_captured`. The benchmark
+mode keeps the fixed window, because capture within it is what it measures.
+
 The default benchmark mode retains the original 250 ms commit/cleanup budgets.
 These timed gates belong to controlled host measurements; they are not portable
 latency guarantees for shared CI runners. The first Windows 3.13 CI run captured
