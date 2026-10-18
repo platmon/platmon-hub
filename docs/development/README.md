@@ -42,6 +42,7 @@ All paths in this table are relative to the repository root.
 | [hub/web/](../../hub/web/) | Dashboard HTML, CSS, JavaScript, and brand assets served by Hub. |
 | [tests/](../../tests/) | Synthetic contract, state, HTTP, dashboard, timing, and port tests. |
 | [scripts/soak-windows.ps1](../../scripts/soak-windows.ps1) | Windows measurement harness. |
+| [scripts/find-agents.py](../../scripts/find-agents.py) | Operator tool that finds Agents on named networks and optionally registers them ([setup](../guides/setup.md#finding-agents-you-do-not-know-the-address-of)). |
 | [.github/workflows/test.yml](../../.github/workflows/test.yml) | CI test matrix and Windows harness smoke. |
 | `soak-results/` | Default local measurement output, ignored by Git. |
 

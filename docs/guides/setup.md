@@ -39,6 +39,30 @@ python3 -m hub nodes --file "$registry_path" validate
 python3 -m hub --nodes "$registry_path"
 ```
 
+### Finding Agents you do not know the address of
+
+From a checkout, `scripts/find-agents.py` looks for Agents on networks you name and compares
+them with a registry. It is an operator tool, not part of Hub: the running Hub never scans.
+It connects only to TCP 9797 (or `--port`) and reads `/api/status`, `/api/stats`, the web page
+footer and `/api/samples`, so it reports each Agent's hostname, device, OS, platmon version
+and replay support. Registered endpoints are always checked, also outside the scanned networks.
+
+```sh
+python3 scripts/find-agents.py                                   # this host's own IPv4 networks
+python3 scripts/find-agents.py 192.168.55.0/24 10.0.0.20-10.0.0.40
+python3 scripts/find-agents.py --nodes "$registry_path"          # mark registered / new / not answering
+python3 scripts/find-agents.py --nodes "$registry_path" --add    # confirm a name for each new Agent
+```
+
+Without targets it scans the host's directly connected IPv4 networks (on Windows, the
+primary address as a /24) and prints them first. It refuses more than 1024 addresses
+(`--max-hosts`) and non-private networks (`--allow-public`); scan only networks you operate.
+`--add` asks for each new Agent's name, suggesting its hostname, or the platform and last
+address part when the hostname is an image default such as `ubuntu`, and writes through the
+same locked, validated update as `nodes add`. `--add --yes` takes every suggestion without
+asking. `--json` prints machine-readable results. An address handed out by DHCP can change;
+reserve it on the router so the registered endpoint stays valid.
+
 Continue to startup only after validation succeeds. To reuse an already-populated registry without adding a device, skip `add --interactive`. The CLI generates stable UUIDs and preserves existing entries; it does not contact or install an agent.
 
 Open [http://127.0.0.1:9787/](http://127.0.0.1:9787/) on the Hub computer. Registered devices should appear after polling; use their status/age diagnostics if they remain Starting, Offline, or Error. `/healthz` confirms only Hub responsiveness.
