@@ -1,5 +1,7 @@
 """Keep portable replay smoke checks separate from controlled-host timing gates."""
 import importlib.util
+import sqlite3
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -27,6 +29,17 @@ class ReplayBenchmarkTests(unittest.TestCase):
             self.result(commit_p95_ms=249, cleanup_ms=249)).values()))
         self.assertFalse(benchmark.acceptance_checks(
             self.result(cleanup_ms=250))['cleanup_latency'])
+
+    def test_captured_nodes_counts_first_pages_without_creating_the_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory)/'raw.db'
+            self.assertEqual(benchmark.captured_nodes(database), 0)
+            self.assertFalse(database.exists())
+            c = sqlite3.connect(str(database))
+            c.execute('CREATE TABLE raw_publications (node_id TEXT)')
+            c.executemany('INSERT INTO raw_publications VALUES (?)', [('a',)]*100 + [('b',)]*99)
+            c.commit(); c.close()
+            self.assertEqual(benchmark.captured_nodes(database), 1)
 
     def test_smoke_rejects_capture_storage_and_resource_failures(self):
         for values in (dict(captured_nodes=9), dict(live_nodes=9), dict(integrity='broken'),
