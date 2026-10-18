@@ -20,7 +20,8 @@ boundary. Loopback binding is not user authentication on a shared host.
 
 `POST`, `PUT`, `PATCH`, `DELETE` remain 405 except the opt-in registry POST routes documented in [web management](web-registration.md).
 Forged forwarded user identities grant no access. There is no URL-fetch proxy,
-network discovery or Agent control path. The existing
+network discovery or Agent control path; the separate operator script
+`scripts/find-agents.py` is never run by Hub. The existing
 TLS proxy is for read-only viewers; local web registration is not enabled through it.
 
 ## Optional TLS proxy

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Add `scripts/find-agents.py`, an operator tool run from a checkout that finds platmon Agents
+  on named networks (or this host's own), reports each one's hostname, device, OS, version and
+  replay support, marks it against a registry as registered, new or not answering, and with
+  `--add` registers new Agents after confirming a name for each. It refuses more than 1024
+  addresses and non-private networks unless asked. Hub itself still never scans or discovers.
+
 ## 1.1.1 — 2026-10-18
 
 Packaging and documentation only; the application, HTTP API, registry and SQLite schema 9
