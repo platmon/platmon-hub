@@ -2,7 +2,7 @@
 
 [Documentation index](../README.md) · [Development guide](README.md)
 
-The current release is `1.1.0`; `1.0.0` was the first. Hub HTTP schema 1, SQLite schema 9 and Agent schemas
+The current release is `1.1.1`; `1.0.0` was the first. Hub HTTP schema 1, SQLite schema 9 and Agent schemas
 remain separately versioned. A code downgrade never implicitly downgrades a database.
 The release does not by itself assert the production acceptance listed below.
 
@@ -31,10 +31,20 @@ an Agent version is a major change. Update `CHANGELOG.md` in the same change as
 2. Merge after CI passes on every supported interpreter, and confirm CI on the merged
    `main` commit.
 3. Tag that commit as `v<version>` with an annotated tag and push the tag.
-4. Build the release artifacts from the tagged commit with `scripts/check-package.py`
-   and verify the two independent builds are identical. Publish a GitHub release with the
-   wheel, `package-report.json` and `SHA256SUMS`, and the changelog entry and open
-   acceptance gates as notes. No container image or package-index upload is published.
+4. The tag starts `.github/workflows/release.yml`. It checks that the tag is on `main`
+   and matches `__version__` and a changelog entry, runs the full CI matrix, and builds
+   the wheel once with `scripts/check-package.py` (two identical independent builds) and
+   `twine check`. That wheel is uploaded to TestPyPI, downloaded back, compared by
+   SHA-256, installed by name on Python 3.9 and 3.13, and started. A draft GitHub release
+   then receives the same wheel, `package-report.json` and `SHA256SUMS`, with the
+   changelog entry as notes; add the open acceptance gates before publishing it.
+5. The `pypi` job waits for approval on the `pypi` environment and uploads the same wheel
+   to PyPI. A PyPI version can never be replaced or reused, so approve only after reviewing
+   the TestPyPI page and the draft. Publish the GitHub release after PyPI, then re-download
+   both and check them against `SHA256SUMS`. No sdist or container image is published.
+
+Uploads use PyPI Trusted Publishing: the `testpypi` and `pypi` GitHub environments are
+registered as publishers for `release.yml` on TestPyPI and PyPI, so no API token is stored.
 
 ## Release artifacts
 

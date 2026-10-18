@@ -10,6 +10,26 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = {file = "LICENSE"}
 dependencies = []
+keywords = ["monitoring", "fleet", "platmon", "jetson", "raspberry-pi"]
+classifiers = [
+    "Environment :: Web Environment",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Monitoring",
+]
+
+[project.urls]
+Homepage = "https://github.com/platmon/platmon-hub"
+Documentation = "https://github.com/platmon/platmon-hub/blob/main/docs/README.md"
+Changelog = "https://github.com/platmon/platmon-hub/blob/main/CHANGELOG.md"
+Issues = "https://github.com/platmon/platmon-hub/issues"
 
 [project.scripts]
 platmon-hub = "hub.__main__:main"
