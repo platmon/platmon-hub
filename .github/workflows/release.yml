@@ -89,7 +89,8 @@ jobs:
 
   verify-testpypi:
     needs: [build, testpypi]
-    runs-on: ubuntu-latest
+    # Not ubuntu-latest: actions/setup-python has no Python 3.9 build for Ubuntu 26.04 (#64).
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
