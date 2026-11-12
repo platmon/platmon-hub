@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The README links to platmon's compatibility table for the platmon releases Hub reads,
+  instead of stating a range of its own.
+
 - Add `scripts/find-agents.py`, an operator tool run from a checkout that finds platmon Agents
   on named networks (or this host's own), reports each one's hostname, device, OS, version and
   replay support, marks it against a registry as registered, new or not answering, and with
