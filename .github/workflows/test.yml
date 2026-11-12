@@ -13,8 +13,13 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         python: ["3.9", "3.13"]
-        # Default interpreters of Ubuntu 22.04, 24.04 and 26.04 (ADR-0005)
+        # actions/setup-python has no Python 3.9 build for Ubuntu 26.04 (ubuntu-latest), so the
+        # Linux 3.9 job runs on 24.04 (#64).
+        exclude:
+          - {os: ubuntu-latest, python: "3.9"}
         include:
+          - {os: ubuntu-24.04, python: "3.9"}
+          # Default interpreters of Ubuntu 22.04, 24.04 and 26.04 (ADR-0005)
           - {os: ubuntu-latest, python: "3.10"}
           - {os: ubuntu-latest, python: "3.12"}
           - {os: ubuntu-latest, python: "3.14"}
