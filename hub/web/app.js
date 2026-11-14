@@ -49,6 +49,10 @@
     }
     return value.toFixed(0) + " B";
   }
+  function usedOfTotal(used, total) { return numeric(used) && numeric(total) ? size(used) + " / " + size(total) : "N/A"; }
+  function whole(value) { return numeric(value) && value >= 0 ? value.toFixed(0) : "N/A"; }
+  function pair(a, b, format) { return format(a) + " / " + format(b); }
+  function count(value) { return Number.isInteger(value) && value >= 0 ? String(value) : "N/A"; }
   function statusPill(value) {
     const state = typeof value === "string" ? value : "unknown";
     const pill = element("span", "status " + (/^(live|partial|starting|stale|offline|error|incompatible)$/.test(state) ? state : ""), state);
@@ -160,6 +164,28 @@
     if (rows.length > maxRows) root.append(element("p", "empty", "+" + (rows.length - maxRows) + " more rows in Agent API"));
   }
   function rowsOf(obj) { return obj && typeof obj === "object" && !Array.isArray(obj) ? Object.entries(obj) : []; }
+  function renderPressure(root, stats) {
+    const resources = stats.pressure && typeof stats.pressure === "object" && stats.pressure.resources &&
+      typeof stats.pressure.resources === "object" ? stats.pressure.resources : null;
+    if (!resources) {
+      root.append(element("p", "empty", "No pressure (PSI) data reported by this agent."));
+      return;
+    }
+    const avg10 = part => part && typeof part === "object" && numeric(part.avg10) ? percent(part.avg10) : "N/A";
+    table(root, ["Pressure (PSI avg10)", "Some", "Full"], ["cpu", "memory", "io"].map(name => {
+      const resource = resources[name] && typeof resources[name] === "object" ? resources[name] : {};
+      return [name, avg10(resource.some), avg10(resource.full)];
+    }));
+  }
+  function renderCollectors(root, stats) {
+    const wrap = section(root, "Collectors");
+    table(wrap, ["Collector", "State", "Reason", "Issues"], rowsOf(stats.collectors).filter(([, c]) => c && typeof c === "object").map(([name, c]) => {
+      const issues = Array.isArray(c.issues) ? c.issues.filter(i => i && typeof i === "object") : [];
+      const more = Number.isInteger(c.issues_truncated) && c.issues_truncated > 0 ? " (+" + c.issues_truncated + " more)" : "";
+      return [name, c.state, c.reason || "",
+        issues.slice(0, 4).map(i => String(i.target) + ": " + String(i.reason)).join(", ") + (issues.length > 4 ? ", …" : "") + more];
+    }), 16);
+  }
   function renderAccelerators(root, stats) {
     const wrap = section(root, "GPU & NPU");
     for (const key of ["gpu", "npu"]) {
@@ -299,6 +325,14 @@
     const resources = section(root, "Resources");
     viewMetrics(resources, n.overview, "detail-metrics");
     if (stats && typeof stats === "object") {
+      const memory = stats.memory && typeof stats.memory === "object" ? stats.memory : {};
+      const disk = stats.disk && typeof stats.disk === "object" ? stats.disk : {};
+      table(resources, ["Resource", "Used / total"], [
+        ["Memory", usedOfTotal(memory.used, memory.total)],
+        ["Swap", memory.swap_total === 0 ? "None" : usedOfTotal(memory.swap_used, memory.swap_total)],
+        ["Root filesystem", usedOfTotal(disk.used, disk.total)]
+      ]);
+      renderPressure(resources, stats);
       renderAccelerators(root, stats);
       const identity = section(root, "System");
       const sys = stats.system && typeof stats.system === "object" ? stats.system : {};
@@ -317,14 +351,28 @@
       table(temps, ["Sensor", "Reading"], rowsOf(stats.temperature).map(([k, v]) => [k, degree(v)]), 16);
       const network = stats.network && Array.isArray(stats.network.interfaces) ? stats.network.interfaces : [];
       const net = section(root, "Network (per interface, not summed)");
-      table(net, ["Interface", "RX", "TX"], network.filter(x => x && typeof x === "object").map(x => [
-        x.name, rate(x.rates && x.rates.rx_bytes_per_s), rate(x.rates && x.rates.tx_bytes_per_s)
-      ]), 12);
+      table(net, ["Interface", "RX", "TX", "Packets/s", "Errors", "Dropped", "Note"],
+        network.filter(x => x && typeof x === "object").map(x => {
+          const rates = x.rates && typeof x.rates === "object" ? x.rates : {};
+          const rx = x.rx && typeof x.rx === "object" ? x.rx : {}, tx = x.tx && typeof x.tx === "object" ? x.tx : {};
+          return [x.name, rate(rates.rx_bytes_per_s), rate(rates.tx_bytes_per_s),
+            pair(rates.rx_packets_per_s, rates.tx_packets_per_s, whole),
+            pair(rx.errors, tx.errors, count), pair(rx.dropped, tx.dropped, count),
+            [x.oper_status, x.reason].filter(v => typeof v === "string").join(" · ") || ""];
+        }), 12);
+      net.append(element("p", "secondary", "Packets, errors and dropped read RX / TX. Errors and dropped are counts since the interface appeared, not rates."));
       const disks = stats.disk_io && Array.isArray(stats.disk_io.disks) ? stats.disk_io.disks : [];
       const io = section(root, "Disk I/O (per device)");
-      table(io, ["Disk", "Read", "Write"], disks.filter(x => x && typeof x === "object").map(x => [
-        x.name, rate(x.rates && x.rates.read_bytes_per_s), rate(x.rates && x.rates.write_bytes_per_s)
-      ]), 12);
+      table(io, ["Disk", "Read", "Write", "Reads / writes per s", "Time with I/O in flight", "Note"],
+        disks.filter(x => x && typeof x === "object").map(x => {
+          const rates = x.rates && typeof x.rates === "object" ? x.rates : {};
+          return [x.name, rate(rates.read_bytes_per_s), rate(rates.write_bytes_per_s),
+            pair(rates.reads_per_s, rates.writes_per_s, whole),
+            numeric(rates.io_time_ratio) ? percent(rates.io_time_ratio * 100) : "N/A",
+            typeof x.reason === "string" ? x.reason : ""];
+        }), 12);
+      io.append(element("p", "secondary", "Time with I/O in flight is not saturation: a disk serving requests in parallel can take more."));
+      renderCollectors(root, stats);
     } else {
       root.append(element("p", "empty", "No core snapshot is available yet."));
     }
