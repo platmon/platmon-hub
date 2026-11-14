@@ -15,6 +15,23 @@ const os = require('node:os');
     stats:fixture.stats, observations:fixture.observations.groups};
   const battery = node.observations.battery.data.batteries[0];
   battery.temp_c = 31.5;
+  // Core groups after platmon v1.8.2's examples (network.md, disk-io.md, pressure.md); values are synthetic.
+  Object.assign(node.stats.memory, {used:10918944768, total:32668807168, swap_used:0, swap_total:8589930496});
+  node.stats.disk = {used:84053614592, total:194949083136};
+  node.stats.network = {scope:{kind:'process_network_namespace'}, provider:'proc_net_dev', interfaces:[
+    {name:'eth0', ifindex:2, rx:{bytes:1000, packets:10, errors:3, dropped:0}, tx:{bytes:2000, packets:20, errors:0, dropped:7},
+     rates:{rx_bytes_per_s:2097152, tx_bytes_per_s:200, rx_packets_per_s:1500.4, tx_packets_per_s:2}, window_ms:1000, reason:null},
+    {name:'wlan0', ifindex:3, rx:{bytes:0, packets:0, errors:0, dropped:0}, tx:{bytes:0, packets:0, errors:0, dropped:0},
+     rates:null, window_ms:null, reason:'warmup'}]};
+  node.stats.disk_io = {scope:{kind:'host_block_devices'}, provider:'proc_diskstats', disks:[
+    {name:'nvme0n1', major:259, minor:0, rates:{read_bytes_per_s:4096, write_bytes_per_s:8192, reads_per_s:1, writes_per_s:2.6,
+     io_time_ratio:0.01}, window_ms:1000, reason:null}]};
+  node.stats.pressure = {scope:{kind:'host'}, provider:'proc_pressure', resources:{
+    cpu:{some:{avg10:1.25, avg60:0.5, avg300:0.1, total_us:123456}, full:null},
+    memory:{some:{avg10:0, avg60:0, avg300:0, total_us:10}, full:{avg10:0, avg60:0, avg300:0, total_us:4}},
+    io:{some:{avg10:3, avg60:1, avg300:0.2, total_us:99999}, full:{avg10:0.5, avg60:0.1, avg300:0, total_us:4567}}}};
+  node.stats.collectors.temperature = {state:'partial', reason:'some_unreadable',
+    issues:[{target:'hwmon2.temp1', reason:'invalid_data'}], issues_truncated:2};
   // storage, wifi and probe follow platmon v1.8.2's observation examples; values are synthetic.
   const publication = id => ({id, data_age_ms:1000, stale:false});
   node.observations.storage = {state:'ok', interval_ms:30000, stale_after_ms:90000, observation:publication(4),
@@ -56,6 +73,13 @@ const os = require('node:os');
                             'Wi-Fi · ok · Current', 'wlan0', 'Connected', '-64 dBm', 'Unknown · permission_denied',
                             'Probe · partial · Current · 1.0s ago · some_unreadable', '192.0.2.10:443', '12.3 ms',
                             'connected', '1 / 10', '10.0%', '[2001:db8::1]:22', 'timeout', '10 / 10', '100.0%']) {
+      assert(text.includes(expected), 'missing ' + expected);
+    }
+    for (const expected of ['10.2 GiB / 30.4 GiB', '0 B / 8.0 GiB', '78.3 GiB / 181.6 GiB',
+                            'Pressure (PSI avg10)', '1.3%', '3.0%', '0.5%',
+                            '2.0 MiB/s', '1500 / 2', '3 / 0', '0 / 7', 'warmup',
+                            '4.0 KiB/s', '1 / 3', '1.0%', 'Errors and dropped are counts',
+                            'Collectors', 'some_unreadable', 'hwmon2.temp1: invalid_data (+2 more)']) {
       assert(text.includes(expected), 'missing ' + expected);
     }
     assert.equal(await details.locator('img,script').count(), 0);
@@ -118,15 +142,18 @@ const os = require('node:os');
     node.observations.wifi.observation.data_age_ms = 31000;
     await refresh('Wi-Fi · stale · Last-known / not current');
     node.observations = {};
+    for (const key of ['network', 'disk_io', 'pressure']) delete node.stats[key];  // platmon before 1.3.0 may have none
+    node.stats.memory = {used:250, total:1000};
     await refresh('No battery observation reported by this agent.');
     text = await details.textContent();
     for (const noun of ['storage', 'Wi-Fi', 'probe']) assert(text.includes('No ' + noun + ' observation reported by this agent.'));
+    assert(text.includes('No pressure (PSI) data reported by this agent.') && text.includes('250 B / 1000 B'));
     assert(text.includes('unmeasured_gpu') && text.includes('not_exposed'));
     assert.match(await page.locator('.node-card').textContent(), /NPUN\/A/);
     node.observations.battery = {state:'unavailable',observation:null,collector:{reason:'not_detected'},data:null};
     await refresh('not_detected');
     assert((await details.textContent()).includes('No battery or external supply readings available.'));
     assert.deepEqual(errors, []);
-    console.log('Agent 1.2.0 UI passed: NPU, GPU metadata/nulls, battery units/signs/zero, storage/Wi-Fi/probe, freshness, the 421 hint, old agents, escaping, mobile and themes.');
+    console.log('Agent 1.2.0 UI passed: NPU, GPU metadata/nulls, battery units/signs/zero, sizes/PSI/network/disk/collectors, storage/Wi-Fi/probe, freshness, the 421 hint, old agents, escaping, mobile and themes.');
   } finally { await browser.close(); }
 })().catch(error => {console.error(error);process.exitCode=1;});
