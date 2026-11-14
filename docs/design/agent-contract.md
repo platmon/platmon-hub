@@ -144,17 +144,19 @@ Hub with this repository's validators and a raw-capture Hub through a restart
   answer Hub reads.
 - **1.8.0, `Host` header:** a request whose `Host` is not an address, `localhost`, the device's host
   name (`system.hostname`) or that name with `.local`, and not listed in the Agent's `[http] hosts`,
-  answers `421 Misdirected Request` on every path ([Host header]({B}api.md#host-header)). Hub sends
+  answers `421 Misdirected Request` on every path ([Host header](https://github.com/platmon/platmon/blob/v1.8.2/docs/reference/api.md#host-header)). Hub sends
   the registered endpoint's host, so an Agent registered by address or by its host name is unaffected.
   Hub reports a 421 as the node error `host_refused` (core and observations), with a hint in the
   node detail; the headline is `error`, not `offline`, and it is not a transport failure.
 - **1.8.0, request deadline:** the Agent gives a client 10 s for its whole request line and headers
   instead of 10 s per read. Hub sends each request at once, so nothing changes for it.
 - **1.8.0, battery temperature:** each `battery.batteries[]` entry gains `temp_c` (°C, or `null`
-  when the driver has none, as for ACPI batteries) ([battery]({B}battery.md)).
+  when the driver has none, as for ACPI batteries) ([battery](https://github.com/platmon/platmon/blob/v1.8.2/docs/reference/battery.md)).
+  Hub shows it in the node detail and keeps it, signed, with the other battery fields in History;
+  older Agents have none and show `N/A`.
 - **1.8.0, `processes` group:** an optional observation group, off by default (`[processes]
   enabled = yes`, Linux only): the busiest and largest processes and process counts every 5 s, at
-  `/api/observations` and as a replay stream ([processes]({B}processes.md)). Hub accepts the
+  `/api/observations` and as a replay stream ([processes](https://github.com/platmon/platmon/blob/v1.8.2/docs/reference/processes.md)). Hub accepts the
   group and drops it: it is not shown, not projected into History and not a raw-capture stream.
 - **1.8.0, `/text`:** units are written with a space (`12.5 %`). `/text` is not a Hub contract.
 

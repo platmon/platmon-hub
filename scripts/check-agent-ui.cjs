@@ -14,6 +14,7 @@ const os = require('node:os');
     overview:{cpu_percent:25,gpu_percent:12.5,npu_percent:0,memory_percent:25,disk_percent:50,hottest_c:51.2},
     stats:fixture.stats, observations:fixture.observations.groups};
   const battery = node.observations.battery.data.batteries[0];
+  battery.temp_c = 31.5;
   battery.name = '<img src=x onerror=alert(1)>';
   const browser = await chromium.launch({headless:true});
   try {
@@ -32,7 +33,7 @@ const os = require('node:os');
     await details.getByRole('heading', {name:'Power & battery', exact:true}).waitFor();
     let text = await details.textContent();
     for (const expected of ['intel_vpu', 'rc6_residency', '0.00 MHz', '89.0%', 'Discharging', '-0.25 A',
-                            '3.03 Ah / 3.40 Ah / 4.02 Ah', '84.5% of design', 'ADP1', 'Unknown', '6.50 W']) {
+                            '3.03 Ah / 3.40 Ah / 4.02 Ah', '84.5% of design', 'ADP1', 'Unknown', '6.50 W', '31.5°C']) {
       assert(text.includes(expected), 'missing ' + expected);
     }
     assert.equal(await details.locator('img,script').count(), 0);
@@ -57,6 +58,7 @@ const os = require('node:os');
     assert((await details.textContent()).includes('[http] hosts'));
     delete node.core_error;
     battery.percent = 0;
+    battery.temp_c = null;
     battery.current_ua = 0;
     battery.power_uw = -1500000;
     battery.charge_now_uah = null;
@@ -71,6 +73,7 @@ const os = require('node:os');
     assert(text.includes('0.0%') && text.includes('0.00 A') && text.includes('-1.50 W'));
     assert(text.includes('83.3% of design') && text.includes('Offline'));
     assert(!text.includes('Ah'));
+    assert(!text.includes('31.5°C'));
     await page.emulateMedia({colorScheme:'dark'});
     await page.setViewportSize({width:390,height:844});
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));

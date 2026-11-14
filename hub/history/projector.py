@@ -157,7 +157,7 @@ def _battery_data(data):
     fields = ('name', 'present', 'percent', 'status', 'capacity_level', 'technology', 'health',
               'charge_now_uah', 'charge_full_uah', 'charge_full_design_uah',
               'energy_now_uwh', 'energy_full_uwh', 'energy_full_design_uwh',
-              'current_ua', 'power_uw', 'voltage_uv', 'cycle_count')
+              'current_ua', 'power_uw', 'voltage_uv', 'cycle_count', 'temp_c')
     result = {}
     for key, selected in (('batteries', fields), ('external', ('name', 'type', 'online'))):
         rows = data.get(key) if isinstance(data, dict) else None
@@ -179,7 +179,7 @@ def _battery_data(data):
                     value = value if isinstance(value, str) else None
                 elif not (type(value) in (int, float) and math.isfinite(value)):
                     value = None
-                elif field not in ('current_ua', 'power_uw') and value < 0:
+                elif field not in ('current_ua', 'power_uw', 'temp_c') and value < 0:
                     value = None
                 elif field == 'percent' and value > 100:
                     value = None
