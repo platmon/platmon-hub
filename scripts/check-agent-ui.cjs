@@ -52,6 +52,10 @@ const os = require('node:os');
     node.optional_error = 'transport';
     await refresh('Battery · ok · Last-known / not current');
     delete node.optional_error;
+    node.core_error = 'host_refused';
+    await refresh('Core: host_refused: the Agent refused this host name (HTTP 421).');
+    assert((await details.textContent()).includes('[http] hosts'));
+    delete node.core_error;
     battery.percent = 0;
     battery.current_ua = 0;
     battery.power_uw = -1500000;
@@ -94,6 +98,6 @@ const os = require('node:os');
     await refresh('not_detected');
     assert((await details.textContent()).includes('No battery or external supply readings available.'));
     assert.deepEqual(errors, []);
-    console.log('Agent 1.2.0 UI passed: NPU, GPU metadata/nulls, battery units/signs/zero, freshness, old agents, escaping, mobile and themes.');
+    console.log('Agent 1.2.0 UI passed: NPU, GPU metadata/nulls, battery units/signs/zero, freshness, the 421 hint, old agents, escaping, mobile and themes.');
   } finally { await browser.close(); }
 })().catch(error => {console.error(error);process.exitCode=1;});

@@ -214,7 +214,7 @@ class NodeState:
         if not isinstance(failure, protocol.AgentFailure):
             raise TypeError("expected classified agent failure")
         with self._lock:
-            self._core_error = failure.category
+            self._core_error = getattr(failure, "code", None) or failure.category
             self._last_core_poll_utc = self._today()
             if isinstance(failure, protocol.TransportFailure):
                 self._failures += 1
@@ -251,7 +251,7 @@ class NodeState:
 
     def fail_observations(self, failure):
         with self._lock:
-            self._optional_error = failure.category
+            self._optional_error = getattr(failure, "code", None) or failure.category
             self._last_obs_poll_utc = self._today()
 
     def record_poll_duration(self, kind, duration_ms):

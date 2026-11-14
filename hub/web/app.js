@@ -223,6 +223,11 @@
     if (external.length) table(wrap, ["External supply", "Type", "Power"], external.map(s => [s.name, s.type, triState(s.online, "Online", "Offline")]));
     if (!batteries.length && !external.length) wrap.append(element("p", "empty", "No battery or external supply readings available."));
   }
+  // platmon 1.8.0+ answers 421 to a Host name it does not accept.
+  const ERROR_HINTS = {
+    host_refused: "the Agent refused this host name (HTTP 421). Register it by address or by the device's host name, or add the name to [http] hosts in its platmon.ini."
+  };
+  function errorText(code) { return ERROR_HINTS[code] ? code + ": " + ERROR_HINTS[code] : code; }
   function renderDetail(doc) {
     const n = doc.node;
     if (!n || n.node_id !== selected) throw new Error("Mismatched node detail");
@@ -234,8 +239,8 @@
     root.append(head);
     root.append(element("p", n.data_current ? "secondary" : "last-known",
       (n.data_current ? "Current" : "Last-known / not current") + " · " + age(n.data_age_ms)));
-    if (n.core_error) root.append(element("p", "last-known", "Core: " + n.core_error));
-    if (n.optional_error) root.append(element("p", "last-known", "Observations: " + n.optional_error));
+    if (n.core_error) root.append(element("p", "last-known", "Core: " + errorText(n.core_error)));
+    if (n.optional_error) root.append(element("p", "last-known", "Observations: " + errorText(n.optional_error)));
     const stats = n.stats;
     const resources = section(root, "Resources");
     viewMetrics(resources, n.overview, "detail-metrics");
