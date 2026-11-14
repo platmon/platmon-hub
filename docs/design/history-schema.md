@@ -42,7 +42,7 @@ bounded JSON field (16 KiB per group). These summary tables do not persist respo
 Missing readings stay SQL NULL / JSON null; a valid zero is retained.
 
 Battery records retain separate charge/energy families in µAh/µWh, voltage in µV,
-signed current/power in µA/µW, cycle count, driver state text and tri-state
+signed current/power in µA/µW, cycle count, signed temperature in °C (platmon 1.8.0 and later), driver state text and tri-state
 presence/external-power flags. They share the observation table's existing
 identity, byte bound and retention. No battery time series is synthesized from
 these rows; raw observation exports carry the selected data.

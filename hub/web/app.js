@@ -205,7 +205,8 @@
         ["Voltage", quantity(battery.voltage_uv, 1e6, "V")],
         ["Current", quantity(battery.current_ua, 1e6, "A", true)],
         ["Power", quantity(battery.power_uw, 1e6, "W", true)],
-        ["Cycle count", Number.isInteger(battery.cycle_count) && battery.cycle_count >= 0 ? battery.cycle_count : "N/A"]];
+        ["Cycle count", Number.isInteger(battery.cycle_count) && battery.cycle_count >= 0 ? battery.cycle_count : "N/A"],
+        ["Temperature", degree(battery.temp_c)]];
       // Keep charge and energy families separate; voltage is not a conversion factor.
       for (const [family, suffix, unit] of [["charge", "uah", "Ah"], ["energy", "uwh", "Wh"]]) {
         const values = ["now", "full", "full_design"].map(part => battery[family + "_" + part + "_" + suffix]);

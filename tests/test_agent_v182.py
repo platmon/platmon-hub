@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from hub import protocol
-from hub.history.projector import OBSERVATION_GROUPS
+from hub.history.projector import OBSERVATION_GROUPS, project_observation
 from hub.history.raw import STREAMS
 from hub.registry import Node
 from hub.state import NodeState
@@ -55,6 +55,24 @@ class Agent182Tests(unittest.TestCase):
         battery = snapshot['observations']['battery']['data']['batteries'][0]
         self.assertEqual(battery['temp_c'], 31.5)
         self.assertEqual(snapshot['battery_percent'], 89)
+
+    def test_battery_temperature_is_projected_signed_and_nullable(self):
+        group = self.document['observations']['groups']['battery']
+        battery = group['data']['batteries'][0]
+        def projected():
+            record = project_observation(NODE_ID, 'a', 'battery', group, 1000)
+            self.assertTrue(record.valid())
+            return json.loads(record.data_json)['batteries'][0]['temp_c']
+        self.assertEqual(projected(), 31.5)
+        battery['temp_c'] = -5.0  # a cold pack reads below zero
+        self.assertEqual(projected(), -5.0)
+        for value in (None, 'warm', True):
+            battery['temp_c'] = value
+            self.assertIsNone(projected())
+        del battery['temp_c']  # platmon before 1.8.0
+        self.assertIsNone(projected())
+        battery.update(temp_c=31.5, present=False)
+        self.assertIsNone(projected())
 
     def test_null_battery_temperature_is_accepted(self):
         self.document['observations']['groups']['battery']['data']['batteries'][0]['temp_c'] = None

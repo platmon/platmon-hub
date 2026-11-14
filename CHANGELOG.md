@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The node detail's Power & battery section shows each battery's temperature (platmon 1.8.0 and
+  later report `temp_c`; `N/A` for older Agents and batteries without a sensor), and History keeps
+  it with the other battery fields, below zero included (#67).
+
 - Read platmon 1.4.0–1.8.2 as documented: the Agent contract's baseline moves from platmon v1.3.0 to
   v1.8.2 with a section on what those releases changed for Hub (none of its endpoint schemas), and a
   synthetic 1.8.2 test covers the battery's `temp_c` and the optional `processes` group, which Hub
