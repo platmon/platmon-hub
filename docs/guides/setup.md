@@ -150,6 +150,13 @@ details show driver/provider and clocks, even when load is unavailable. Older
 agents remain supported without these additional fields. Battery has observation
 exports but no graph or charge-control action; NPU usage has a History graph.
 
+Device details also show the **Storage** (per filesystem: mount points, type, used / total,
+available), **Wi-Fi** (per interface: connected / disconnected / unknown with the reason,
+signal, link quality, noise) and **TCP connect probe** (per target: connect time, last result,
+failures / attempts) observations when the Agent reports them, each with the same freshness
+label as the battery. A Wi-Fi interface whose connection is unknown is never shown as
+disconnected.
+
 Schema 1 upgrades transactionally to schema 2 after a verified adjacent
 `.v1-backup-<unique-id>` snapshot. Keep that backup for rollback with Hub stopped;
 older software cannot open newer schemas. The current schema is 5; see [migration history](../design/history-schema.md). New tables record group publications,

@@ -42,6 +42,13 @@
     if (value >= 1024) return (value / 1024).toFixed(1) + " KiB/s";
     return value.toFixed(0) + " B/s";
   }
+  function size(value) {
+    if (!numeric(value) || value < 0) return "N/A";
+    for (const [divisor, unit] of [[1099511627776, "TiB"], [1073741824, "GiB"], [1048576, "MiB"], [1024, "KiB"]]) {
+      if (value >= divisor) return (value / divisor).toFixed(1) + " " + unit;
+    }
+    return value.toFixed(0) + " B";
+  }
   function statusPill(value) {
     const state = typeof value === "string" ? value : "unknown";
     const pill = element("span", "status " + (/^(live|partial|starting|stale|offline|error|incompatible)$/.test(state) ? state : ""), state);
@@ -169,6 +176,64 @@
       ]);
     }
   }
+  // Header for one independent observation group: its state, freshness and age. Returns its data
+  // (an empty object when it has none), or null when the Agent does not report the group.
+  function observationData(wrap, n, key, label, noun) {
+    const group = n.observations && n.observations[key];
+    if (!group || typeof group !== "object") {
+      wrap.append(element("p", "empty", "No " + (noun || label.toLowerCase()) + " observation reported by this agent."));
+      return null;
+    }
+    const publication = group.observation;
+    const current = n.enabled !== false && !n.optional_error && publication && publication.stale !== true &&
+      numeric(publication.data_age_ms) && numeric(group.stale_after_ms) && publication.data_age_ms <= group.stale_after_ms &&
+      (group.state === "ok" || group.state === "partial");
+    wrap.append(element("p", current ? "secondary" : "last-known",
+      label + " · " + (group.state || "unknown") + " · " + (current ? "Current" : "Last-known / not current") +
+      " · " + (publication ? age(publication.data_age_ms) : "No observation") +
+      (group.collector && group.collector.reason ? " · " + group.collector.reason : "")));
+    return group.data && typeof group.data === "object" ? group.data : {};
+  }
+  function renderStorage(root, n) {
+    const wrap = section(root, "Storage");
+    const data = observationData(wrap, n, "storage", "Storage");
+    if (!data) return;
+    table(wrap, ["Filesystem", "Mounted on", "Type", "Used / total", "Available"], objects(data.filesystems).map(fs => [
+      fs.device,
+      objects(fs.mount_points).map(m => String(m.path) + (m.read_only === true ? " (read-only)" : "")).join(", ") || "N/A",
+      fs.fstype,
+      size(fs.used_bytes) + " / " + size(fs.total_bytes),
+      size(fs.available_bytes)
+    ]), 16);
+  }
+  function renderWifi(root, n) {
+    const wrap = section(root, "Wi-Fi");
+    const data = observationData(wrap, n, "wifi", "Wi-Fi", "Wi-Fi");
+    if (!data) return;
+    table(wrap, ["Interface", "Connection", "Signal", "Link quality", "Noise"], objects(data.interfaces).map(i => {
+      const state = typeof i.connection_state === "string" && !["connected", "disconnected"].includes(i.connection_state) ? i.connection_state : null;
+      return [
+        i.name,
+        triState(i.connected, "Connected", "Disconnected") + (state ? " · " + state : ""),
+        numeric(i.signal_dbm) ? i.signal_dbm + " dBm" : numeric(i.signal_raw) ? i.signal_raw + " (driver units)" : "N/A",
+        numeric(i.link_quality) ? String(i.link_quality) : "N/A",
+        numeric(i.noise_dbm) ? i.noise_dbm + " dBm" : "N/A"
+      ];
+    }), 16);
+  }
+  function renderProbe(root, n) {
+    const wrap = section(root, "TCP connect probe");
+    const data = observationData(wrap, n, "probe", "Probe");
+    if (!data) return;
+    table(wrap, ["Target", "Connect", "Last result", "Failures", "Failure ratio"], objects(data.targets).map(t => [
+      typeof t.address !== "string" ? "N/A" : (t.address.includes(":") ? "[" + t.address + "]" : t.address) +
+        (Number.isInteger(t.port) ? ":" + t.port : ""),
+      numeric(t.connect_ms) && t.connect_ms >= 0 ? t.connect_ms.toFixed(1) + " ms" : "N/A",
+      typeof t.reason === "string" ? t.reason : numeric(t.connect_ms) ? "connected" : "N/A",
+      Number.isInteger(t.failures) && Number.isInteger(t.attempts) ? t.failures + " / " + t.attempts : "N/A",
+      numeric(t.failure_ratio) ? percent(t.failure_ratio * 100) : "N/A"
+    ]), 16);
+  }
   function renderPower(root, stats, n) {
     const wrap = section(root, "Power & battery");
     if (stats) {
@@ -178,20 +243,8 @@
       const fans = objects(stats.fans);
       if (fans.length) table(wrap, ["Fan", "Speed", "Duty"], fans.map(f => [f.name, quantity(f.rpm, 1, "rpm"), percent(f.percent)]));
     }
-    const group = n.observations && n.observations.battery;
-    if (!group || typeof group !== "object") {
-      wrap.append(element("p", "empty", "No battery observation reported by this agent."));
-      return;
-    }
-    const publication = group.observation;
-    const current = n.enabled !== false && !n.optional_error && publication && publication.stale !== true &&
-      numeric(publication.data_age_ms) && numeric(group.stale_after_ms) && publication.data_age_ms <= group.stale_after_ms &&
-      (group.state === "ok" || group.state === "partial");
-    wrap.append(element("p", current ? "secondary" : "last-known",
-      "Battery · " + (group.state || "unknown") + " · " + (current ? "Current" : "Last-known / not current") +
-      " · " + (publication ? age(publication.data_age_ms) : "No observation") +
-      (group.collector && group.collector.reason ? " · " + group.collector.reason : "")));
-    const data = group.data && typeof group.data === "object" ? group.data : {};
+    const data = observationData(wrap, n, "battery", "Battery");
+    if (!data) return;
     const batteries = objects(data.batteries);
     for (const battery of batteries.slice(0, 16)) {
       wrap.append(element("h4", "", battery.name || "Battery"));
@@ -276,6 +329,9 @@
       root.append(element("p", "empty", "No core snapshot is available yet."));
     }
     renderPower(root, stats, n);
+    renderStorage(root, n);
+    renderWifi(root, n);
+    renderProbe(root, n);
     const optional = section(root, "Independent observations");
     const groups = n.observations && typeof n.observations === "object" ? n.observations : {};
     const groupRows = rowsOf(groups).map(([key, group]) => [
