@@ -21,6 +21,7 @@ sharing evidence.
 | Proxy 401 | Verify the authorized proxy account and TLS configuration; Hub has no built-in login. |
 | 429 / overload 503 | Back off client requests; inspect connection load and resource budget. |
 | Device Offline | Two consecutive core transport failures are required; check the approved endpoint without changing the Agent. |
+| Device error `host_refused` (Agent answered HTTP 421) | platmon 1.8.0 and later answer only to an address, `localhost`, the device's host name or `<name>.local`. Register the device by one of those, or add the name Hub uses to `[http] hosts` in the Agent's `platmon.ini`. |
 | Last known / N/A | Inspect `data_current` and age. Unsupported or stale values are not current zero readings. Optional failures do not make core Offline. |
 | History disabled | Supply an explicit `--history-db` with a writable parent directory. |
 | Writer errors / drops | Check free space, ownership, competing writer and SQLite lock contention. Live polling can continue while history is incomplete. |

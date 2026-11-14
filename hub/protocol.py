@@ -1,4 +1,4 @@
-"""platmon v1.0.0–v1.3.0 endpoint validation and bounded GET."""
+"""platmon v1.0.0–v1.8.2 endpoint validation and bounded GET."""
 
 import json
 import math
@@ -18,6 +18,11 @@ class TransportFailure(AgentFailure):
 
 class ServerFailure(AgentFailure):
     category = "error"
+
+
+class HostRefused(ServerFailure):
+    """platmon 1.8.0+ answers 421 when the Host name is not one it accepts ([http] hosts)."""
+    code = "host_refused"
 
 
 class ContractFailure(AgentFailure):
@@ -177,6 +182,9 @@ class HttpAgentClient:
                 raise OptionalUnsupported("optional endpoint not provided") from exc
             if exc.code in (301, 302, 303, 307, 308):
                 raise ProtocolFailure("redirect disallowed") from exc
+            if exc.code == 421:
+                exc.close()
+                raise HostRefused("HTTP 421: the Agent refused this host name") from exc
             raise ServerFailure(f"HTTP {exc.code}") from exc
         except (TimeoutError, socket.timeout, urllib.error.URLError, ConnectionError, OSError) as exc:
             raise TransportFailure("connection/timeout error") from exc

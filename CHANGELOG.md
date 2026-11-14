@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Read platmon 1.4.0–1.8.2 as documented: the Agent contract's baseline moves from platmon v1.3.0 to
+  v1.8.2 with a section on what those releases changed for Hub (none of its endpoint schemas), and a
+  synthetic 1.8.2 test covers the battery's `temp_c` and the optional `processes` group, which Hub
+  accepts and drops (#66).
+- An Agent that refuses Hub's `Host` name (platmon 1.8.0 and later answer `421 Misdirected Request`
+  to a name not in their `[http] hosts`) is reported as the node error `host_refused` instead of
+  `error`, and the node detail says how to fix it. The headline stays `error`.
+
 - The README links to platmon's compatibility table for the platmon releases Hub reads,
   instead of stating a range of its own.
 
