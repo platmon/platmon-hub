@@ -103,6 +103,22 @@ const os = require('node:os');
     await refresh('Core: host_refused: the Agent refused this host name (HTTP 421).');
     assert((await details.textContent()).includes('[http] hosts'));
     delete node.core_error;
+    // The Agent's own levels (platmon /api/status levels): a Raspberry Pi-like 50/60 temperature for the 51.2 °C reading.
+    node.levels = {cpu:[80, 90], temperature:[50, 60], battery:[20, 10]};
+    await refresh('Agent levels (warning / critical): ' + ['CPU 80 / 90%', 'Temperature 50 / 60 °C', 'Battery 20 / 10%']
+      .map(entry => entry.replace(/ /g, '\u00a0')).join(' · '));
+    assert.match(await page.locator('.node-card').textContent(), /Hottest · warning51\.2°C/);
+    assert.match(await page.locator('.node-card').textContent(), /CPU25\.0%/);
+    const tone = selector => page.locator(selector).first().evaluate(item => getComputedStyle(item).color);
+    assert.notEqual(await tone('#detail-body .metric-value.warning'), await tone('#detail-body .metric-value:not(.warning)'));
+    node.levels.temperature = [40, 50];
+    await refresh('Temperature\u00a040\u00a0/\u00a050\u00a0°C');
+    assert.equal(await details.locator('.metric-value.critical').textContent(), '51.2°C');
+    node.levels = {temperature:[60, 50], cpu:[80]};  // unordered and incomplete pairs are no level
+    await page.locator('#refresh').click();
+    await page.waitForFunction(() => !document.getElementById('detail-body').textContent.includes('Agent levels'));
+    assert.equal(await page.locator('.metric-value.warning,.metric-value.critical').count(), 0);
+    delete node.levels;
     battery.percent = 0;
     battery.temp_c = null;
     battery.current_ua = 0;
@@ -154,6 +170,6 @@ const os = require('node:os');
     await refresh('not_detected');
     assert((await details.textContent()).includes('No battery or external supply readings available.'));
     assert.deepEqual(errors, []);
-    console.log('Agent 1.2.0 UI passed: NPU, GPU metadata/nulls, battery units/signs/zero, sizes/PSI/network/disk/collectors, storage/Wi-Fi/probe, freshness, the 421 hint, old agents, escaping, mobile and themes.');
+    console.log('Agent 1.2.0 UI passed: NPU, GPU metadata/nulls, battery units/signs/zero, sizes/PSI/network/disk/collectors, storage/Wi-Fi/probe, freshness, the 421 hint, Agent levels, old agents, escaping, mobile and themes.');
   } finally { await browser.close(); }
 })().catch(error => {console.error(error);process.exitCode=1;});

@@ -18,6 +18,9 @@ METRICS = ('cpu_percent', 'memory_percent', 'disk_percent', 'hottest_c', 'gpu_pe
            'probe_failure_percent') + tuple(LOW_METRICS) + PRESSURE_COLUMNS
 CONDITIONS = METRICS + ('offline', 'stale', 'optional_error')
 STATES = ('Normal', 'Pending', 'Active', 'Recovering', 'Resolved')
+# A rule for one of these may leave out warning and critical: each node then uses its Agent's /api/status levels.
+AGENT_LEVELS = {'cpu_percent': 'cpu', 'gpu_percent': 'gpu', 'memory_percent': 'memory', 'disk_percent': 'filesystem',
+                'hottest_c': 'temperature', 'battery_percent': 'battery', 'wifi_signal_dbm': 'wifi'}
 
 
 def load_rules(path):
@@ -47,29 +50,40 @@ def validate_rules(document):
             value = rule[key]
             if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 86400:
                 raise ValueError('invalid alert duration or hysteresis')
-        if condition in LOW_METRICS:
-            floor, ceiling = LOW_METRICS[condition]
-            for key in ('warning', 'critical'):
-                value = rule.get(key)
-                if type(value) not in (int, float) or not math.isfinite(value) or not floor <= value <= ceiling:
-                    raise ValueError('low alert thresholds must be finite and within %g..%g' % (floor, ceiling))
-            # Recovery needs a reading above warning + hysteresis, so that must be reachable.
-            if rule['critical'] > rule['warning'] or rule['warning'] + rule['hysteresis'] > ceiling:
-                raise ValueError('invalid alert threshold ordering')
-        elif condition in METRICS:
-            for key in ('warning', 'critical'):
-                value = rule.get(key)
-                if type(value) not in (int, float) or not math.isfinite(value):
-                    raise ValueError('numeric alerts require finite warning and critical thresholds')
-                if condition != 'hottest_c' and not 0 <= value <= 100:
-                    raise ValueError('percentage threshold outside 0..100')
-            if rule['critical'] < rule['warning'] or rule['hysteresis'] > rule['warning'] and condition != 'hottest_c':
-                raise ValueError('invalid alert threshold ordering')
+        if condition in METRICS:
+            given = [key for key in ('warning', 'critical') if key in source]
+            if given or condition not in AGENT_LEVELS:
+                if len(given) == 1 and condition in AGENT_LEVELS:
+                    raise ValueError('give both warning and critical, or neither to use the Agent levels')
+                error = _threshold_error(condition, rule.get('warning'), rule.get('critical'), rule['hysteresis'])
+                if error:
+                    raise ValueError(error)
         elif any(key in source for key in ('warning', 'critical', 'hysteresis')):
             raise ValueError('boolean conditions do not accept thresholds')
         result.append(rule)
     return result
 
+
+def _threshold_error(condition, warning, critical, hysteresis):
+    """Why these thresholds cannot drive the condition, or None when they can."""
+    values = (warning, critical)
+    if any(type(value) not in (int, float) or not math.isfinite(value) for value in values):
+        if condition in LOW_METRICS:
+            return 'low alert thresholds must be finite and within %g..%g' % LOW_METRICS[condition]
+        return 'numeric alerts require finite warning and critical thresholds'
+    if condition in LOW_METRICS:
+        floor, ceiling = LOW_METRICS[condition]
+        if not all(floor <= value <= ceiling for value in values):
+            return 'low alert thresholds must be finite and within %g..%g' % (floor, ceiling)
+        # Recovery needs a reading above warning + hysteresis, so that must be reachable.
+        if critical > warning or warning + hysteresis > ceiling:
+            return 'invalid alert threshold ordering'
+        return None
+    if condition != 'hottest_c' and not all(0 <= value <= 100 for value in values):
+        return 'percentage threshold outside 0..100'
+    if critical < warning or hysteresis > warning and condition != 'hottest_c':
+        return 'invalid alert threshold ordering'
+    return None
 
 
 @dataclass(frozen=True)
@@ -142,22 +156,28 @@ class AlertEngine:
                     state = self._states.setdefault(key, dict(node_id=key[0], rule_id=key[1], condition=rule['condition'],
                         state='Normal', severity=None, known=False, value=None, changed_at_ms=int(self.wall()*1000), _since=now, _cooldown=0))
                     previous, severity = state['state'], state['severity']
-                    value = self._value(node, rule['condition'])
+                    numeric, low = rule['condition'] in METRICS, rule['condition'] in LOW_METRICS
+                    limits = self._thresholds(node, rule) if numeric else None
+                    # A rule left to the Agent levels has no evidence from a node that reports no usable level.
+                    value = self._value(node, rule['condition']) if limits or not numeric else None
                     state.update(known=value is not None, value=value)
+                    if numeric:
+                        state.update(warning=limits and limits[0], critical=limits and limits[1],
+                                     thresholds_from=limits and limits[2])
                     if value is None:
                         if previous == 'Pending': state['state'] = 'Normal'
                         if previous == 'Recovering': state['state'] = 'Active'
                         state['_since'] = now
                     else:
-                        numeric, low = rule['condition'] in METRICS, rule['condition'] in LOW_METRICS
+                        warning, critical = limits[:2] if numeric else (None, None)
                         if low:
-                            high = value <= rule['warning']
-                            recovered = value > rule['warning']+rule['hysteresis']
-                            level = 'critical' if value <= rule['critical'] else 'warning'
+                            high = value <= warning
+                            recovered = value > warning+rule['hysteresis']
+                            level = 'critical' if value <= critical else 'warning'
                         else:
-                            high = value >= rule['warning'] if numeric else value
-                            recovered = value < rule['warning']-rule['hysteresis'] if numeric else not value
-                            level = ('critical' if value >= rule['critical'] else 'warning') if numeric else 'critical'
+                            high = value >= warning if numeric else value
+                            recovered = value < warning-rule['hysteresis'] if numeric else not value
+                            level = ('critical' if value >= critical else 'warning') if numeric else 'critical'
                         if previous in ('Normal', 'Resolved'):
                             if high and now >= state['_cooldown']:
                                 state.update(state='Pending', severity=level, _since=now)
@@ -183,6 +203,17 @@ class AlertEngine:
             for key, record in list(self._pending.items()):
                 if self.history.submit(record):
                     del self._pending[key]
+
+    @staticmethod
+    def _thresholds(node, rule):
+        """(warning, critical, source) for this node; None when the rule leaves them to an Agent without usable levels."""
+        if 'warning' in rule:
+            return rule['warning'], rule['critical'], 'rule'
+        levels = node.get('levels')
+        pair = levels.get(AGENT_LEVELS[rule['condition']]) if isinstance(levels, dict) else None
+        if not isinstance(pair, list) or len(pair) != 2 or _threshold_error(rule['condition'], pair[0], pair[1], rule['hysteresis']):
+            return None
+        return pair[0], pair[1], 'agent'
 
     @staticmethod
     def _value(node, condition):
