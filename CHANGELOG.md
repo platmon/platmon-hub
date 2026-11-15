@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The node detail shows the Agent's Storage (per filesystem), Wi-Fi (per interface) and TCP connect
+  probe (per target) observations, each with its state, age and the same Current / Last-known label
+  as the battery; before, they were one row each under Independent observations (#68).
+
 - The node detail's Power & battery section shows each battery's temperature (platmon 1.8.0 and
   later report `temp_c`; `N/A` for older Agents and batteries without a sensor), and History keeps
   it with the other battery fields, below zero included (#67).
