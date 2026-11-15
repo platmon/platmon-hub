@@ -9,7 +9,7 @@ Fleet monitoring for independent [platmon](https://github.com/platmon/platmon) a
 
 Which platmon releases this Hub reads, and what checked each pairing, is in platmon's [compatibility table](https://github.com/platmon/platmon/blob/main/docs/reference/hub-compatibility.md). Hub reads GPU/NPU usage and independent battery/external-power observations; opt-in full-publication raw capture needs platmon 1.3.0 or later. See the [Agent contract](https://github.com/platmon/platmon-hub/blob/main/docs/design/agent-contract.md).
 
-**Status:** `1.1.1`. See [project status and validation limits](https://github.com/platmon/platmon-hub/blob/main/docs/README.md#project-status). HTTP is read-only by default; local web device management is opt-in. Keep the first run on loopback.
+**Status:** `1.2.0`. See [project status and validation limits](https://github.com/platmon/platmon-hub/blob/main/docs/README.md#project-status). HTTP is read-only by default; local web device management is opt-in. Keep the first run on loopback.
 
 ## Install
 

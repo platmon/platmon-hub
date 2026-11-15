@@ -24,7 +24,7 @@ with that venv's Python. These user-directory paths match the build example belo
 ```powershell
 $venvDir = Join-Path $env:LOCALAPPDATA 'platmon-hub\venv'
 python -m venv "$venvDir"
-& (Join-Path $venvDir 'Scripts\python.exe') -m pip install --no-deps 'platmon-hub==1.1.1'
+& (Join-Path $venvDir 'Scripts\python.exe') -m pip install --no-deps 'platmon-hub==1.2.0'
 & (Join-Path $venvDir 'Scripts\platmon-hub.exe') --version
 ```
 
@@ -33,7 +33,7 @@ python -m venv "$venvDir"
 ```sh
 venv_dir="$HOME/.local/share/platmon-hub/venv"
 python3 -m venv "$venv_dir"
-"$venv_dir/bin/python" -m pip install --no-deps 'platmon-hub==1.1.1'
+"$venv_dir/bin/python" -m pip install --no-deps 'platmon-hub==1.2.0'
 "$venv_dir/bin/platmon-hub" --version
 ```
 

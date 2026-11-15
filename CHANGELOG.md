@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 1.2.0 — 2026-11-15
+
+Reads what platmon 1.4.0–1.8.2 added: the Agent contract's baseline moves to platmon v1.8.2, the
+node detail shows the Agent's whole snapshot and observations, alerts can use each Agent's own
+levels and leave Hub through an opt-in webhook, and the page follows platmon's number formats and
+level colors. The Hub HTTP API stays schema 1 with additive fields (`levels` in node summaries;
+`warning`, `critical`, `thresholds_from` in alert rows; `webhook` in `/api/alerts`), and SQLite
+stays schema 9, so upgrading needs no migration. Existing alert configurations keep working
+unchanged. Agents from platmon 1.0.0 on remain supported.
+
 - The page writes numbers as platmon 1.8's frontends do (`frontends/ui-spec.json` at v1.8.2): a
   space before `%` and `°C` (`12.5 %`, `51.2 °C`) and sizes as `45.1G`, `14M`, `512K` instead of
   `45.1 GiB`. Warning and critical colors (status pills, last-known notes, alerts, errors) use
