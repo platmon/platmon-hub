@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The node detail has a Processes section for platmon 1.8.0's optional `processes` observation
+  (`[processes] enabled = yes` on a Linux Agent): process counts and the busiest and largest
+  processes with CPU (% of one core), resident memory, threads, state and cgroup unit. It is live
+  only; History and raw capture still do not keep it (#71).
+
 - The node detail shows more of each Agent's snapshot: memory, swap and root filesystem as used /
   total, pressure (PSI `some`/`full` avg10), packets per second and error/drop counts per network
   interface, reads/writes per second and time with I/O in flight per disk, the reason a rate is

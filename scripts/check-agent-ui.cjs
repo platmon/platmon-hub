@@ -47,6 +47,12 @@ const os = require('node:os');
     collector:{state:'partial', reason:'some_unreadable'}, data:{provider:'tcp_connect', timeout_ms:2000, targets:[
       {address:'192.0.2.10', port:443, connect_ms:12.3, reason:null, attempts:10, failures:1, failure_ratio:0.1},
       {address:'2001:db8::1', port:22, connect_ms:null, reason:'timeout', attempts:10, failures:10, failure_ratio:1}]}};
+  // platmon v1.8.2 processes.md example shape, values synthetic; the second row is a kernel thread with no unit yet.
+  node.observations.processes = {state:'ok', interval_ms:5000, stale_after_ms:15000, observation:publication(7),
+    collector:{state:'ok', reason:null}, data:{scope:'host', total:512, running:1, blocked:0, zombie:2, threads:2036, top:10,
+      processes:[
+        {pid:6696, name:'gnome-shell', kernel:false, state:'S', cpu_percent:105.2, rss_bytes:317444096, threads:26, unit:'org.gnome.Shell@ubuntu.service'},
+        {pid:15, name:'<b>kworker/0:1</b>', kernel:true, state:'I', cpu_percent:null, rss_bytes:0, threads:1, unit:null}]}};
   battery.name = '<img src=x onerror=alert(1)>';
   const browser = await chromium.launch({headless:true});
   try {
@@ -79,7 +85,10 @@ const os = require('node:os');
                             'Pressure (PSI avg10)', '1.3%', '3.0%', '0.5%',
                             '2.0 MiB/s', '1500 / 2', '3 / 0', '0 / 7', 'warmup',
                             '4.0 KiB/s', '1 / 3', '1.0%', 'Errors and dropped are counts',
-                            'Collectors', 'some_unreadable', 'hwmon2.temp1: invalid_data (+2 more)']) {
+                            'Collectors', 'some_unreadable', 'hwmon2.temp1: invalid_data (+2 more)',
+                            'Processes · ok · Current', '512 processes · 1 running · 0 blocked · 2 zombie · 2036 threads',
+                            'gnome-shell', '6696', '105.2%', '302.7 MiB', 'org.gnome.Shell@ubuntu.service',
+                            '<b>kworker/0:1</b> (kernel)', 'Shown live only, not kept in History.']) {
       assert(text.includes(expected), 'missing ' + expected);
     }
     assert.equal(await details.locator('img,script').count(), 0);
@@ -103,6 +112,8 @@ const os = require('node:os');
     await refresh('Core: host_refused: the Agent refused this host name (HTTP 421).');
     assert((await details.textContent()).includes('[http] hosts'));
     delete node.core_error;
+    node.observations.processes.data.scope = 'container';
+    await refresh("2036 threads · this container's processes only");
     battery.percent = 0;
     battery.temp_c = null;
     battery.current_ua = 0;
@@ -146,7 +157,8 @@ const os = require('node:os');
     node.stats.memory = {used:250, total:1000};
     await refresh('No battery observation reported by this agent.');
     text = await details.textContent();
-    for (const noun of ['storage', 'Wi-Fi', 'probe']) assert(text.includes('No ' + noun + ' observation reported by this agent.'));
+    assert(text.includes('[processes] enabled = yes'));
+    for (const noun of ['storage', 'Wi-Fi', 'probe', 'processes']) assert(text.includes('No ' + noun + ' observation reported by this agent.'));
     assert(text.includes('No pressure (PSI) data reported by this agent.') && text.includes('250 B / 1000 B'));
     assert(text.includes('unmeasured_gpu') && text.includes('not_exposed'));
     assert.match(await page.locator('.node-card').textContent(), /NPUN\/A/);
@@ -154,6 +166,6 @@ const os = require('node:os');
     await refresh('not_detected');
     assert((await details.textContent()).includes('No battery or external supply readings available.'));
     assert.deepEqual(errors, []);
-    console.log('Agent 1.2.0 UI passed: NPU, GPU metadata/nulls, battery units/signs/zero, sizes/PSI/network/disk/collectors, storage/Wi-Fi/probe, freshness, the 421 hint, old agents, escaping, mobile and themes.');
+    console.log('Agent 1.2.0 UI passed: NPU, GPU metadata/nulls, battery units/signs/zero, sizes/PSI/network/disk/collectors, storage/Wi-Fi/probe/processes, freshness, the 421 hint, old agents, escaping, mobile and themes.');
   } finally { await browser.close(); }
 })().catch(error => {console.error(error);process.exitCode=1;});

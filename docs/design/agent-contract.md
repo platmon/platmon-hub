@@ -156,8 +156,9 @@ Hub with this repository's validators and a raw-capture Hub through a restart
   older Agents have none and show `N/A`.
 - **1.8.0, `processes` group:** an optional observation group, off by default (`[processes]
   enabled = yes`, Linux only): the busiest and largest processes and process counts every 5 s, at
-  `/api/observations` and as a replay stream ([processes](https://github.com/platmon/platmon/blob/v1.8.2/docs/reference/processes.md)). Hub accepts the
-  group and drops it: it is not shown, not projected into History and not a raw-capture stream.
+  `/api/observations` and as a replay stream ([processes](https://github.com/platmon/platmon/blob/v1.8.2/docs/reference/processes.md)). Hub shows the
+  latest observation in the node detail (counts and the top rows, from the live snapshot); it is
+  not projected into History and not a raw-capture stream.
 - **1.8.0, `/text`:** units are written with a space (`12.5 %`). `/text` is not a Hub contract.
 
 ## 5. Parsing / version policy

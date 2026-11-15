@@ -260,6 +260,32 @@
       numeric(t.failure_ratio) ? percent(t.failure_ratio * 100) : "N/A"
     ]), 16);
   }
+  function renderProcesses(root, n) {
+    const wrap = section(root, "Processes");
+    const data = observationData(wrap, n, "processes", "Processes");
+    if (!data) {
+      wrap.append(element("p", "secondary", "platmon 1.8.0 and later report them on Linux with [processes] enabled = yes."));
+      return;
+    }
+    wrap.append(element("p", "secondary", count(data.total) + " processes · " + count(data.running) + " running · " +
+      count(data.blocked) + " blocked · " + count(data.zombie) + " zombie · " + count(data.threads) + " threads" +
+      (data.scope === "container" ? " · this container's processes only" : "")));
+    // Seven short columns: on a phone the table scrolls sideways instead of breaking names letter by letter.
+    const scroll = element("div", "table-scroll");
+    wrap.append(scroll);
+    table(scroll, ["Process", "PID", "CPU", "Memory", "Threads", "State", "Unit"], objects(data.processes).map(p => [
+      (typeof p.name === "string" ? p.name : "N/A") + (p.kernel === true ? " (kernel)" : ""),
+      count(p.pid),
+      numeric(p.cpu_percent) && p.cpu_percent >= 0 ? p.cpu_percent.toFixed(1) + "%" : "N/A",
+      size(p.rss_bytes),
+      count(p.threads),
+      typeof p.state === "string" ? p.state : "N/A",
+      typeof p.unit === "string" ? p.unit : ""
+    ]), 20);
+    wrap.append(element("p", "secondary", "The busiest by CPU and the largest by memory. CPU is % of one core since the " +
+      "Agent's previous observation (two busy cores read near 200%); memory is resident (RSS), shared pages counted in " +
+      "each process. Shown live only, not kept in History."));
+  }
   function renderPower(root, stats, n) {
     const wrap = section(root, "Power & battery");
     if (stats) {
@@ -380,6 +406,7 @@
     renderStorage(root, n);
     renderWifi(root, n);
     renderProbe(root, n);
+    renderProcesses(root, n);
     const optional = section(root, "Independent observations");
     const groups = n.observations && typeof n.observations === "object" ? n.observations : {};
     const groupRows = rowsOf(groups).map(([key, group]) => [
