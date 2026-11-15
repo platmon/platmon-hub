@@ -35,6 +35,11 @@ Node summaries also carry additive nullable alert evidence from current observat
 the weakest signal among connected Wi-Fi interfaces. Each is null when the group is
 absent, starting, stale or unsupported, or has no qualifying row.
 
+A `levels` object carries the Agent's own warning/critical levels from its last valid
+`/api/status`, as `[warning, critical]` by name (`cpu`, `gpu`, `memory`, `filesystem`,
+`temperature`, `battery`, `wifi`); a name is absent when the Agent sends no finite, ordered pair
+for it, so `{}` means no levels. `battery` and `wifi` are low-bad: warning above critical.
+
 A `pressure` object carries `psi_cpu_some_avg10`, `psi_memory_some_avg10` and
 `psi_io_some_avg10` from the last accepted core sample, for alerts; each is null when
 the Agent reports no such resource. Like `overview`, consult `data_current` first.
@@ -75,6 +80,11 @@ unavailable persistence returns 503.
 
 Alerts expose at most 500 non-Normal records plus diagnostics, with no mutation or
 acknowledgement endpoint. Queue admission is not proof of a committed alert event.
+Rows of numeric rules add `warning`, `critical` and `thresholds_from` (`rule`, `agent`, or null
+when the rule leaves them to an Agent that reports no usable level).
+`webhook` is null unless the alert configuration has a webhook; otherwise it holds `target`
+(the URL's scheme and host only), `queued`, `delivered`, `failed`, `dropped`, `last_error`
+(null when the latest delivery succeeded) and `last_delivered_ms` / `last_failed_ms`.
 Rules and restoration behavior are defined in [alerts](../guides/alerts.md).
 
 ## Access and limits

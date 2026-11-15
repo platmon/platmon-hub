@@ -4,15 +4,18 @@
 
 Enable with `--history-db /path/history.db --alerts /path/alerts.json`.
 Review `alerts.example.json` against each device's safe operating temperatures;
-its thresholds are examples, not hardware safety limits. Rules apply to all enabled
-nodes. No external notifications, credential storage or management HTTP writes exist.
+its thresholds are examples, not hardware safety limits. Its temperature, battery and
+Wi-Fi rules use each Agent's own levels ([Agent levels](#agent-levels)), which are not
+safety limits either. Rules apply to all enabled nodes. Alerts stay in Hub unless the
+configuration has a [webhook](#webhook); there is no credential storage and no
+management HTTP write.
 Edit the local configuration and restart the Hub to change rules. Registry hot reload
 remains independent. Configuration is at most 64 KiB, with at most 32 unique rules.
 
 Numeric conditions: `cpu_percent`, `memory_percent`, `disk_percent`, `hottest_c`,
 `gpu_percent`, `npu_percent`, `probe_failure_percent`, `psi_cpu_some_avg10`,
 `psi_memory_some_avg10`, `psi_io_some_avg10`. Require finite `warning <= critical`;
-percentages are 0..100.
+percentages are 0..100. Some may leave both to the Agent ([Agent levels](#agent-levels)).
 
 The `psi_*` conditions are the Agent's pressure stall information (`some avg10`): the
 share of the last 10 seconds in which some tasks waited on CPU, memory or I/O. It is not
@@ -35,8 +38,7 @@ below warning enters Pending, at or below critical is critical severity, and rec
 needs a value strictly above warning plus hysteresis, so `warning + hysteresis` must
 not exceed the ceiling. Like the probe condition, they follow their own observation
 group's freshness; an empty bay, an ended connection, or a stale or absent group is unknown.
-Agent `[thresholds] battery` and `wifi` only color the Agent's own viewers; Hub rules
-are configured here independently.
+
 Boolean conditions: `offline`, `stale`, `optional_error` (no numeric thresholds).
 `optional_error` ignores agents that do not provide `/api/observations` (404) or
 report an unknown observations schema; those show as `unsupported` or `incompatible`.
@@ -81,3 +83,70 @@ states (active first), total count and persistence diagnostics. Each row identif
 node/rule/condition, state/severity, evidence known/value and UTC changed_at_ms.
 The dashboard pauses requests while hidden, uses bounded responses and displays
 unknown evidence explicitly. This is an operator aid, not a safety interlock.
+
+## Agent levels
+
+A rule for `cpu_percent`, `gpu_percent`, `memory_percent`, `disk_percent`, `hottest_c`,
+`battery_percent` or `wifi_signal_dbm` may leave out both `warning` and `critical`. Each
+node then uses the warning/critical levels its Agent reports in `/api/status` `levels`
+(`cpu`, `gpu`, `memory`, `filesystem`, `temperature`, `battery`, `wifi`): the Agent's
+`[thresholds]`, and for temperature the board default when that is empty (Jetson Orin
+85/95, Raspberry Pi 75/80, others 80/90). So a Raspberry Pi at 77 °C is warning in Hub as
+on its own page, and a Jetson Orin at 77 °C is not. A rule that gives both values uses
+them for every node; giving only one is refused. `npu_percent`, `probe_failure_percent`
+and the `psi_*` conditions have no Agent level and always need both values.
+
+A node whose Agent reports no usable level for the condition (an old Agent, a missing or
+non-finite pair, or a pair this rule cannot use, such as a battery warning where warning
+plus the rule's `hysteresis` passes 100) gives unknown evidence, never a default. The
+levels are read again on every evaluation, so a changed `[thresholds]` takes effect on
+the Agent's next status, without a Hub restart; the rule's state continues. Alert rows
+show the levels used (`warning`, `critical`, `thresholds_from`). Node cards and the
+detail color CPU, GPU, memory, root disk and the hottest temperature with the same
+levels, whether or not alerts are enabled.
+
+## Webhook
+
+Off by default. An optional `webhook` object beside `rules` sends alert transitions to one
+URL with an HTTP `POST` of a JSON document:
+
+```json
+{
+  "rules": [{"id": "temperature-high", "condition": "hottest_c", "warning": 80, "critical": 90}],
+  "webhook": {"url": "https://hooks.example.com/services/T000/B000/XXXX", "timeout_seconds": 5}
+}
+```
+
+`url` is `http://` or `https://` with a host, at most 2048 characters, without a user name or
+password; `timeout_seconds` is 1..30 (default 5). Restart Hub to change it, as for rules.
+
+Three transitions leave Hub, one document each: `firing` (Pending to Active), `escalated`
+(warning to critical while Active) and `resolved` (an Active or Recovering alert resolves,
+also with reason `node_inactive` when its node is removed or disabled). Pending, Recovering,
+a rebound from Recovering to Active, and the resolutions Hub writes for changed rules at
+startup are not sent. A restored Active alert is not sent again after a Hub restart.
+
+```json
+{"schema_version": 1, "source": "platmon-hub", "event": "firing",
+ "text": "platmon-hub: temperature-high firing on Bench board (warning, value 82.5)",
+ "node_id": "...", "node_name": "Bench board", "rule_id": "temperature-high", "condition": "hottest_c",
+ "previous_state": "Pending", "state": "Active", "severity": "warning", "reason": "condition",
+ "known": true, "value": 82.5, "warning": 80, "critical": 90, "changed_at_ms": 1763164800000}
+```
+
+`text` is a one-line summary, the field a Slack incoming webhook displays; other services that
+expect a different body need a small relay. `warning` and `critical` are null where the
+thresholds are not known. Receivers should ignore unknown keys.
+
+Delivery runs on its own thread from a queue of at most 256 transitions; when it is full the
+oldest gives way and `dropped` counts it. Evaluation only adds to the queue, so a slow or
+unreachable endpoint never delays polling, evaluation or History. Each transition gets up to
+three attempts (after 1 and 5 seconds); any `2xx` answer is success, and anything else,
+including a redirect, which is not followed, is a failure after the third attempt. Hub does not
+use an HTTP proxy from the environment. The queue is in memory: transitions still queued when
+Hub stops are lost, and Hub does not resend them. `GET /api/alerts` and the Alerts panel show
+delivered, failed, dropped and queued counts and the last error (`timeout`, `connection`,
+`http_<status>`); the log gets one line when the error changes. This is a best-effort
+notification, not a guaranteed delivery or a safety interlock.
+
+See [security](security.md#alert-webhook) for what leaves the host.

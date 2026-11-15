@@ -95,6 +95,21 @@ not deployment and does not establish production DNS, firewall, Windows gateway,
 account revocation or organization session-policy compliance. Unit tests independently
 exercise Host checks, request limits, redaction, headers and forged-admin rejection.
 
+## Alert webhook
+
+The opt-in [alert webhook](alerts.md#webhook) is Hub's only outbound connection besides
+Agent polling. Each transition sends the node's ID and name, the rule ID and condition, the
+state, severity, reading and thresholds to the configured URL; nothing else from the Agent.
+Use `https://` for any receiver beyond the local host: `http://` sends that in clear text.
+Certificates are verified with the system's trust store; there is no option to skip that.
+
+Many services put the access token in the URL's path or query. Then the alert configuration
+file holds a secret: keep it out of source control and readable only by the Hub's account.
+Hub refuses a user name or password in the URL, and never shows the path or query: logs,
+`/api/alerts` and the page show the scheme and host only. Rule state stored in History does
+not include the webhook. Redirects are not followed and no environment proxy is used, so a
+receiver cannot move the delivery elsewhere.
+
 ## Full-publication capture
 
 Opt-in [raw replay](replay.md) retains complete Agent payloads, including labels,

@@ -35,11 +35,15 @@ const os = require('node:os');
       else await route.fulfill({json:{schema_version:1,node:nodes.find(n=>url.pathname.endsWith(n.node_id))}});
     });
     await page.route('**/api/alerts', route => route.fulfill({json:{schema_version:1,enabled:true,ready:true,total:1,
+      webhook:{target:'https://hooks.example.com', queued:0, delivered:3, failed:1, dropped:0, last_error:'http_500',
+               last_delivered_ms:Date.now(), last_failed_ms:Date.now()},
       alerts:[{node_id:ids[0],rule_id:'<script>bad</script>',state:'Active',severity:'critical',known:false,changed_at_ms:Date.now()}]}}));
     await page.goto(base);
     await page.waitForFunction(()=>document.getElementById('alerts-list').children.length === 1);
     assert.equal(await page.locator('#alerts-list script').count(), 0);
     assert.match(await page.locator('#alerts-list').textContent(), /awaiting current evidence/);
+    assert.match(await page.locator('#alerts-status').textContent(),
+      /Webhook https:\/\/hooks\.example\.com: 3 delivered, 1 failed, 0 dropped, 0 queued · last delivery failed: http_500/);
     await page.waitForFunction(()=>document.getElementById('history-status').textContent.includes('history points'));
     assert.equal(await page.locator('.node-card').count(), 2);
     assert.equal(await page.locator('.node-card img').count(), 0);

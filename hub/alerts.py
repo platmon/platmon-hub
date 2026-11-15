@@ -1,4 +1,4 @@
-"""Local alert rules and monotonic state transitions; no external delivery."""
+"""Local alert rules and monotonic state transitions; optional webhook delivery (hub.webhook) off this path."""
 import json
 import math
 import logging
@@ -18,18 +18,31 @@ METRICS = ('cpu_percent', 'memory_percent', 'disk_percent', 'hottest_c', 'gpu_pe
            'probe_failure_percent') + tuple(LOW_METRICS) + PRESSURE_COLUMNS
 CONDITIONS = METRICS + ('offline', 'stale', 'optional_error')
 STATES = ('Normal', 'Pending', 'Active', 'Recovering', 'Resolved')
+# A rule for one of these may leave out warning and critical: each node then uses its Agent's /api/status levels.
+AGENT_LEVELS = {'cpu_percent': 'cpu', 'gpu_percent': 'gpu', 'memory_percent': 'memory', 'disk_percent': 'filesystem',
+                'hottest_c': 'temperature', 'battery_percent': 'battery', 'wifi_signal_dbm': 'wifi'}
 
 
-def load_rules(path):
+def load_config(path):
+    """(rules, webhook) from the alert configuration file; webhook is None unless configured."""
     with Path(path).open(encoding='utf-8') as stream:
         raw = stream.read(65537)
     if len(raw.encode('utf-8')) > 65536:
         raise ValueError('alert configuration exceeds 64 KiB')
-    return validate_rules(json.loads(raw))
+    document = json.loads(raw)
+    rules = validate_rules(document)
+    from .webhook import validate_webhook
+    return rules, validate_webhook(document['webhook']) if 'webhook' in document else None
+
+
+def load_rules(path):
+    return load_config(path)[0]
 
 
 def validate_rules(document):
-    if not isinstance(document, dict) or set(document) != {'rules'} or not isinstance(document['rules'], list) or len(document['rules']) > 32:
+    """The rules of an alert configuration; an optional `webhook` object is validated by hub.webhook."""
+    if (not isinstance(document, dict) or 'rules' not in document or set(document) - {'rules', 'webhook'} or
+            not isinstance(document['rules'], list) or len(document['rules']) > 32):
         raise ValueError('expected at most 32 alert rules')
     result, identities = [], set()
     for source in document['rules']:
@@ -47,29 +60,40 @@ def validate_rules(document):
             value = rule[key]
             if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 86400:
                 raise ValueError('invalid alert duration or hysteresis')
-        if condition in LOW_METRICS:
-            floor, ceiling = LOW_METRICS[condition]
-            for key in ('warning', 'critical'):
-                value = rule.get(key)
-                if type(value) not in (int, float) or not math.isfinite(value) or not floor <= value <= ceiling:
-                    raise ValueError('low alert thresholds must be finite and within %g..%g' % (floor, ceiling))
-            # Recovery needs a reading above warning + hysteresis, so that must be reachable.
-            if rule['critical'] > rule['warning'] or rule['warning'] + rule['hysteresis'] > ceiling:
-                raise ValueError('invalid alert threshold ordering')
-        elif condition in METRICS:
-            for key in ('warning', 'critical'):
-                value = rule.get(key)
-                if type(value) not in (int, float) or not math.isfinite(value):
-                    raise ValueError('numeric alerts require finite warning and critical thresholds')
-                if condition != 'hottest_c' and not 0 <= value <= 100:
-                    raise ValueError('percentage threshold outside 0..100')
-            if rule['critical'] < rule['warning'] or rule['hysteresis'] > rule['warning'] and condition != 'hottest_c':
-                raise ValueError('invalid alert threshold ordering')
+        if condition in METRICS:
+            given = [key for key in ('warning', 'critical') if key in source]
+            if given or condition not in AGENT_LEVELS:
+                if len(given) == 1 and condition in AGENT_LEVELS:
+                    raise ValueError('give both warning and critical, or neither to use the Agent levels')
+                error = _threshold_error(condition, rule.get('warning'), rule.get('critical'), rule['hysteresis'])
+                if error:
+                    raise ValueError(error)
         elif any(key in source for key in ('warning', 'critical', 'hysteresis')):
             raise ValueError('boolean conditions do not accept thresholds')
         result.append(rule)
     return result
 
+
+def _threshold_error(condition, warning, critical, hysteresis):
+    """Why these thresholds cannot drive the condition, or None when they can."""
+    values = (warning, critical)
+    if any(type(value) not in (int, float) or not math.isfinite(value) for value in values):
+        if condition in LOW_METRICS:
+            return 'low alert thresholds must be finite and within %g..%g' % LOW_METRICS[condition]
+        return 'numeric alerts require finite warning and critical thresholds'
+    if condition in LOW_METRICS:
+        floor, ceiling = LOW_METRICS[condition]
+        if not all(floor <= value <= ceiling for value in values):
+            return 'low alert thresholds must be finite and within %g..%g' % (floor, ceiling)
+        # Recovery needs a reading above warning + hysteresis, so that must be reachable.
+        if critical > warning or warning + hysteresis > ceiling:
+            return 'invalid alert threshold ordering'
+        return None
+    if condition != 'hottest_c' and not all(0 <= value <= 100 for value in values):
+        return 'percentage threshold outside 0..100'
+    if critical < warning or hysteresis > warning and condition != 'hottest_c':
+        return 'invalid alert threshold ordering'
+    return None
 
 
 @dataclass(frozen=True)
@@ -88,8 +112,9 @@ class AlertRecord:
 
 
 class AlertEngine:
-    def __init__(self, rules, history, *, clock=time.monotonic, wall=time.time):
-        self.rules, self.history = rules, history
+    def __init__(self, rules, history, *, clock=time.monotonic, wall=time.time, webhook=None):
+        self.rules, self.history, self.webhook = rules, history, webhook
+        self._names = {}
         self.clock, self.wall = clock, wall
         self._lock = threading.Lock()
         self._states = {}
@@ -104,6 +129,8 @@ class AlertEngine:
         public = {k: v for k, v in state.items() if not k.startswith('_')}
         event = EventRecord.create(key[0], 'alert_transition', int(self.wall()*1000), previous, state['state'], rule['id']+':'+reason)
         record = AlertRecord(key[0], key[1], event.received_at_ms, json.dumps(rule, sort_keys=True), json.dumps(public), event, delete)
+        if self.webhook is not None:
+            self._notify(public, previous, reason)
         # One latest unsent state per rule/node. Transition loss remains visible in writer counters.
         if key in self._pending:
             self._lost_transitions += 1
@@ -111,6 +138,27 @@ class AlertEngine:
             self._pending[key] = record
         else:
             self._lost_transitions += 1
+
+    def _notify(self, state, previous, reason):
+        """Hand firing, escalation and resolution of a fired alert to the webhook; Pending and Recovering stay in Hub."""
+        current = state['state']
+        if current == 'Active' and previous == 'Pending':
+            kind = 'firing'
+        elif current == 'Active' and previous == 'Active':
+            kind = 'escalated'  # only severity changes while Active: warning to critical
+        elif current == 'Resolved' and previous in ('Active', 'Recovering'):
+            kind = 'resolved'
+        else:
+            return
+        name = self._names.get(state['node_id'], state['node_id'])
+        value = state.get('value')
+        summary = '%s: %s %s on %s' % ('platmon-hub', state['rule_id'], kind, name)
+        if kind != 'resolved':
+            summary += ' (%s%s)' % (state['severity'], '' if value is None else ', value %s' % value)
+        self.webhook.submit(dict(schema_version=1, source='platmon-hub', event=kind, text=summary,
+            node_id=state['node_id'], node_name=name, rule_id=state['rule_id'], condition=state['condition'],
+            previous_state=previous, state=current, severity=state['severity'], reason=reason, known=state['known'],
+            value=value, warning=state.get('warning'), critical=state.get('critical'), changed_at_ms=state['changed_at_ms']))
 
     def evaluate(self, nodes):
         with self._lock:
@@ -136,28 +184,35 @@ class AlertEngine:
             for node in nodes:
                 if not node['enabled']:
                     continue
+                self._names[node['node_id']] = node.get('name') or node['node_id']
                 for rule in self.rules:
                     key = (node['node_id'], rule['id'])
                     current_keys.add(key)
                     state = self._states.setdefault(key, dict(node_id=key[0], rule_id=key[1], condition=rule['condition'],
                         state='Normal', severity=None, known=False, value=None, changed_at_ms=int(self.wall()*1000), _since=now, _cooldown=0))
                     previous, severity = state['state'], state['severity']
-                    value = self._value(node, rule['condition'])
+                    numeric, low = rule['condition'] in METRICS, rule['condition'] in LOW_METRICS
+                    limits = self._thresholds(node, rule) if numeric else None
+                    # A rule left to the Agent levels has no evidence from a node that reports no usable level.
+                    value = self._value(node, rule['condition']) if limits or not numeric else None
                     state.update(known=value is not None, value=value)
+                    if numeric:
+                        state.update(warning=limits and limits[0], critical=limits and limits[1],
+                                     thresholds_from=limits and limits[2])
                     if value is None:
                         if previous == 'Pending': state['state'] = 'Normal'
                         if previous == 'Recovering': state['state'] = 'Active'
                         state['_since'] = now
                     else:
-                        numeric, low = rule['condition'] in METRICS, rule['condition'] in LOW_METRICS
+                        warning, critical = limits[:2] if numeric else (None, None)
                         if low:
-                            high = value <= rule['warning']
-                            recovered = value > rule['warning']+rule['hysteresis']
-                            level = 'critical' if value <= rule['critical'] else 'warning'
+                            high = value <= warning
+                            recovered = value > warning+rule['hysteresis']
+                            level = 'critical' if value <= critical else 'warning'
                         else:
-                            high = value >= rule['warning'] if numeric else value
-                            recovered = value < rule['warning']-rule['hysteresis'] if numeric else not value
-                            level = ('critical' if value >= rule['critical'] else 'warning') if numeric else 'critical'
+                            high = value >= warning if numeric else value
+                            recovered = value < warning-rule['hysteresis'] if numeric else not value
+                            level = ('critical' if value >= critical else 'warning') if numeric else 'critical'
                         if previous in ('Normal', 'Resolved'):
                             if high and now >= state['_cooldown']:
                                 state.update(state='Pending', severity=level, _since=now)
@@ -185,6 +240,17 @@ class AlertEngine:
                     del self._pending[key]
 
     @staticmethod
+    def _thresholds(node, rule):
+        """(warning, critical, source) for this node; None when the rule leaves them to an Agent without usable levels."""
+        if 'warning' in rule:
+            return rule['warning'], rule['critical'], 'rule'
+        levels = node.get('levels')
+        pair = levels.get(AGENT_LEVELS[rule['condition']]) if isinstance(levels, dict) else None
+        if not isinstance(pair, list) or len(pair) != 2 or _threshold_error(rule['condition'], pair[0], pair[1], rule['hysteresis']):
+            return None
+        return pair[0], pair[1], 'agent'
+
+    @staticmethod
     def _value(node, condition):
         if condition in OBSERVED:
             # Optional groups have their own freshness; core state does not gate them.
@@ -203,7 +269,8 @@ class AlertEngine:
         with self._lock:
             rows = [{k: v for k, v in state.items() if not k.startswith('_')} for state in self._states.values() if state['state'] != 'Normal']
             rows.sort(key=lambda row: (row['state'] not in ('Active', 'Recovering'), -row['changed_at_ms'], row['node_id'], row['rule_id']))
-            return dict(enabled=True, ready=self._ready, alerts=rows[:500], total=len(rows), pending_persistence=len(self._pending), lost_transitions=self._lost_transitions, error=self._error)
+            return dict(enabled=True, ready=self._ready, alerts=rows[:500], total=len(rows), pending_persistence=len(self._pending), lost_transitions=self._lost_transitions, error=self._error,
+                        webhook=self.webhook.snapshot() if self.webhook is not None else None)
 
     def start(self, get_nodes):
         def run():
@@ -216,9 +283,12 @@ class AlertEngine:
                         logging.getLogger(__name__).error('alert evaluation failed: %s', type(exc).__name__)
                     self._error = type(exc).__name__
                 self._stop.wait(1)
+        if self.webhook is not None:
+            self.webhook.start()
         self._thread = threading.Thread(target=run, name='hub-alerts', daemon=True)
         self._thread.start()
 
     def close(self):
         self._stop.set()
         if self._thread is not None: self._thread.join(timeout=2)
+        if self.webhook is not None: self.webhook.close()

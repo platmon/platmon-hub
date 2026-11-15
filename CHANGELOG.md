@@ -7,6 +7,28 @@
   `45.1 GiB`. Warning and critical colors (status pills, last-known notes, alerts, errors) use
   platmon's `warn` and `crit` colors in both themes. The layout is unchanged (#73).
 
+- Alerts can be delivered outside Hub: an optional `webhook` object in the alert configuration
+  (`{"url": "https://...", "timeout_seconds": 5}`, off by default) makes Hub POST a small JSON
+  document when an alert fires, escalates to critical or resolves; Pending and Recovering stay in
+  Hub. A separate thread delivers from a queue of 256 transitions with up to three attempts, so a
+  slow or failing endpoint never delays polling or evaluation. `/api/alerts` and the page show
+  delivered, failed, dropped and queued counts and the last error, with the URL's scheme and host
+  only. No proxy, no redirects, no credentials in the URL's user-info part (#72).
+
+- The node detail has a Processes section for platmon 1.8.0's optional `processes` observation
+  (`[processes] enabled = yes` on a Linux Agent): process counts and the busiest and largest
+  processes with CPU (% of one core), resident memory, threads, state and cgroup unit. It is live
+  only; History and raw capture still do not keep it (#71).
+
+- A numeric alert rule for `cpu_percent`, `gpu_percent`, `memory_percent`, `disk_percent`,
+  `hottest_c`, `battery_percent` or `wifi_signal_dbm` may leave out `warning` and `critical`; each
+  node then uses the levels its Agent reports in `/api/status` `levels` (for temperature the board
+  default, such as Raspberry Pi 75/80 and Jetson Orin 85/95, unless `[thresholds]` changes it). A rule
+  with both values keeps them for every node. A node without a usable level gives unknown evidence.
+  `alerts.example.json` leaves temperature, battery and Wi-Fi to the Agent. Node summaries carry the
+  Agent's `levels`; node cards and the detail color CPU, GPU, memory, disk and the hottest
+  temperature, and name the level reached, by those levels, and alert rows say when they use them (#70).
+
 - The node detail shows more of each Agent's snapshot: memory, swap and root filesystem as used /
   total, pressure (PSI `some`/`full` avg10), packets per second and error/drop counts per network
   interface, reads/writes per second and time with I/O in flight per disk, the reason a rate is
