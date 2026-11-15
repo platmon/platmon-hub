@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The node detail has a Processes section for platmon 1.8.0's optional `processes` observation
+  (`[processes] enabled = yes` on a Linux Agent): process counts and the busiest and largest
+  processes with CPU (% of one core), resident memory, threads, state and cgroup unit. It is live
+  only; History and raw capture still do not keep it (#71).
+
 - A numeric alert rule for `cpu_percent`, `gpu_percent`, `memory_percent`, `disk_percent`,
   `hottest_c`, `battery_percent` or `wifi_signal_dbm` may leave out `warning` and `critical`; each
   node then uses the levels its Agent reports in `/api/status` `levels` (for temperature the board

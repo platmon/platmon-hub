@@ -79,11 +79,15 @@ class Agent182Tests(unittest.TestCase):
         snapshot = self.accept()
         self.assertIsNone(snapshot['observations']['battery']['data']['batteries'][0]['temp_c'])
 
-    def test_processes_group_is_accepted_but_not_stored(self):
+    def test_processes_group_is_shown_live_but_not_stored(self):
         snapshot = self.accept()
         self.assertEqual(snapshot['headline'], 'live')
         self.assertIsNone(snapshot['optional_error'])
         self.assertFalse(snapshot['optional_alert_error'])
+        # The live detail carries the latest observation for the node detail's Processes section.
+        detail = snapshot['observations']['processes']
+        self.assertEqual(detail['data']['total'], 512)
+        self.assertEqual(detail['data']['processes'][0]['name'], 'gnome-shell')
         # History and raw capture read only the groups they know; processes is not one of them.
         self.assertNotIn('processes', OBSERVATION_GROUPS)
         self.assertNotIn('processes', STREAMS)
