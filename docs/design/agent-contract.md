@@ -36,7 +36,7 @@ The **application release version (`1.8.2`) is not an endpoint schema version**.
 - `sample` may be `null`, including before the first successful publication. If present, it describes the **last good sample**, even if now stale.
 - The status `sample` includes elapsed age fields such as `data_age_ms` but does **not** include `stale_after_ms`; use the reported `state`/`ready` for status health. The separate `/api/stats` `sample` includes its `stale_after_ms` for checking cached metric freshness.
 - `last_attempt` records recent collection success/failure independently of the last good published sample; `collecting_for_ms` may grow during a blocked read without proving progress.
-- `levels` supplies agent-selected warning/critical thresholds, including the board-specific effective temperature defaults. These are presentation thresholds; Hub must not reinterpret them as proof of service failure.
+- `levels` supplies agent-selected warning/critical thresholds, including the board-specific effective temperature defaults. These are presentation thresholds; Hub must not reinterpret them as proof of service failure. Hub keeps the finite, ordered pairs it knows (`cpu`, `gpu`, `memory`, `filesystem`, `temperature`, and the low-bad `battery` and `wifi`) in node summaries, colors readings with them, and uses them for alert rules that leave out their own thresholds ([alerts](../guides/alerts.md#agent-levels)). An absent, malformed or unordered pair is no level, never a default.
 
 Native states and their **exact meaning**:
 
@@ -121,8 +121,8 @@ the original units. No charge control, low-charge alert or battery graph is adde
 
 ### Additions in 1.3.0
 
-- `/api/status` `levels` gains `battery` and `wifi` warning/critical pairs. Hub does not read
-  `levels`; its alerts use Hub's own rules, so the additional keys are ignored.
+- `/api/status` `levels` gains `battery` and `wifi` warning/critical pairs. Since Hub 1.2.0 Hub
+  reads them like the other levels (see the `levels` bullet above); unknown names are ignored.
 - The Agent HTTP server allows at most 32 active connections and times out reads and writes
   after 10 seconds without progress. Hub keeps one live request sequence per node and, with
   raw capture, at most one replay request beside it
@@ -156,8 +156,9 @@ Hub with this repository's validators and a raw-capture Hub through a restart
   older Agents have none and show `N/A`.
 - **1.8.0, `processes` group:** an optional observation group, off by default (`[processes]
   enabled = yes`, Linux only): the busiest and largest processes and process counts every 5 s, at
-  `/api/observations` and as a replay stream ([processes](https://github.com/platmon/platmon/blob/v1.8.2/docs/reference/processes.md)). Hub accepts the
-  group and drops it: it is not shown, not projected into History and not a raw-capture stream.
+  `/api/observations` and as a replay stream ([processes](https://github.com/platmon/platmon/blob/v1.8.2/docs/reference/processes.md)). Hub shows the
+  latest observation in the node detail (counts and the top rows, from the live snapshot); it is
+  not projected into History and not a raw-capture stream.
 - **1.8.0, `/text`:** units are written with a space (`12.5 %`). `/text` is not a Hub contract.
 
 ## 5. Parsing / version policy

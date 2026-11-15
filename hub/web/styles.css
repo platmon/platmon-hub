@@ -60,6 +60,11 @@ h3 {font-size:14px;margin:0;letter-spacing:-.2px;}
 .detail-section h4 {margin:16px 0 8px;font-size:12px;overflow-wrap:anywhere;}
 .detail-metrics {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 10px;}
 .detail-metrics .metric-value {font-size:20px;}
+.table-scroll {overflow-x:auto;}
+.table-scroll table {table-layout:auto;}
+.table-scroll th,.table-scroll td {white-space:nowrap;overflow-wrap:normal;}
+.metric-value.warning {color:var(--warn);}
+.metric-value.critical {color:var(--error);}
 table {width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}
 th,td {padding:9px 5px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;overflow-wrap:anywhere;}
 th {color:var(--muted);font-weight:600;}

@@ -58,23 +58,43 @@
     const pill = element("span", "status " + (/^(live|partial|starting|stale|offline|error|incompatible)$/.test(state) ? state : ""), state);
     return pill;
   }
-  function metric(label, value) {
+  function levelPair(levels, name) {
+    const pair = levels && typeof levels === "object" ? levels[name] : null;
+    if (!Array.isArray(pair) || pair.length !== 2 || !pair.every(numeric)) return null;
+    // battery and wifi are low-bad: the warning is above the critical level
+    return (["battery", "wifi"].includes(name) ? pair[0] >= pair[1] : pair[0] <= pair[1]) ? pair : null;
+  }
+  // The level a reading reaches on the Agent's own [warning, critical]; none without a level, as no reading is assumed.
+  function reached(value, pair) {
+    if (!numeric(value) || !pair) return "";
+    return value >= pair[1] ? "critical" : value >= pair[0] ? "warning" : "";
+  }
+  function metric(label, value, level) {
     const cell = element("div", "metric");
-    cell.append(element("span", "metric-label", label), element("span", "metric-value", value));
+    cell.append(element("span", "metric-label", label + (level ? " · " + level : "")),
+      element("span", "metric-value" + (level ? " " + level : ""), value));
     return cell;
   }
-  function viewMetrics(container, overview, className) {
+  function viewMetrics(container, overview, className, levels) {
     const data = overview && typeof overview === "object" ? overview : {};
     const grid = element("div", className);
+    const at = (key, name) => reached(data[key], levelPair(levels, name));
     grid.append(
-      metric("CPU", percent(data.cpu_percent)),
-      metric("GPU", percent(data.gpu_percent)),
+      metric("CPU", percent(data.cpu_percent), at("cpu_percent", "cpu")),
+      metric("GPU", percent(data.gpu_percent), at("gpu_percent", "gpu")),
       metric("NPU", percent(data.npu_percent)),
-      metric("Memory", percent(data.memory_percent)),
-      metric("Root disk", percent(data.disk_percent)),
-      metric("Hottest", degree(data.hottest_c))
+      metric("Memory", percent(data.memory_percent), at("memory_percent", "memory")),
+      metric("Root disk", percent(data.disk_percent), at("disk_percent", "filesystem")),
+      metric("Hottest", degree(data.hottest_c), at("hottest_c", "temperature"))
     );
     container.append(grid);
+  }
+  function levelsText(levels) {
+    const names = [["cpu", "CPU", "%"], ["gpu", "GPU", "%"], ["memory", "Memory", "%"], ["filesystem", "Disk", "%"],
+      ["temperature", "Temperature", " °C"], ["battery", "Battery", "%"], ["wifi", "Wi-Fi", " dBm"]];
+    const parts = names.filter(([name]) => levelPair(levels, name))
+      .map(([name, label, unit]) => (label + " " + levelPair(levels, name).join(" / ") + unit).replace(/ /g, "\u00a0"));  // one entry never wraps
+    return parts.length ? "Agent levels (warning / critical): " + parts.join(" · ") : "";
   }
   async function getJSON(path) {
     const controller = new AbortController();
@@ -122,7 +142,7 @@
       names.append(element("div", "node-name", n.name || n.node_id), element("div", "secondary", n.node_id));
       title.append(names, statusPill(n.headline));
       card.append(title);
-      viewMetrics(card, n.overview, "metrics");
+      viewMetrics(card, n.overview, "metrics", n.levels);
       const hint = n.data_current ? "Sample " + (n.sample_sequence ?? "—") + " · " + age(n.data_age_ms)
         : "Last known / not current · " + age(n.data_age_ms);
       card.append(element("div", n.data_current ? "secondary" : "last-known", hint));
@@ -260,6 +280,32 @@
       numeric(t.failure_ratio) ? percent(t.failure_ratio * 100) : "N/A"
     ]), 16);
   }
+  function renderProcesses(root, n) {
+    const wrap = section(root, "Processes");
+    const data = observationData(wrap, n, "processes", "Processes");
+    if (!data) {
+      wrap.append(element("p", "secondary", "platmon 1.8.0 and later report them on Linux with [processes] enabled = yes."));
+      return;
+    }
+    wrap.append(element("p", "secondary", count(data.total) + " processes · " + count(data.running) + " running · " +
+      count(data.blocked) + " blocked · " + count(data.zombie) + " zombie · " + count(data.threads) + " threads" +
+      (data.scope === "container" ? " · this container's processes only" : "")));
+    // Seven short columns: on a phone the table scrolls sideways instead of breaking names letter by letter.
+    const scroll = element("div", "table-scroll");
+    wrap.append(scroll);
+    table(scroll, ["Process", "PID", "CPU", "Memory", "Threads", "State", "Unit"], objects(data.processes).map(p => [
+      (typeof p.name === "string" ? p.name : "N/A") + (p.kernel === true ? " (kernel)" : ""),
+      count(p.pid),
+      numeric(p.cpu_percent) && p.cpu_percent >= 0 ? p.cpu_percent.toFixed(1) + "%" : "N/A",
+      size(p.rss_bytes),
+      count(p.threads),
+      typeof p.state === "string" ? p.state : "N/A",
+      typeof p.unit === "string" ? p.unit : ""
+    ]), 20);
+    wrap.append(element("p", "secondary", "The busiest by CPU and the largest by memory. CPU is % of one core since the " +
+      "Agent's previous observation (two busy cores read near 200%); memory is resident (RSS), shared pages counted in " +
+      "each process. Shown live only, not kept in History."));
+  }
   function renderPower(root, stats, n) {
     const wrap = section(root, "Power & battery");
     if (stats) {
@@ -323,7 +369,8 @@
     if (n.optional_error) root.append(element("p", "last-known", "Observations: " + errorText(n.optional_error)));
     const stats = n.stats;
     const resources = section(root, "Resources");
-    viewMetrics(resources, n.overview, "detail-metrics");
+    viewMetrics(resources, n.overview, "detail-metrics", n.levels);
+    if (levelsText(n.levels)) resources.append(element("p", "secondary", levelsText(n.levels)));
     if (stats && typeof stats === "object") {
       const memory = stats.memory && typeof stats.memory === "object" ? stats.memory : {};
       const disk = stats.disk && typeof stats.disk === "object" ? stats.disk : {};
@@ -380,6 +427,7 @@
     renderStorage(root, n);
     renderWifi(root, n);
     renderProbe(root, n);
+    renderProcesses(root, n);
     const optional = section(root, "Independent observations");
     const groups = n.observations && typeof n.observations === "object" ? n.observations : {};
     const groupRows = rowsOf(groups).map(([key, group]) => [
@@ -635,7 +683,8 @@
         const name = node ? node.name : alert.node_id;
         const severity = ["warning", "critical"].includes(alert.severity) ? alert.severity : "";
         alertsList.append(element("li", severity, name + " · " + alert.rule_id + " · " + alert.state +
-          (severity ? " · " + severity : "") + (alert.known ? " · " + String(alert.value) : " · awaiting current evidence") +
+          (severity ? " · " + severity : "") + (alert.known ? " · " + String(alert.value) : alert.thresholds_from === null ? " · the Agent reports no usable level" : " · awaiting current evidence") +
+          (alert.thresholds_from === "agent" ? " · Agent levels " + alert.warning + " / " + alert.critical : "") +
           " · " + new Date(alert.changed_at_ms).toISOString()));
       }
     } catch (error) {

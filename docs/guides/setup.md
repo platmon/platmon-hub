@@ -165,6 +165,12 @@ failures / attempts) observations when the Agent reports them, each with the sam
 label as the battery. A Wi-Fi interface whose connection is unknown is never shown as
 disconnected.
 
+A **Processes** section shows platmon 1.8.0's optional `processes` observation (off by default;
+Linux, `[processes] enabled = yes` on the Agent): the process, running, blocked and zombie counts
+and the busiest processes by CPU and the largest by memory (name, PID, CPU as % of one core,
+resident memory, threads, state, cgroup unit). It is shown live only: History and raw capture do
+not keep it.
+
 Schema 1 upgrades transactionally to schema 2 after a verified adjacent
 `.v1-backup-<unique-id>` snapshot. Keep that backup for rollback with Hub stopped;
 older software cannot open newer schemas. The current schema is 5; see [migration history](../design/history-schema.md). New tables record group publications,
