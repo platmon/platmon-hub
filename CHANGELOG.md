@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The node detail shows more of each Agent's snapshot: memory, swap and root filesystem as used /
+  total, pressure (PSI `some`/`full` avg10), packets per second and error/drop counts per network
+  interface, reads/writes per second and time with I/O in flight per disk, the reason a rate is
+  missing, and a Collectors table with every collector's state, reason and issues (#69).
+
 - The node detail shows the Agent's Storage (per filesystem), Wi-Fi (per interface) and TCP connect
   probe (per target) observations, each with its state, age and the same Current / Last-known label
   as the battery; before, they were one row each under Independent observations (#68).

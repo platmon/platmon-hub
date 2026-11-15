@@ -150,6 +150,14 @@ details show driver/provider and clocks, even when load is unavailable. Older
 agents remain supported without these additional fields. Battery has observation
 exports but no graph or charge-control action; NPU usage has a History graph.
 
+Resources list memory, swap and the root filesystem as used / total and, when the Agent
+reports pressure stall information, its `some` and `full` 10-second averages for CPU, memory
+and I/O. Network rows add packets per second and the interface's error and drop counts (counts
+since it appeared, not rates) with the reason a rate is missing (for example `warmup`); disk rows
+add reads and writes per second and the time with I/O in flight, which is not saturation. A
+**Collectors** table lists every optional collector's state, reason and first issues, so a
+`partial` temperature or `error` power group is visible without reading the Agent API.
+
 Device details also show the **Storage** (per filesystem: mount points, type, used / total,
 available), **Wi-Fi** (per interface: connected / disconnected / unknown with the reason,
 signal, link quality, noise) and **TCP connect probe** (per target: connect time, last result,
