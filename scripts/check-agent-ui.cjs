@@ -64,26 +64,26 @@ const os = require('node:os');
     const details = page.locator('#detail-body');
     await details.getByRole('heading', {name:'Power & battery', exact:true}).waitFor();
     let text = await details.textContent();
-    for (const expected of ['intel_vpu', 'rc6_residency', '0.00 MHz', '89.0%', 'Discharging', '-0.25 A',
-                            '3.03 Ah / 3.40 Ah / 4.02 Ah', '84.5% of design', 'ADP1', 'Unknown', '6.50 W', '31.5°C']) {
+    for (const expected of ['intel_vpu', 'rc6_residency', '0.00 MHz', '89.0 %', 'Discharging', '-0.25 A',
+                            '3.03 Ah / 3.40 Ah / 4.02 Ah', '84.5 % of design', 'ADP1', 'Unknown', '6.50 W', '31.5 °C']) {
       assert(text.includes(expected), 'missing ' + expected);
     }
     for (const expected of ['Storage · ok · Current', 'nvme0n1p1', '/, <img src=x onerror=alert(2)> (read-only)', 'ext4',
-                            '106.0 GiB / 915.3 GiB', '762.8 GiB',
+                            '106.0G / 915.3G', '762.8G',
                             'Wi-Fi · ok · Current', 'wlan0', 'Connected', '-64 dBm', 'Unknown · permission_denied',
                             'Probe · partial · Current · 1.0s ago · some_unreadable', '192.0.2.10:443', '12.3 ms',
-                            'connected', '1 / 10', '10.0%', '[2001:db8::1]:22', 'timeout', '10 / 10', '100.0%']) {
+                            'connected', '1 / 10', '10.0 %', '[2001:db8::1]:22', 'timeout', '10 / 10', '100.0 %']) {
       assert(text.includes(expected), 'missing ' + expected);
     }
-    for (const expected of ['10.2 GiB / 30.4 GiB', '0 B / 8.0 GiB', '78.3 GiB / 181.6 GiB',
-                            'Pressure (PSI avg10)', '1.3%', '3.0%', '0.5%',
+    for (const expected of ['10.2G / 30.4G', '0 / 8.0G', '78.3G / 181.6G',
+                            'Pressure (PSI avg10)', '1.3 %', '3.0 %', '0.5 %',
                             '2.0 MiB/s', '1500 / 2', '3 / 0', '0 / 7', 'warmup',
-                            '4.0 KiB/s', '1 / 3', '1.0%', 'Errors and dropped are counts',
+                            '4.0 KiB/s', '1 / 3', '1.0 %', 'Errors and dropped are counts',
                             'Collectors', 'some_unreadable', 'hwmon2.temp1: invalid_data (+2 more)']) {
       assert(text.includes(expected), 'missing ' + expected);
     }
     assert.equal(await details.locator('img,script').count(), 0);
-    assert.match(await page.locator('.node-card').textContent(), /NPU0\.0%/);
+    assert.match(await page.locator('.node-card').textContent(), /NPU0\.0 %/);
     await page.locator('#history-metric').selectOption('npu_percent');
     await page.waitForFunction(() => document.getElementById('history-status').textContent.includes('history points'));
 
@@ -116,10 +116,10 @@ const os = require('node:os');
     node.observations.battery.data.external[0].online = false;
     await refresh('0.00 Wh / 50.00 Wh / 60.00 Wh');
     text = await details.textContent();
-    assert(text.includes('0.0%') && text.includes('0.00 A') && text.includes('-1.50 W'));
-    assert(text.includes('83.3% of design') && text.includes('Offline'));
+    assert(text.includes('0.0 %') && text.includes('0.00 A') && text.includes('-1.50 W'));
+    assert(text.includes('83.3 % of design') && text.includes('Offline'));
     assert(!text.includes('Ah'));
-    assert(!text.includes('31.5°C'));
+    assert(!text.includes('31.5 °C'));
     await page.emulateMedia({colorScheme:'dark'});
     await page.setViewportSize({width:390,height:844});
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -131,7 +131,7 @@ const os = require('node:os');
     battery.present = false;
     battery.percent = 99;
     await refresh('Not present');
-    assert(!(await details.textContent()).includes('99.0%'));
+    assert(!(await details.textContent()).includes('99.0 %'));
     node.stats.gpu = {driver:'unmeasured_gpu',usage:null,freq:null,max_freq:null};
     node.stats.collectors.gpu = {state:'unavailable',reason:'not_exposed'};
     delete node.stats.npu;
@@ -147,7 +147,7 @@ const os = require('node:os');
     await refresh('No battery observation reported by this agent.');
     text = await details.textContent();
     for (const noun of ['storage', 'Wi-Fi', 'probe']) assert(text.includes('No ' + noun + ' observation reported by this agent.'));
-    assert(text.includes('No pressure (PSI) data reported by this agent.') && text.includes('250 B / 1000 B'));
+    assert(text.includes('No pressure (PSI) data reported by this agent.') && text.includes('250B / 1000B'));
     assert(text.includes('unmeasured_gpu') && text.includes('not_exposed'));
     assert.match(await page.locator('.node-card').textContent(), /NPUN\/A/);
     node.observations.battery = {state:'unavailable',observation:null,collector:{reason:'not_detected'},data:null};

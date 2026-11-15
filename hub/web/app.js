@@ -23,8 +23,9 @@
   // The page labels every other time as UTC; status times follow the same clock.
   function utcTime(date) { return date.toISOString().slice(11, 19) + " UTC"; }
   function numeric(value) { return typeof value === "number" && Number.isFinite(value); }
-  function percent(value) { return numeric(value) && value >= 0 && value <= 100 ? value.toFixed(1) + "%" : "N/A"; }
-  function degree(value) { return numeric(value) ? value.toFixed(1) + "°C" : "N/A"; }
+  // Formats follow platmon's frontends/ui-spec.json (v1.8.2): a space before % and °C, sizes as 45.1G / 14M / 512K.
+  function percent(value) { return numeric(value) && value >= 0 && value <= 100 ? value.toFixed(1) + " %" : "N/A"; }
+  function degree(value) { return numeric(value) ? value.toFixed(1) + " °C" : "N/A"; }
   function quantity(value, divisor, unit, signed) {
     return numeric(value) && (signed || value >= 0) ? (value / divisor).toFixed(2) + " " + unit : "N/A";
   }
@@ -42,12 +43,14 @@
     if (value >= 1024) return (value / 1024).toFixed(1) + " KiB/s";
     return value.toFixed(0) + " B/s";
   }
+  // Binary units in the one that fits: 45.1G, 14M, 512K (a 100 MiB partition is not "0.1G"); none at all is "0".
   function size(value) {
     if (!numeric(value) || value < 0) return "N/A";
-    for (const [divisor, unit] of [[1099511627776, "TiB"], [1073741824, "GiB"], [1048576, "MiB"], [1024, "KiB"]]) {
-      if (value >= divisor) return (value / divisor).toFixed(1) + " " + unit;
+    for (const [index, unit] of ["G", "M", "K"].entries()) {
+      const divisor = 2 ** (30 - 10 * index);
+      if (value >= divisor) return (value / divisor).toFixed(index ? 0 : 1) + unit;
     }
-    return value.toFixed(0) + " B";
+    return value ? value.toFixed(0) + "B" : "0";
   }
   function usedOfTotal(used, total) { return numeric(used) && numeric(total) ? size(used) + " / " + size(total) : "N/A"; }
   function whole(value) { return numeric(value) && value >= 0 ? value.toFixed(0) : "N/A"; }
@@ -294,7 +297,7 @@
         rows.push([label + " now / full / design", values.map(v => quantity(v, 1e6, unit)).join(" / ")]);
         const full = values[1], design = values[2];
         rows.push([label + " full vs design", numeric(full) && full >= 0 && numeric(design) && design > 0
-          ? (full * 100 / design).toFixed(1) + "% of design" : "N/A"]);
+          ? (full * 100 / design).toFixed(1) + " % of design" : "N/A"]);
       }
       table(wrap, ["Battery reading", "Value"], rows, 16);
     }

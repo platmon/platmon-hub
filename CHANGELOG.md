@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The page writes numbers as platmon 1.8's frontends do (`frontends/ui-spec.json` at v1.8.2): a
+  space before `%` and `°C` (`12.5 %`, `51.2 °C`) and sizes as `45.1G`, `14M`, `512K` instead of
+  `45.1 GiB`. Warning and critical colors (status pills, last-known notes, alerts, errors) use
+  platmon's `warn` and `crit` colors in both themes. The layout is unchanged (#73).
+
 - The node detail shows more of each Agent's snapshot: memory, swap and root filesystem as used /
   total, pressure (PSI `some`/`full` avg10), packets per second and error/drop counts per network
   interface, reads/writes per second and time with I/O in flight per disk, the reason a rate is
