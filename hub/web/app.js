@@ -656,6 +656,13 @@
   const alertsStatus = document.getElementById("alerts-status");
   const alertsList = document.getElementById("alerts-list");
   let alertsController = null;
+  // Delivery counters only: the URL's path and query, which may hold a token, never reach the page.
+  function webhookText(hook) {
+    if (!hook || typeof hook !== "object") return "";
+    return " · Webhook " + (typeof hook.target === "string" ? hook.target : "") + ": " + count(hook.delivered) + " delivered, " +
+      count(hook.failed) + " failed, " + count(hook.dropped) + " dropped, " + count(hook.queued) + " queued" +
+      (typeof hook.last_error === "string" ? " · last delivery failed: " + hook.last_error : "");
+  }
   async function refreshAlerts() {
     if (document.hidden || document.getElementById("monitoring-view").hidden || alertsController) return;
     const controller = new AbortController();
@@ -669,7 +676,8 @@
       if (document.hidden || controller.signal.aborted) return;
       alertsList.replaceChildren();
       alertsStatus.textContent = !doc.enabled ? "Alerts are not enabled on this Hub." : doc.error ? "Alert evaluation unavailable." : !doc.ready ? "Waiting for alert history." :
-        doc.total + " alerts · " + (doc.pending_persistence || 0) + " awaiting queue admission · " + (doc.lost_transitions || 0) + " transitions lost before admission";
+        doc.total + " alerts · " + (doc.pending_persistence || 0) + " awaiting queue admission · " + (doc.lost_transitions || 0) + " transitions lost before admission" +
+        webhookText(doc.webhook);
       for (const alert of doc.alerts) {
         const node = nodes.find(item => item.node_id === alert.node_id);
         const name = node ? node.name : alert.node_id;

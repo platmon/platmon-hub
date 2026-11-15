@@ -1,4 +1,4 @@
-"""Local alert rules and monotonic state transitions; no external delivery."""
+"""Local alert rules and monotonic state transitions; optional webhook delivery (hub.webhook) off this path."""
 import json
 import math
 import logging
@@ -23,16 +23,26 @@ AGENT_LEVELS = {'cpu_percent': 'cpu', 'gpu_percent': 'gpu', 'memory_percent': 'm
                 'hottest_c': 'temperature', 'battery_percent': 'battery', 'wifi_signal_dbm': 'wifi'}
 
 
-def load_rules(path):
+def load_config(path):
+    """(rules, webhook) from the alert configuration file; webhook is None unless configured."""
     with Path(path).open(encoding='utf-8') as stream:
         raw = stream.read(65537)
     if len(raw.encode('utf-8')) > 65536:
         raise ValueError('alert configuration exceeds 64 KiB')
-    return validate_rules(json.loads(raw))
+    document = json.loads(raw)
+    rules = validate_rules(document)
+    from .webhook import validate_webhook
+    return rules, validate_webhook(document['webhook']) if 'webhook' in document else None
+
+
+def load_rules(path):
+    return load_config(path)[0]
 
 
 def validate_rules(document):
-    if not isinstance(document, dict) or set(document) != {'rules'} or not isinstance(document['rules'], list) or len(document['rules']) > 32:
+    """The rules of an alert configuration; an optional `webhook` object is validated by hub.webhook."""
+    if (not isinstance(document, dict) or 'rules' not in document or set(document) - {'rules', 'webhook'} or
+            not isinstance(document['rules'], list) or len(document['rules']) > 32):
         raise ValueError('expected at most 32 alert rules')
     result, identities = [], set()
     for source in document['rules']:
@@ -102,8 +112,9 @@ class AlertRecord:
 
 
 class AlertEngine:
-    def __init__(self, rules, history, *, clock=time.monotonic, wall=time.time):
-        self.rules, self.history = rules, history
+    def __init__(self, rules, history, *, clock=time.monotonic, wall=time.time, webhook=None):
+        self.rules, self.history, self.webhook = rules, history, webhook
+        self._names = {}
         self.clock, self.wall = clock, wall
         self._lock = threading.Lock()
         self._states = {}
@@ -118,6 +129,8 @@ class AlertEngine:
         public = {k: v for k, v in state.items() if not k.startswith('_')}
         event = EventRecord.create(key[0], 'alert_transition', int(self.wall()*1000), previous, state['state'], rule['id']+':'+reason)
         record = AlertRecord(key[0], key[1], event.received_at_ms, json.dumps(rule, sort_keys=True), json.dumps(public), event, delete)
+        if self.webhook is not None:
+            self._notify(public, previous, reason)
         # One latest unsent state per rule/node. Transition loss remains visible in writer counters.
         if key in self._pending:
             self._lost_transitions += 1
@@ -125,6 +138,27 @@ class AlertEngine:
             self._pending[key] = record
         else:
             self._lost_transitions += 1
+
+    def _notify(self, state, previous, reason):
+        """Hand firing, escalation and resolution of a fired alert to the webhook; Pending and Recovering stay in Hub."""
+        current = state['state']
+        if current == 'Active' and previous == 'Pending':
+            kind = 'firing'
+        elif current == 'Active' and previous == 'Active':
+            kind = 'escalated'  # only severity changes while Active: warning to critical
+        elif current == 'Resolved' and previous in ('Active', 'Recovering'):
+            kind = 'resolved'
+        else:
+            return
+        name = self._names.get(state['node_id'], state['node_id'])
+        value = state.get('value')
+        summary = '%s: %s %s on %s' % ('platmon-hub', state['rule_id'], kind, name)
+        if kind != 'resolved':
+            summary += ' (%s%s)' % (state['severity'], '' if value is None else ', value %s' % value)
+        self.webhook.submit(dict(schema_version=1, source='platmon-hub', event=kind, text=summary,
+            node_id=state['node_id'], node_name=name, rule_id=state['rule_id'], condition=state['condition'],
+            previous_state=previous, state=current, severity=state['severity'], reason=reason, known=state['known'],
+            value=value, warning=state.get('warning'), critical=state.get('critical'), changed_at_ms=state['changed_at_ms']))
 
     def evaluate(self, nodes):
         with self._lock:
@@ -150,6 +184,7 @@ class AlertEngine:
             for node in nodes:
                 if not node['enabled']:
                     continue
+                self._names[node['node_id']] = node.get('name') or node['node_id']
                 for rule in self.rules:
                     key = (node['node_id'], rule['id'])
                     current_keys.add(key)
@@ -234,7 +269,8 @@ class AlertEngine:
         with self._lock:
             rows = [{k: v for k, v in state.items() if not k.startswith('_')} for state in self._states.values() if state['state'] != 'Normal']
             rows.sort(key=lambda row: (row['state'] not in ('Active', 'Recovering'), -row['changed_at_ms'], row['node_id'], row['rule_id']))
-            return dict(enabled=True, ready=self._ready, alerts=rows[:500], total=len(rows), pending_persistence=len(self._pending), lost_transitions=self._lost_transitions, error=self._error)
+            return dict(enabled=True, ready=self._ready, alerts=rows[:500], total=len(rows), pending_persistence=len(self._pending), lost_transitions=self._lost_transitions, error=self._error,
+                        webhook=self.webhook.snapshot() if self.webhook is not None else None)
 
     def start(self, get_nodes):
         def run():
@@ -247,9 +283,12 @@ class AlertEngine:
                         logging.getLogger(__name__).error('alert evaluation failed: %s', type(exc).__name__)
                     self._error = type(exc).__name__
                 self._stop.wait(1)
+        if self.webhook is not None:
+            self.webhook.start()
         self._thread = threading.Thread(target=run, name='hub-alerts', daemon=True)
         self._thread.start()
 
     def close(self):
         self._stop.set()
         if self._thread is not None: self._thread.join(timeout=2)
+        if self.webhook is not None: self.webhook.close()

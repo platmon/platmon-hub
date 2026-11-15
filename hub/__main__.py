@@ -167,18 +167,19 @@ def main(argv=None):
     handlers = [RotatingFileHandler(args.log_file, maxBytes=2*1024*1024, backupCount=3, encoding="utf-8")] if args.log_file else None
     logging.basicConfig(level=logging.INFO, handlers=handlers, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     nodes = registry_or_exit(parser, args.nodes)
-    from .alerts import load_rules
+    from .alerts import load_config
     if args.alerts and not args.history_db:
         parser.error('--alerts requires --history-db')
     try:
-        alert_rules = load_rules(args.alerts) if args.alerts else None
+        alert_rules, alert_webhook = load_config(args.alerts) if args.alerts else (None, None)
     except (ValueError, OSError):
         parser.error('invalid or unreadable alert configuration')
     history = HistoryWriter(args.history_db, retention_days=args.history_retention_days, event_retention_days=args.event_retention_days,
                             raw_retention_days=args.raw_retention_days if args.raw_capture else None,
                             raw_quota_bytes=args.raw_quota_mib*1024**2 if args.raw_capture else None,
                             raw_queue_bytes=args.raw_queue_mib*1024**2) if args.history_db else None
-    fleet = Fleet(nodes, history=history, registry_path=None if args.no_registry_reload else args.nodes, alert_rules=alert_rules)
+    fleet = Fleet(nodes, history=history, registry_path=None if args.no_registry_reload else args.nodes, alert_rules=alert_rules,
+                  alert_webhook=alert_webhook)
     try:
         server = bind_hub(args.bind, args.port, fleet, admin=admin)
     except BaseException:

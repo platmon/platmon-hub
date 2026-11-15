@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Alerts can be delivered outside Hub: an optional `webhook` object in the alert configuration
+  (`{"url": "https://...", "timeout_seconds": 5}`, off by default) makes Hub POST a small JSON
+  document when an alert fires, escalates to critical or resolves; Pending and Recovering stay in
+  Hub. A separate thread delivers from a queue of 256 transitions with up to three attempts, so a
+  slow or failing endpoint never delays polling or evaluation. `/api/alerts` and the page show
+  delivered, failed, dropped and queued counts and the last error, with the URL's scheme and host
+  only. No proxy, no redirects, no credentials in the URL's user-info part (#72).
+
 - The node detail has a Processes section for platmon 1.8.0's optional `processes` observation
   (`[processes] enabled = yes` on a Linux Agent): process counts and the busiest and largest
   processes with CPU (% of one core), resident memory, threads, state and cgroup unit. It is live

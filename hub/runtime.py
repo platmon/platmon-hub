@@ -20,7 +20,8 @@ LOG = logging.getLogger(__name__)
 class Fleet:
     def __init__(self, nodes, *, client=None, core_interval=5.0, observations_interval=10.0,
                  status_deadline=2.0, stats_deadline=2.0, observations_deadline=3.0,
-                 max_concurrency=16, clock=time.monotonic, history=None, registry_path=None, alert_rules=None):
+                 max_concurrency=16, clock=time.monotonic, history=None, registry_path=None, alert_rules=None,
+                 alert_webhook=None):
         if not (0 < core_interval and 0 < observations_interval and max_concurrency >= 1):
             raise ValueError("invalid polling configuration")
         self._registry_lock = threading.RLock()
@@ -31,7 +32,11 @@ class Fleet:
         from .replay import ReplayCollector
         self.replay = ReplayCollector(history, clock) if history is not None and getattr(history, 'raw_enabled', False) else None
         from .alerts import AlertEngine
-        self.alerts = AlertEngine(alert_rules, history, clock=clock) if alert_rules is not None else None
+        webhook = None
+        if alert_rules is not None and alert_webhook is not None:
+            from .webhook import WebhookSender
+            webhook = WebhookSender(alert_webhook)
+        self.alerts = AlertEngine(alert_rules, history, clock=clock, webhook=webhook) if alert_rules is not None else None
         self.client = client or protocol.HttpAgentClient()
         self.clock = clock
         self.core_interval = core_interval

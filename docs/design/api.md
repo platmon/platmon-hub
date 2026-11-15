@@ -82,6 +82,9 @@ Alerts expose at most 500 non-Normal records plus diagnostics, with no mutation 
 acknowledgement endpoint. Queue admission is not proof of a committed alert event.
 Rows of numeric rules add `warning`, `critical` and `thresholds_from` (`rule`, `agent`, or null
 when the rule leaves them to an Agent that reports no usable level).
+`webhook` is null unless the alert configuration has a webhook; otherwise it holds `target`
+(the URL's scheme and host only), `queued`, `delivered`, `failed`, `dropped`, `last_error`
+(null when the latest delivery succeeded) and `last_delivered_ms` / `last_failed_ms`.
 Rules and restoration behavior are defined in [alerts](../guides/alerts.md).
 
 ## Access and limits
