@@ -29,6 +29,19 @@ def write_json(path, payload):
     os.replace(str(temporary),str(path))
 
 
+def failed_checks(result,expected_nodes,failures,registry_unchanged):
+    """The acceptance checks a run failed, by name, with the values that failed them (no paths)."""
+    failed={}
+    if result.get('integrity')!='ok': failed['integrity']=result.get('integrity')
+    if result.get('live_nodes')!=expected_nodes:
+        failed['live_nodes']=dict(final=result.get('live_nodes'),expected=expected_nodes)
+    if failures: failed['request_failures']=dict(failures)
+    if not registry_unchanged: failed['registry_unchanged']=False
+    dropped={k:v for k,v in (result.get('writer') or {}).items() if k.startswith('dropped_') and v}
+    if dropped: failed['writer_dropped']=dropped
+    return failed
+
+
 def run(args):
     output=Path(args.output).resolve()
     output.parent.mkdir(parents=True,exist_ok=True)
@@ -130,15 +143,18 @@ def run(args):
             result['request_failures']=failures
             result['api_read_counts']=counts
             unchanged=original is None or hashlib.sha256(registry.read_bytes()).digest()==original
-            passed=(result['integrity']=='ok' and result['live_nodes']==len(nodes) and not failures and unchanged and
-                not any(v for k,v in result['writer'].items() if k.startswith('dropped_')))
+            failed=failed_checks(result,len(nodes),failures,unchanged)
+            passed=not failed
             report=dict(schema_version=1,synthetic=bool(args.synthetic),nodes=len(nodes),
                 requested_seconds=args.seconds,window_seconds=args.window_seconds,
                 reads_per_second_per_api=args.reads_per_second,profile=args.profile,
                 python=platform.python_version(),platform=platform.system(),
-                registry_unchanged=unchanged,windows=windows,result=result,passed=passed)
+                registry_unchanged=unchanged,windows=windows,result=result,passed=passed,failed_checks=failed)
             write_json(output,report)
-            print(json.dumps(dict(completed=True,passed=passed,elapsed_seconds=result['elapsed_seconds'])),flush=True)
+            summary=dict(completed=True,passed=passed,elapsed_seconds=result['elapsed_seconds'])
+            # Name what failed in the log too: CI does not keep the report (#84).
+            if failed: summary['failed_checks']=failed
+            print(json.dumps(summary),flush=True)
             if not passed: raise RuntimeError('soak acceptance failed; inspect private report')
         finally:
             if agent is not None and agent.is_alive(): agent_parent.send('stop')
