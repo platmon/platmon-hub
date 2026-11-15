@@ -1,6 +1,7 @@
 """Alert webhook: configuration, which transitions leave Hub, and delivery against a loopback server."""
 import json
 import logging
+import socket
 import tempfile
 import threading
 import time
@@ -181,7 +182,17 @@ class DeliveryTests(unittest.TestCase):
         wait_for(lambda: slow.snapshot()['failed'] >= 1)
         self.assertEqual(slow.snapshot()['last_error'], 'timeout')
         self.assertGreaterEqual(slow.snapshot()['dropped'], 4)  # the queue keeps the newest 256
-        closed = WebhookSender({'url': 'http://127.0.0.1:9/hook', 'timeout_seconds': 1}, retry_delays=())
+        # A peer that drops the connection without an answer (a closed port is not used: Windows retries
+        # the connect until the timeout, so it would read as 'timeout' there).
+        listener = socket.create_server(('127.0.0.1', 0))
+        self.addCleanup(listener.close)
+
+        def hang_up():
+            connection, _ = listener.accept()
+            connection.close()
+        threading.Thread(target=hang_up, daemon=True).start()
+        closed = WebhookSender({'url': 'http://127.0.0.1:%d/hook' % listener.getsockname()[1], 'timeout_seconds': 1},
+                               retry_delays=())
         closed.start()
         self.addCleanup(closed.close)
         closed.submit({'n': 0})
