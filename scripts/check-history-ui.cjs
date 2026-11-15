@@ -62,7 +62,7 @@ const os = require('node:os');
     await page.waitForFunction(()=>document.getElementById('history-status').textContent.includes('history points'));
     await page.locator('#history-chart').focus();
     await page.keyboard.press('ArrowRight');
-    assert.match(await page.locator('#history-value').textContent(), /Average \d+\.\d%/);
+    assert.match(await page.locator('#history-value').textContent(), /Average \d+\.\d %/);
     // Byte rates are unbounded: values above 100 must be shown in units, not clipped to a percent axis.
     await page.locator('#history-metric').selectOption('disk_read_bytes_per_s');
     await page.waitForFunction(()=>document.getElementById('history-status').textContent.includes('history points'));

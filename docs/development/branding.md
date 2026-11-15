@@ -43,6 +43,17 @@ Source paths below are relative to the repository root. Browser URLs are relativ
 
 The Hub header uses its derivative icon with a prominent `Fleet monitoring` heading on desktop and mobile. The root README uses the Hub horizontal logos. Dark variants are selected with `prefers-color-scheme: dark`.
 
+## Formats and status colors
+
+Hub's page follows the formats and level colors of platmon's design policy,
+[`frontends/ui-spec.json`](https://github.com/platmon/platmon/blob/v1.8.2/frontends/ui-spec.json)
+at v1.8.2: a space before `%` and `°C` (`12.5 %`, `51.2 °C`), sizes in the binary unit that
+fits (`45.1G`, `14M`, `512K`, `0` for none), and the `warn` / `crit` text and background colors
+for light and dark themes (`--warn`, `--warn-bg`, `--error`, `--error-bg` in `styles.css`);
+`--brand` is its `ok` color. Every pair keeps at least 4.5:1 contrast. Hub keeps its own layout:
+one node detail instead of platmon's seven views. When a platmon release changes these values,
+update `app.js`, `styles.css` and the UI checks together.
+
 ## Serving and updates
 
 Hub serves only exact allowlisted SVG paths with `image/svg+xml`, `Cache-Control: no-store`, and `X-Content-Type-Options: nosniff`. The document CSP allows same-origin images (`img-src 'self'`). There are no external fonts, CDNs, or dynamic asset paths.

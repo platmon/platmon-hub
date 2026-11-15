@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The page writes numbers as platmon 1.8's frontends do (`frontends/ui-spec.json` at v1.8.2): a
+  space before `%` and `°C` (`12.5 %`, `51.2 °C`) and sizes as `45.1G`, `14M`, `512K` instead of
+  `45.1 GiB`. Warning and critical colors (status pills, last-known notes, alerts, errors) use
+  platmon's `warn` and `crit` colors in both themes. The layout is unchanged (#73).
+
 - Alerts can be delivered outside Hub: an optional `webhook` object in the alert configuration
   (`{"url": "https://...", "timeout_seconds": 5}`, off by default) makes Hub POST a small JSON
   document when an alert fires, escalates to critical or resolves; Pending and Recovering stay in
