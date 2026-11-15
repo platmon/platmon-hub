@@ -10,10 +10,27 @@ from .history.projector import LOAD_COLUMNS, PRESSURE_COLUMNS, Acceptance, CoreR
 
 
 OPTIONAL_UNSUPPORTED = ("unsupported", "incompatible")
+# /api/status levels Hub reads; battery and wifi are low-bad, with the warning above the critical level.
+LEVEL_NAMES = ("cpu", "gpu", "memory", "filesystem", "temperature", "battery", "wifi")
+LOW_LEVELS = ("battery", "wifi")
 
 
 def _finite(value):
     return type(value) in (int, float) and math.isfinite(value)
+
+
+def _levels(status):
+    """The Agent's finite, ordered [warning, critical] pairs by name; any other entry is left out."""
+    levels = status.get("levels") if isinstance(status, dict) else None
+    result = {}
+    if isinstance(levels, dict):
+        for name in LEVEL_NAMES:
+            pair = levels.get(name)
+            if isinstance(pair, list) and len(pair) == 2 and all(_finite(value) for value in pair):
+                warning, critical = pair
+                if (warning >= critical) if name in LOW_LEVELS else (warning <= critical):
+                    result[name] = [warning, critical]
+    return result
 
 
 def _ratio_percent(group):
@@ -332,6 +349,8 @@ class NodeState:
                 "last_core_completed_utc": self._last_core_completed_utc,
                 "last_optional_completed_utc": self._last_optional_completed_utc,
                 "overview": _overview(self._last_stats),
+                # The Agent's own warning/critical levels from its last valid /api/status
+                "levels": _levels(self._last_status),
                 # PSI some avg10 per resource, for alerts; null without the Agent's pressure group
                 "pressure": {name: value for name, value in _load(self._last_stats).items() if name in PRESSURE_COLUMNS},
                 "stats": metrics,
