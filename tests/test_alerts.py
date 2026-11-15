@@ -188,6 +188,66 @@ class AlertTests(unittest.TestCase):
                 validate_rules({'rules':[dict(source, id='x')]})
         validate_rules({'rules':[dict(id='x', condition='battery_percent', warning=10, critical=10, hysteresis=0)]})
 
+    def test_rule_without_thresholds_uses_each_agents_levels(self):
+        rules = validate_rules({'rules':[dict(id='temp', condition='hottest_c', duration_seconds=0, hysteresis=2),
+                                         dict(id='temp-fixed', condition='hottest_c', warning=80, critical=90, duration_seconds=0)]})
+        self.assertNotIn('warning', rules[0])
+        engine = AlertEngine(rules, self.history)
+        pi = dict(self.node, node_id='pi', overview={'hottest_c': 77.0},
+                  levels={'temperature': [75.0, 80.0]})        # Raspberry Pi board default
+        orin = dict(self.node, node_id='orin', overview={'hottest_c': 77.0},
+                    levels={'temperature': [85.0, 95.0]})      # Jetson Orin board default
+        old = dict(self.node, node_id='old', overview={'hottest_c': 99.0}, levels={})  # no usable level
+        engine.evaluate([pi, orin, old]); engine.evaluate([pi, orin, old])
+        def row(node, rule):
+            state = engine._states[(node, rule)]
+            return state['state'], state['severity'], state['warning'], state['critical'], state['thresholds_from']
+        self.assertEqual(row('pi', 'temp'), ('Active', 'warning', 75.0, 80.0, 'agent'))
+        self.assertEqual(row('orin', 'temp'), ('Normal', None, 85.0, 95.0, 'agent'))
+        self.assertEqual(row('pi', 'temp-fixed'), ('Normal', None, 80, 90, 'rule'))  # explicit values win
+        self.assertEqual(row('old', 'temp'), ('Normal', None, None, None, None))
+        self.assertFalse(engine._states[('old', 'temp')]['known'])               # unknown, never a reading
+        self.assertEqual(row('old', 'temp-fixed')[:2], ('Active', 'critical'))
+        pi['overview'] = {'hottest_c': 81.0}
+        engine.evaluate([pi, orin, old])
+        self.assertEqual(row('pi', 'temp')[:2], ('Active', 'critical'))
+        pi['overview'] = {'hottest_c': 72.0}                                     # below 75 - 2
+        engine.evaluate([pi, orin, old])
+        self.assertEqual(row('pi', 'temp')[0], 'Recovering')
+        # Low-bad levels keep their direction; levels that this rule's hysteresis cannot recover from are unusable.
+        rules = validate_rules({'rules':[dict(id='batt', condition='battery_percent', duration_seconds=0)]})
+        engine = AlertEngine(rules, self.history)
+        node = dict(self.node, battery_percent=15.0, levels={'battery': [20.0, 10.0]})
+        engine.evaluate([node]); engine.evaluate([node])
+        self.assertEqual(engine._states[(NODE_ID, 'batt')]['severity'], 'warning')
+        node = dict(node, node_id='full', levels={'battery': [98.0, 10.0]})       # 98 + 5 is above 100
+        engine.evaluate([node])
+        self.assertFalse(engine._states[('full', 'batt')]['known'])
+        for source in (dict(condition='hottest_c', warning=80),                   # one of the pair
+                       dict(condition='npu_percent'),                             # the Agent has no NPU level
+                       dict(condition='probe_failure_percent'),
+                       dict(condition='psi_io_some_avg10')):
+            with self.assertRaises(ValueError, msg=source):
+                validate_rules({'rules':[dict(source, id='x')]})
+
+    def test_node_summary_carries_valid_agent_levels(self):
+        from hub.registry import Node
+        from hub.state import NodeState
+        from test_agent_v120 import fixture
+        from test_backend import FakeClock
+        document = fixture()
+        document['status']['levels'] = {'cpu': [80.0, 90.0], 'temperature': [75.0, 80.0], 'battery': [20.0, 10.0],
+                                         'memory': [95.0, 90.0], 'wifi': [-80.0, -70.0], 'gpu': [80.0, True],
+                                         'filesystem': None, 'npu': [80.0, 90.0]}
+        state = NodeState(Node(NODE_ID, 'levels', 'http://192.0.2.1:9797'), clock=FakeClock())
+        state.accept_core(document['status'], document['stats'], received_at_ms=1000)
+        self.assertEqual(state.snapshot(include_details=False)['levels'],
+                         {'cpu': [80.0, 90.0], 'temperature': [75.0, 80.0], 'battery': [20.0, 10.0]})
+        del document['status']['levels']
+        document['stats']['sample'] = dict(document['stats']['sample'], sequence=document['stats']['sample']['sequence'] + 1)
+        state.accept_core(document['status'], document['stats'], received_at_ms=2000)
+        self.assertEqual(state.snapshot()['levels'], {})
+
     def test_pressure_conditions(self):
         rules = validate_rules({'rules':[dict(id='io', condition='psi_io_some_avg10', warning=10, critical=25, duration_seconds=0)]})
         engine = AlertEngine(rules, self.history)
