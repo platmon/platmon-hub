@@ -75,6 +75,9 @@ unavailable persistence returns 503.
 
 Alerts expose at most 500 non-Normal records plus diagnostics, with no mutation or
 acknowledgement endpoint. Queue admission is not proof of a committed alert event.
+`webhook` is null unless the alert configuration has a webhook; otherwise it holds `target`
+(the URL's scheme and host only), `queued`, `delivered`, `failed`, `dropped`, `last_error`
+(null when the latest delivery succeeded) and `last_delivered_ms` / `last_failed_ms`.
 Rules and restoration behavior are defined in [alerts](../guides/alerts.md).
 
 ## Access and limits

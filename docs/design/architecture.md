@@ -107,8 +107,9 @@ limits; forced termination may lose queued records. An Agent remains independent
 OS-authenticated local administrators manage config/services. Proxy viewers receive
 read-only access. Opt-in [local web registration](../guides/web-registration.md) enables
 explicit Registry management routes for trusted local users with strict Origin
-and non-simple request-header checks. There is no arbitrary URL proxy, discovery, external notification delivery
-or Agent control. Default loopback
+and non-simple request-header checks. There is no arbitrary URL proxy, discovery or Agent control. The only
+outbound traffic besides Agent polling is the opt-in alert webhook to one configured URL
+([alerts](../guides/alerts.md#webhook)). Default loopback
 and canonical brand assets remain unchanged. See [security](../guides/security.md).
 
 Installation/backup/restore are documented in [operations](../guides/operations.md).

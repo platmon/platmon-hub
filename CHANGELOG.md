@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Alerts can be delivered outside Hub: an optional `webhook` object in the alert configuration
+  (`{"url": "https://...", "timeout_seconds": 5}`, off by default) makes Hub POST a small JSON
+  document when an alert fires, escalates to critical or resolves; Pending and Recovering stay in
+  Hub. A separate thread delivers from a queue of 256 transitions with up to three attempts, so a
+  slow or failing endpoint never delays polling or evaluation. `/api/alerts` and the page show
+  delivered, failed, dropped and queued counts and the last error, with the URL's scheme and host
+  only. No proxy, no redirects, no credentials in the URL's user-info part (#72).
+
 - The node detail shows more of each Agent's snapshot: memory, swap and root filesystem as used /
   total, pressure (PSI `some`/`full` avg10), packets per second and error/drop counts per network
   interface, reads/writes per second and time with I/O in flight per disk, the reason a rate is

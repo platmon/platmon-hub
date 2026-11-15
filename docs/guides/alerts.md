@@ -5,7 +5,8 @@
 Enable with `--history-db /path/history.db --alerts /path/alerts.json`.
 Review `alerts.example.json` against each device's safe operating temperatures;
 its thresholds are examples, not hardware safety limits. Rules apply to all enabled
-nodes. No external notifications, credential storage or management HTTP writes exist.
+nodes. Alerts stay in Hub unless the configuration has a [webhook](#webhook); there is
+no credential storage and no management HTTP write.
 Edit the local configuration and restart the Hub to change rules. Registry hot reload
 remains independent. Configuration is at most 64 KiB, with at most 32 unique rules.
 
@@ -81,3 +82,49 @@ states (active first), total count and persistence diagnostics. Each row identif
 node/rule/condition, state/severity, evidence known/value and UTC changed_at_ms.
 The dashboard pauses requests while hidden, uses bounded responses and displays
 unknown evidence explicitly. This is an operator aid, not a safety interlock.
+
+## Webhook
+
+Off by default. An optional `webhook` object beside `rules` sends alert transitions to one
+URL with an HTTP `POST` of a JSON document:
+
+```json
+{
+  "rules": [{"id": "temperature-high", "condition": "hottest_c", "warning": 80, "critical": 90}],
+  "webhook": {"url": "https://hooks.example.com/services/T000/B000/XXXX", "timeout_seconds": 5}
+}
+```
+
+`url` is `http://` or `https://` with a host, at most 2048 characters, without a user name or
+password; `timeout_seconds` is 1..30 (default 5). Restart Hub to change it, as for rules.
+
+Three transitions leave Hub, one document each: `firing` (Pending to Active), `escalated`
+(warning to critical while Active) and `resolved` (an Active or Recovering alert resolves,
+also with reason `node_inactive` when its node is removed or disabled). Pending, Recovering,
+a rebound from Recovering to Active, and the resolutions Hub writes for changed rules at
+startup are not sent. A restored Active alert is not sent again after a Hub restart.
+
+```json
+{"schema_version": 1, "source": "platmon-hub", "event": "firing",
+ "text": "platmon-hub: temperature-high firing on Bench board (warning, value 82.5)",
+ "node_id": "...", "node_name": "Bench board", "rule_id": "temperature-high", "condition": "hottest_c",
+ "previous_state": "Pending", "state": "Active", "severity": "warning", "reason": "condition",
+ "known": true, "value": 82.5, "warning": 80, "critical": 90, "changed_at_ms": 1763164800000}
+```
+
+`text` is a one-line summary, the field a Slack incoming webhook displays; other services that
+expect a different body need a small relay. `warning` and `critical` are null where the
+thresholds are not known. Receivers should ignore unknown keys.
+
+Delivery runs on its own thread from a queue of at most 256 transitions; when it is full the
+oldest gives way and `dropped` counts it. Evaluation only adds to the queue, so a slow or
+unreachable endpoint never delays polling, evaluation or History. Each transition gets up to
+three attempts (after 1 and 5 seconds); any `2xx` answer is success, and anything else,
+including a redirect, which is not followed, is a failure after the third attempt. Hub does not
+use an HTTP proxy from the environment. The queue is in memory: transitions still queued when
+Hub stops are lost, and Hub does not resend them. `GET /api/alerts` and the Alerts panel show
+delivered, failed, dropped and queued counts and the last error (`timeout`, `connection`,
+`http_<status>`); the log gets one line when the error changes. This is a best-effort
+notification, not a guaranteed delivery or a safety interlock.
+
+See [security](security.md#alert-webhook) for what leaves the host.
